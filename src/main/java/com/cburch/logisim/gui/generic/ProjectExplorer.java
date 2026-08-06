@@ -32,6 +32,7 @@ import com.cburch.logisim.vhdl.base.VhdlEntity;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.Graphics;
+import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
@@ -361,14 +362,25 @@ public class ProjectExplorer extends JTree implements LocaleListener {
       }
     }
 
+    // Peler Edition: double-click detection used to rely on MouseEvent.getClickCount() here in
+    // mouseClicked(), but that silently missed double-clicks when this tree didn't already have
+    // keyboard focus (e.g. right after clicking the canvas, or after the whole window regained
+    // focus) -- the click that reactivates/refocuses the component can fail to continue the
+    // native click-count sequence into the second click on some platforms, so getClickCount()
+    // never reaches 2. Fixed by tracking our own press timing/target below instead of trusting
+    // the native count; see mousePressed(). Left as a no-op override rather than removed, since
+    // MouseListener requires implementing it.
     @Override
     public void mouseClicked(MouseEvent e) {
-      if (e.getClickCount() == 2) {
-        final var path = getPathForLocation(e.getX(), e.getY());
-        if (path != null && listener != null) {
-          listener.doubleClicked(new Event(path));
-        }
-      }
+      // Intentionally empty -- see mousePressed().
+    }
+
+    private TreePath lastPressPath = null;
+    private long lastPressTimeMillis = 0;
+
+    private static int getMultiClickIntervalMillis() {
+      final var value = Toolkit.getDefaultToolkit().getDesktopProperty("awt.multiClickInterval");
+      return (value instanceof Integer i) ? i : 500;
     }
 
     //
@@ -378,6 +390,23 @@ public class ProjectExplorer extends JTree implements LocaleListener {
     public void mousePressed(MouseEvent e) {
       ProjectExplorer.this.requestFocus();
       checkForPopup(e);
+
+      final var path = getPathForLocation(e.getX(), e.getY());
+      final var now = System.currentTimeMillis();
+      if (path != null
+          && path.equals(lastPressPath)
+          && (now - lastPressTimeMillis) <= getMultiClickIntervalMillis()) {
+        // Reset rather than leaving lastPressPath set, so a third quick click starts a fresh
+        // sequence instead of firing doubleClicked() again immediately.
+        lastPressPath = null;
+        lastPressTimeMillis = 0;
+        if (listener != null) {
+          listener.doubleClicked(new Event(path));
+        }
+      } else {
+        lastPressPath = path;
+        lastPressTimeMillis = now;
+      }
     }
 
     @Override
