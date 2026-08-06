@@ -24,6 +24,17 @@ Release tags going forward: `v<peler major>.<peler minor>.<peler build number>` 
 independent of upstream's own version. The historical `v1.0.0-peler.1` through `v1.0.0-peler.4` tags
 predate this and are not being renamed/rebuilt.
 
+**Multi-platform (added 2026-08-07)**: `release.yml` now mirrors `nightly.yml`'s full platform
+coverage instead of Windows only -- Linux deb/rpm/snap, Linux ARM deb/rpm, macOS dmg (x86_64 +
+aarch64), Windows MSI/zip, all built from a shared `prep` job (resolves the tag/version once) and
+published together in one GitHub Release. Windows ARM is skipped, matching `nightly.yml`'s own
+`build_windows_arm` job, which is commented out there too (no WiX on that runner). The
+`PELER_APP_VERSION` override (previously wired into `createMsi`/`createExe`/
+`createWindowsPortableZip` only) now also applies to `createDeb`/`createRpm`/`createApp`/
+`createDmg`, so every platform's package carries the same Peler Edition version number; fixed the
+same "outputFile built from the stale upstream-version-based `TARGET_FILE_PATH_BASE`" bug class in
+`createRpm`/`createDmg` that `createMsi` needed fixing for earlier.
+
 ## Confirmed decisions (from user, 2026-08-07)
 
 - **Feature 1 / Backspace**: keep its existing meaning (undo last placed component) even while
