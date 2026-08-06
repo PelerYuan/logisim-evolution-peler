@@ -1,15 +1,17 @@
 #
-# Logisim-evolution Windows release builder (Peler Edition)
+# Logisim-evolution multi-platform release builder (Peler Edition)
 #
 # Manually triggered (workflow_dispatch), or triggered by pushing a tag matching "v*".
-# Builds the Windows MSI installer and the portable ZIP archive using the same Gradle
-# tasks nightly.yml's "build_windows" job uses, then publishes them as a GitHub Release.
+# Builds installers for every platform nightly.yml's build_* jobs cover (Windows MSI/zip,
+# Linux deb/rpm/snap, Linux ARM deb/rpm, macOS dmg x2), each using the same Gradle tasks those
+# jobs use, then publishes everything together as one GitHub Release.
 #
-# This workflow intentionally does NOT touch nightly.yml and does not run on ordinary
-# pushes or pull requests.
+# This workflow intentionally does NOT touch nightly.yml and does not run on ordinary pushes or
+# pull requests. Windows ARM is skipped -- nightly.yml's own build_windows_arm job is commented
+# out too, since jpackage's WiX-based MSI step isn't available on that runner.
 #
 
-name: "Release (Windows)"
+name: "Release (Multi-platform)"
 
 on:
   workflow_dispatch:
@@ -20,7 +22,7 @@ on:
           pushing a "v*" tag (the pushed tag is used instead). If left blank, defaults to
           "v<version from gradle.properties>". Convention: "v<peler major>.<peler minor>.<peler
           build number>" (e.g. "v1.0.5"), independent of upstream's own version -- this also
-          becomes the built MSI/zip's own version number (see "Determine version / release tag").
+          becomes every platform's package version number (see the "prep" job).
         required: false
         default: ""
   push:
@@ -31,29 +33,28 @@ env:
   JDK_VERSION: 21
   JDK_DISTRO: 'temurin'
 
-# Narrowly scoped to this workflow only - nightly.yml and other workflows are untouched
-# and keep their own (more restrictive) default permissions.
+# Narrowly scoped to this workflow only - nightly.yml and other workflows are untouched and keep
+# their own (more restrictive) default permissions.
 permissions:
   contents: write
 
 jobs:
-  build_windows_release:
-    name: "Windows build + GitHub Release"
-    runs-on: windows-latest
-
+  # ###############################################################################################
+  # Resolves the release tag and Peler Edition version ONCE, shared by every platform job below
+  # and the final publish step, so they can't disagree with each other.
+  prep:
+    name: "Determine version / release tag"
+    runs-on: ubuntu-latest
+    outputs:
+      tag_name: ${{ steps.info.outputs.tag_name }}
+      peler_version: ${{ steps.info.outputs.peler_version }}
+      lse_name: ${{ steps.info.outputs.lse_name }}
     steps:
-      # https://github.com/marketplace/actions/checkout
       - name: "Checkout sources"
         uses: actions/checkout@v7
 
-      - name: Set up JDK ${{ env.JDK_VERSION }} ${{ env.JDK_DISTRO }}
-        uses: actions/setup-java@v5
-        with:
-          java-version: ${{ env.JDK_VERSION }}
-          distribution: ${{ env.JDK_DISTRO }}
-
-      # Same version-string parsing nightly.yml's "git_check" job uses, plus resolving the
-      # tag to publish the release under.
+      # Same version-string parsing nightly.yml's "git_check" job uses, plus resolving the tag to
+      # publish the release under.
       - name: "Determine version / release tag"
         id: info
         shell: bash
@@ -64,15 +65,6 @@ jobs:
           set -euo pipefail
 
           declare -r version_prop=$(grep '^version\s*=.*' gradle.properties | awk '{print $3}')
-
-          # Remove "-" (if present) from version string (mirrors nightly.yml).
-          declare -r lse_version=$(echo "${version_prop}" | awk '{gsub("-","", $0); print}')
-          echo "lse_version=${lse_version}" >> "$GITHUB_OUTPUT"
-
-          # Version string with suffix stripped (mirrors nightly.yml).
-          declare -r lse_version_short=$(echo "${version_prop}" | awk '{ split($0, v, "-")} {print v[1]}')
-          echo "lse_version_short=${lse_version_short}" >> "$GITHUB_OUTPUT"
-
           declare -r lse_name="$(grep -F name gradle.properties | awk '{print $3}')"
           echo "lse_name=${lse_name}" >> "$GITHUB_OUTPUT"
 
@@ -85,16 +77,33 @@ jobs:
           fi
           echo "tag_name=${resolved_tag}" >> "$GITHUB_OUTPUT"
 
-          # Peler Edition: the Windows package's own version (MSI ProductVersion + MSI/zip
-          # filenames, via `-PpelerAppVersion` below), independent of upstream's version in
-          # gradle.properties (which never changes between our releases, so it's useless for
-          # telling one of our builds apart from another -- see the PELER_APP_VERSION comment in
-          # build.gradle.kts). Derived from the release tag: strip the leading "v" and anything
-          # from the first "-"/"+" onward, since MSI ProductVersion must be pure numeric x.y.z.
-          # Convention going forward: tag releases "v<peler major>.<peler minor>.<peler build
-          # number>" (e.g. "v1.0.5"), independent of upstream's own version number.
+          # Peler Edition: every platform's package version (MSI ProductVersion, deb/rpm/dmg
+          # version, filenames -- via `-PpelerAppVersion` in each build job below), independent of
+          # upstream's version in gradle.properties (which never changes between our releases, so
+          # it's useless for telling one of our builds apart from another -- see the
+          # PELER_APP_VERSION comment in build.gradle.kts). Derived from the release tag: strip
+          # the leading "v" and anything from the first "-"/"+" onward, since Windows/macOS
+          # package versioning must be pure numeric x.y.z (Linux is more permissive, but this
+          # value is always plain numeric anyway so it's safe there too). Convention going
+          # forward: tag releases "v<peler major>.<peler minor>.<peler build number>" (e.g.
+          # "v1.0.5"), independent of upstream's own version number.
           declare -r peler_version=$(echo "${resolved_tag}" | sed -E 's/^v//; s/[-+].*$//')
           echo "peler_version=${peler_version}" >> "$GITHUB_OUTPUT"
+
+  # ###############################################################################################
+
+  build_windows:
+    name: "Windows build"
+    runs-on: windows-latest
+    needs: prep
+    steps:
+      - name: "Checkout sources"
+        uses: actions/checkout@v7
+      - name: Set up JDK ${{ env.JDK_VERSION }} ${{ env.JDK_DISTRO }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JDK_VERSION }}
+          distribution: ${{ env.JDK_DISTRO }}
 
       # Same Gradle task nightly.yml's build_windows job uses, plus `-PpelerAppVersion` so the MSI
       # carries our own release version instead of upstream's unchanging "4.2.0" base (see the
@@ -103,18 +112,165 @@ jobs:
       # locally) mis-tokenizes an unquoted "-Pkey=1.0.5"-shaped argument, splitting it mid-value
       # and handing Gradle a bogus extra task name (e.g. "createMsi" + ".0.5") -> build failure.
       - name: "Build MSI"
-        run: .\gradlew.bat createMsi "-PpelerAppVersion=${{ steps.info.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
+        run: .\gradlew.bat createMsi "-PpelerAppVersion=${{ needs.prep.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
 
-      # Same Gradle task nightly.yml's build_windows job uses, plus `-PpelerAppVersion` (see above
-      # -- same quoting requirement applies here too).
       - name: "Build self-contained archive for Windows"
-        run: .\gradlew.bat createWindowsPortableZip "-PpelerAppVersion=${{ steps.info.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
+        run: .\gradlew.bat createWindowsPortableZip "-PpelerAppVersion=${{ needs.prep.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
+
+      - name: "Upload Windows artifacts"
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-windows
+          path: |
+            build/dist/${{ needs.prep.outputs.lse_name }}-${{ needs.prep.outputs.peler_version }}-amd64.msi
+            build/dist/${{ needs.prep.outputs.lse_name }}-${{ needs.prep.outputs.peler_version }}-windows-amd64.zip
+          if-no-files-found: error
+
+  # ###############################################################################################
+
+  build_linux:
+    name: "Linux build"
+    runs-on: ubuntu-latest
+    needs: prep
+    steps:
+      - name: "Checkout sources"
+        uses: actions/checkout@v7
+
+      # Same as nightly.yml's build_linux job -- a plain local Snap build (no store publish, that
+      # step is commented out upstream too since it needs SNAPCRAFT_STORE_CREDENTIALS we don't have).
+      - name: "Build Snap package"
+        uses: snapcore/action-build@v1
+        id: snapcraft
+
+      - name: Set up JDK ${{ env.JDK_VERSION }} ${{ env.JDK_DISTRO }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JDK_VERSION }}
+          distribution: ${{ env.JDK_DISTRO }}
+
+      - name: "Build DEB"
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew createDeb "-PpelerAppVersion=${{ needs.prep.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
+
+      - name: "Build RPM"
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew createRpm "-PpelerAppVersion=${{ needs.prep.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
+
+      - name: "Upload Linux artifacts"
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-linux
+          path: |
+            ${{ steps.snapcraft.outputs.snap }}
+            build/dist/${{ needs.prep.outputs.lse_name }}_${{ needs.prep.outputs.peler_version }}_amd64.deb
+            build/dist/${{ needs.prep.outputs.lse_name }}-${{ needs.prep.outputs.peler_version }}-1.x86_64.rpm
+          if-no-files-found: error
+
+  # ###############################################################################################
+
+  build_linux_arm:
+    name: "Linux Arm build"
+    runs-on: ubuntu-22.04-arm
+    needs: prep
+    steps:
+      - name: "Checkout sources"
+        uses: actions/checkout@v7
+      - name: Set up JDK ${{ env.JDK_VERSION }} ${{ env.JDK_DISTRO }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JDK_VERSION }}
+          distribution: ${{ env.JDK_DISTRO }}
+
+      - name: "Build Arm DEB"
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew createDeb "-PpelerAppVersion=${{ needs.prep.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
+
+      - name: "Build Arm RPM"
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew createRpm "-PpelerAppVersion=${{ needs.prep.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
+
+      - name: "Upload Linux ARM artifacts"
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-linux-arm
+          path: |
+            build/dist/${{ needs.prep.outputs.lse_name }}_${{ needs.prep.outputs.peler_version }}_arm64.deb
+            build/dist/${{ needs.prep.outputs.lse_name }}-${{ needs.prep.outputs.peler_version }}-1.aarch64.rpm
+          if-no-files-found: error
+
+  # ###############################################################################################
+
+  build_macos:
+    name: "macOS build"
+    runs-on: macos-latest
+    needs: prep
+    steps:
+      - name: "Checkout sources"
+        uses: actions/checkout@v7
+
+      - name: Set up aarch64 JDK ${{ env.JDK_VERSION }} ${{ env.JDK_DISTRO }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JDK_VERSION }}
+          distribution: ${{ env.JDK_DISTRO }}
+
+      - name: "Build aarch64 DMG"
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew createDmg "-PpelerAppVersion=${{ needs.prep.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
+
+      - name: Set up x86_64 JDK ${{ env.JDK_VERSION }} ${{ env.JDK_DISTRO }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JDK_VERSION }}
+          distribution: ${{ env.JDK_DISTRO }}
+          architecture: "x64"
+
+      # build.gradle.kts derives OS_ARCH from the active JVM's `os.arch` system property, which
+      # differs now that an x64 JDK is active -- so this naturally produces a differently-named
+      # x86_64.dmg without colliding with the aarch64.dmg above (mirrors nightly.yml's own
+      # build_macos job, which relies on the exact same mechanism).
+      - name: "Build x86_64 DMG"
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew createDmg "-PpelerAppVersion=${{ needs.prep.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
+
+      - name: "Upload macOS artifacts"
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-macos
+          path: |
+            build/dist/${{ needs.prep.outputs.lse_name }}-${{ needs.prep.outputs.peler_version }}-aarch64.dmg
+            build/dist/${{ needs.prep.outputs.lse_name }}-${{ needs.prep.outputs.peler_version }}-x86_64.dmg
+          if-no-files-found: error
+
+  # ###############################################################################################
+
+  publish:
+    name: "Publish GitHub Release"
+    runs-on: ubuntu-latest
+    needs: [prep, build_windows, build_linux, build_linux_arm, build_macos]
+    steps:
+      - name: "Download all platform artifacts"
+        uses: actions/download-artifact@v6
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
 
       - name: "Publish GitHub Release"
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.info.outputs.tag_name }}
-          name: ${{ steps.info.outputs.tag_name }}
-          files: |
-            build/dist/${{ steps.info.outputs.lse_name }}-${{ steps.info.outputs.peler_version }}-amd64.msi
-            build/dist/${{ steps.info.outputs.lse_name }}-${{ steps.info.outputs.peler_version }}-windows-amd64.zip
+          tag_name: ${{ needs.prep.outputs.tag_name }}
+          name: ${{ needs.prep.outputs.tag_name }}
+          files: dist/*

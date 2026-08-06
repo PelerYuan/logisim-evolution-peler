@@ -203,10 +203,15 @@ extra.apply {
   set(SHARED_PARAMS, params)
 
   // Linux (DEB/RPM) specific settings for jpackage.
+  // Peler Edition: pelerAppVersion (not appVersion) -- see the PELER_APP_VERSION comment above --
+  // so Linux packages carry the same independently-incrementing Peler Edition version the Windows
+  // ones do, rather than upstream's unchanging base. Unlike Windows/macOS, Linux packaging doesn't
+  // reject version suffixes, but pelerAppVersion is always plain numeric anyway so this is safe
+  // either way.
   val linuxParams = params + listOf(
       "--name", project.name,
       "--dest", targetDir,
-      "--app-version", appVersion,
+      "--app-version", pelerAppVersion,
       "--file-associations", "${supportDir}/linux/file.jpackage",
       "--icon", "${supportDir}/linux/logisim-icon-128.png",
       "--install-dir", "/opt",
@@ -420,7 +425,9 @@ tasks.register("createDeb") {
 
   // Debian uses `_` to separate name from version string.
   // https://www.debian.org/doc/manuals/debian-faq/pkg-basics.en.html
-  val appVersion = ext.get(APP_VERSION) as String
+  // Peler Edition: pelerAppVersion (not APP_VERSION) so the filename matches what's embedded in
+  // the package by linuxParams above -- see the PELER_APP_VERSION comment.
+  val appVersion = ext.get(PELER_APP_VERSION) as String
   val targetDir = ext.get(TARGET_DIR) as String
 
   // Map system architecture to Debian package architecture naming convention
@@ -469,7 +476,12 @@ tasks.register("createRpm") {
     "aarch64", "arm64" -> "aarch64"
     else -> systemArch
   }
-  val outputFile = "${ext.get(TARGET_FILE_PATH_BASE) as String}-1.${rpmArch}.rpm"
+  // Peler Edition: built from pelerAppVersion (not TARGET_FILE_PATH_BASE, which is still based on
+  // the upstream version) to match what linuxParams actually embeds via --app-version above --
+  // same "output declaration must match what's actually produced" fix as createMsi.
+  val targetDir = ext.get(TARGET_DIR) as String
+  val pelerAppVersion = ext.get(PELER_APP_VERSION) as String
+  val outputFile = "${targetDir}/${project.name}-${pelerAppVersion}-1.${rpmArch}.rpm"
   val linuxParams = (ext.get(LINUX_PARAMS) as List<Any?>).filterIsInstance<String>()
   val jdepsFile = ext.get(JDEPS_FILE) as String
 
@@ -648,7 +660,8 @@ tasks.register("createApp") {
   val jdepsFile = ext.get(JDEPS_FILE) as String
   val appDirName = ext.get(APP_DIR_NAME) as String
   val projectName = ext.get(UPPERCASE_PROJECT_NAME) as String
-  val appVersion = ext.get(APP_VERSION_SHORT) as String
+  // Peler Edition: pelerAppVersion (not APP_VERSION_SHORT) -- see the PELER_APP_VERSION comment.
+  val appVersion = ext.get(PELER_APP_VERSION) as String
 
   group = "build"
   description = "Makes the macOS application."
@@ -717,9 +730,12 @@ tasks.register("createDmg") {
   val osArch = ext.get(OS_ARCH) as String
   val projectName = project.name
   val jPackage = ext.get(JPACKAGE) as String
-  val appVersion = ext.get(APP_VERSION_SHORT) as String
+  // Peler Edition: pelerAppVersion (not APP_VERSION_SHORT), and outputFile built from it directly
+  // (not TARGET_FILE_PATH_BASE, which is still based on the upstream version) so the output
+  // declaration matches what the rename step below actually produces -- same fix as createMsi.
+  val appVersion = ext.get(PELER_APP_VERSION) as String
   val targetDir = ext.get(TARGET_DIR) as String
-  val outputFile = "${ext.get(TARGET_FILE_PATH_BASE) as String}-${osArch}.dmg"
+  val outputFile = "${targetDir}/${projectName}-${appVersion}-${osArch}.dmg"
 
   inputs.dir(appDirName)
   outputs.file(outputFile);
