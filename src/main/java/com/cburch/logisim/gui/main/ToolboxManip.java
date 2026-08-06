@@ -94,6 +94,11 @@ class ToolboxManip implements ProjectExplorer.Listener {
           setDefaultTool(lastSelected, proj);
         } else if (source instanceof VhdlEntity vhdl) {
           proj.setCurrentHdlModel(vhdl.getContent());
+        } else {
+          // Plain component (not a subcircuit/VHDL entity): arm continuous placement mode so
+          // repeated clicks on the canvas keep placing this component (Peler Edition Feature 1).
+          proj.setTool(tool);
+          tool.setStickyPlace(true);
         }
       }
     }
