@@ -539,6 +539,15 @@ tasks.register("createMsi") {
         // https://docs.microsoft.com/en-us/windows/win32/msi/productversion?redirectedfrom=MSDN
         // NOTE: any change to version **format** may require editing of .github/workflows/nightly.yml too!
         "--app-version", version,
+        // Peler Edition: pinned so Windows Installer recognizes every release as the SAME
+        // upgradeable product line (its "major upgrade" mechanism keys off this UUID staying
+        // constant, not off --app-version). Without an explicit value here, jpackage generates
+        // one itself -- possibly stable, possibly not, undocumented either way -- which is why
+        // installing a newer build over an older one previously just errored "already installed"
+        // instead of upgrading. DO NOT EVER CHANGE THIS VALUE, or every future release becomes
+        // un-upgradeable from everything before the change (users would have to manually
+        // uninstall the old one first). Generated once on 2026-08-07, arbitrary otherwise.
+        "--win-upgrade-uuid", "48443d3c-0700-47f9-b825-40c7118027da",
     )
     func.runCommand(params, "Error while creating the MSI package.")
     val fromFile = "${targetDir}/${projectName}-${version}.msi"
