@@ -72,6 +72,26 @@ Key files: `src/main/java/com/cburch/logisim/tools/WiringTool.java`.
 | 2 | Feature 3 (auto-snap) | Medium/High — touches core wire-drawing/shortening logic, needs careful regression testing |
 | 3 | Polish: tunable snap radius, snap-hit visual feedback, i18n strings for new UI text, broader manual regression pass | Low |
 
+## Post-Phase-1 fix — app identity (2026-08-07)
+
+The official upstream app name (`logisim-evolution`) was still used for the package name, Windows install
+path (`Program Files\logisim-evolution`), Start Menu group, and window title — this collides with an
+existing official Logisim Evolution install on the same machine. Fixed by changing `rootProject.name` in
+`settings.gradle.kts` to `logisim-evolution-peler`; this is the single source of truth that `build.gradle.kts`
+derives `--name` (jpackage/MSI/exe), `--win-menu-group`, output artifact filenames, and `BuildInfo.name` /
+`BuildInfo.displayName` (window title, see `Frame.java:600`) from, so one change covers package name,
+install path, Start Menu group, and title bar together.
+
+**Deferred to backlog** (do last, per user instruction 2026-08-07): the About dialog / credits screen
+(`About.java`, `AboutCredits.java`) and CLI help banner (`Startup.java`) already pick up the new
+`BuildInfo.name`/`displayName` automatically, but still need a real content pass:
+- `BuildInfo.url` (`build.gradle.kts`, `APP_URL`) still points at the upstream repo — should point at
+  `github.com/PelerYuan/logisim-evolution-peler` once the About page work happens.
+- App icon (`support/jpackage/windows/Logisim-evolution.ico`) is still upstream's icon — worth a distinct
+  icon so the taskbar/Start Menu entry is visually distinguishable from the official install too.
+- About/credits copy should actually say "Peler Edition" somewhere rather than relying solely on the
+  build-derived name string.
+
 ## Workflow for each phase
 
 1. **Product manager** turns the phase scope above into a concrete task list with acceptance criteria.
