@@ -120,6 +120,70 @@ install path, Start Menu group, and title bar together.
   distinct icon so the taskbar/Start Menu entry is visually distinguishable from the official install
   too. Not done: needs an actual art asset, not something worth hand-hacking a placeholder for.
 
+## MSI upgrade support (added 2026-08-07)
+
+Installing a newer build over an older one previously just errored "already installed" instead of
+upgrading. `createMsi` now pins `--win-upgrade-uuid` to a fixed, hardcoded UUID
+(`48443d3c-0700-47f9-b825-40c7118027da`) — Windows Installer's major-upgrade mechanism keys off this
+UUID staying constant across releases (not off `--app-version`, which only tells it *whether* a given
+build is newer). Previously this was left to jpackage's own default generation, whose determinism
+across builds/name changes isn't documented — pinning it removes that uncertainty entirely.
+**This value must never change** — every future release depends on it staying exactly as-is to remain
+upgradeable from everything before it. One transitional gap: upgrading from `v1.0.6` or earlier (which
+used jpackage's undocumented default UUID) to the first release carrying this pinned UUID may still not
+be recognized as an upgrade — from that release onward, all upgrades work correctly.
+
+## Feature 4 — Tidy Wires (Phase 4, in progress 2026-08-07)
+
+New user request: a menu item + toolbar button that re-routes all wiring in the current circuit for
+readability, without moving any components. Upstream has nothing like this.
+
+**Correctness invariant (the one thing that must never break)**: Logisim wire connectivity is
+determined *purely* by exact `Location` equality between a `Wire`'s two endpoints and other
+wires'/components' endpoints (confirmed by reading `CircuitWires.connectWires`/`connectComponents` —
+bundles are unioned only at `wire.e0`/`wire.e1`, nothing tests for a wire passing *through* another
+point). Two routed wire segments crossing in the middle, with neither having a vertex exactly there,
+are therefore **not** electrically connected — this is the normal "crossing ≠ connected" schematic
+convention, not a bug to work around. The only way this feature could silently corrupt a circuit's
+logic is by placing a new wire's *endpoint* exactly on a `Location` that shouldn't be part of that net.
+Avoiding *visual* crossings/overlaps is purely a readability nicety, not a safety requirement.
+
+**Net extraction**: deliberately does NOT reuse `CircuitWires`' internal `Connectivity`/`WireBundle`
+machinery (that's entangled with `CircuitState`/simulation timing concerns — unnecessary coupling for
+a purely geometric operation). Instead, a standalone union-find keyed by `Location`: union each
+`Wire`'s two endpoints; every component's `EndData` locations (all of them, not just outputs — unlike
+`CircuitWires.connectComponents`, which skips `INPUT_ONLY` ends for its own simulation-specific
+reasons that don't apply here) are terminals. Each union-find group with 2+ terminal locations is a net
+that needs re-wiring; groups with 0–1 terminals are skipped (nothing to connect). This intentionally
+does not special-case Splitters (each port is just another `EndData` location, handled generically),
+Tunnels, or pull resistors (neither has a drawable wire to begin with, so there's nothing for this
+feature to touch there either way).
+
+**Routing algorithm**, per net: (1) compute a rectilinear minimum spanning tree over the net's
+terminals (Manhattan distance) as an approximation of the optimal Steiner tree — standard, tractable
+heuristic; (2) for each MST edge, grid-based pathfind (BFS/A*, one grid unit = 10px cells) an orthogonal
+route between the two terminals, treating other components' bounding boxes as hard obstacles and other
+components' pin locations as soft-avoid (so a routed wire never visually passes exactly over an
+unrelated pin, even though doing so wouldn't be electrically wrong per the invariant above — avoiding
+it anyway keeps the result from being *misleading* to read); (3) if pathfinding genuinely fails to find
+a route (should be rare given the search space), fall back to a direct L-shaped connection — a net must
+never end up with an unconnected terminal after this runs, that would be a correctness regression, not
+just an ugly one.
+
+**Execution**: removes every `Wire` in the circuit and adds all newly-routed segments as ONE
+`CircuitMutation`/`proj.doAction(...)` — a single Ctrl+Z undoes the whole re-route. Guarded by the same
+"can this circuit be modified" check other tools use. Confirmed with user: whole circuit at once (no
+per-selection scoping for v1), and a confirmation dialog before running (states the scope, cancelable).
+
+**UI placement**: `MenuProject` (`gui/menu/MenuProject.java`), grouped with the existing
+`analyze`/`stats` items (both are already "whole current circuit" tools) — plus a matching toolbar
+button on the layout toolbar (`gui/main/LayoutToolbarModel.java`).
+
+Key files (new): a new class for the net/route computation (e.g.
+`src/main/java/com/cburch/logisim/circuit/WireTidier.java` or similar under `tools`/`circuit`) —
+exact placement TBD by whoever implements it, no existing file is an obvious fit. Touches
+`MenuProject.java`, `LayoutToolbarModel.java`, plus new string keys.
+
 ## Workflow for each phase
 
 1. **Product manager** turns the phase scope above into a concrete task list with acceptance criteria.
