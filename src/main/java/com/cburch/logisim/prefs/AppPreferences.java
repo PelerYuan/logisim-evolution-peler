@@ -628,6 +628,11 @@ public class AppPreferences {
   // (shown by QuickRotateTool the first time it actually rotates a component) has been shown.
   public static final PrefMonitor<Boolean> SHOWN_QUICK_ROTATE_HINT =
       create(new PrefMonitorBoolean("shownQuickRotateHint", false));
+  // Peler Edition Feature 3: whether WiringTool should snap a wire endpoint to the nearest
+  // component pin when the cursor is within WiringTool.PIN_SNAP_RADIUS of one, instead of only
+  // snapping to the drawing grid. Opt-out, defaults on.
+  public static final PrefMonitor<Boolean> WIRE_AUTO_SNAP =
+      create(new PrefMonitorBoolean("wireAutoSnap", true));
   public static final PrefMonitor<String> DefaultAppearance =
       create(
           new PrefMonitorStringOpts(

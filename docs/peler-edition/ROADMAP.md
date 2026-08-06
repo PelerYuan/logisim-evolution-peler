@@ -64,6 +64,17 @@ dense circuits. Deferred to Phase 2 — highest complexity of the three, touches
 
 Key files: `src/main/java/com/cburch/logisim/tools/WiringTool.java`.
 
+**Implemented (2026-08-07)**: `WiringTool.snapToPinOrGrid` runs before every grid-snap call (mouseMoved/
+mousePressed/mouseDragged/mouseReleased). Broad-phase: only components whose bounds (expanded by
+`PIN_SNAP_RADIUS` = 10px, one grid unit) contain the raw cursor are considered; among their pins
+(`Component.getEnds()`), the globally nearest one is picked and only accepted if it's actually within
+`PIN_SNAP_RADIUS` — this is a direct generalization of the "which half is the cursor in" zoning
+originally described: nearest-pin-by-distance reproduces exactly that split for the common 2-pins-on-
+one-side case, and generalizes cleanly to more pins / other layouts. No hit → unchanged grid-snap,
+byte-for-byte. Gated by `AppPreferences.WIRE_AUTO_SNAP` (opt-out, defaults on). Visual feedback: a small
+green ring is drawn at the snapped pin (`WiringTool.draw`) whenever one is active, so a snap is never
+silent. Wire endpoints themselves are not snap targets, only component pins, per the original request.
+
 ## Phasing
 
 | Phase | Scope | Risk |
