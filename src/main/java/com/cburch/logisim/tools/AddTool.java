@@ -88,6 +88,7 @@ public class AddTool extends Tool implements Transferable, PropertyChangeListene
   private Action lastAddition;
   private boolean keyHandlerTried;
   private boolean matrixPlace = false;
+  private boolean stickyPlace = false;
   private KeyConfigurator keyHandler;
   private final AutoLabel autoLabeler = new AutoLabel();
 
@@ -162,9 +163,29 @@ public class AddTool extends Tool implements Transferable, PropertyChangeListene
     bounds = null;
     lastAddition = null;
     matrixPlace = false;
+    stickyPlace = false;
+  }
+
+  /**
+   * Setter used by {@code ToolboxManip} (package {@code com.cburch.logisim.gui.main}) to arm
+   * "sticky" (continuous) placement mode when a palette component is double-clicked. While
+   * sticky, {@link #determineNext} keeps this tool active after every placement, regardless of
+   * {@link AppPreferences#ADD_AFTER}.
+   *
+   * <p>NOTE: the roadmap task described this as "package-visible", but the caller
+   * ({@code ToolboxManip}) lives in {@code com.cburch.logisim.gui.main}, a different package from
+   * {@code com.cburch.logisim.tools} — a package-private method would not be reachable from
+   * there, so this is {@code public} instead.
+   */
+  public void setStickyPlace(boolean value) {
+    stickyPlace = value;
   }
 
   private Tool determineNext(Project proj) {
+    if (stickyPlace) {
+      // Continuous placement mode: stay on this tool until Enter/Esc/right-click stops it.
+      return null;
+    }
     final var afterAdd = AppPreferences.ADD_AFTER.get();
     if (afterAdd.equals(AppPreferences.ADD_AFTER_UNCHANGED)) {
       return null;
@@ -397,6 +418,20 @@ public class AddTool extends Tool implements Transferable, PropertyChangeListene
               setFacing(canvas, Direction.NORTH);
             }
           } else if (code == KeyEvent.VK_ESCAPE) {
+            stickyPlace = false;
+            final var proj = canvas.getProject();
+            final var base = proj.getLogisimFile().getLibrary(BaseLibrary._ID);
+            final var next = (base == null) ? null : base.getTool(EditTool._ID);
+            if (next != null) {
+              proj.setTool(next);
+              final var act = SelectionActions.dropAll(canvas.getSelection());
+              if (act != null) {
+                proj.doAction(act);
+              }
+            }
+          } else if (code == KeyEvent.VK_ENTER) {
+            // Mirrors the VK_ESCAPE branch above: Enter also stops sticky placement mode.
+            stickyPlace = false;
             final var proj = canvas.getProject();
             final var base = proj.getLogisimFile().getLibrary(BaseLibrary._ID);
             final var next = (base == null) ? null : base.getTool(EditTool._ID);
@@ -408,6 +443,9 @@ public class AddTool extends Tool implements Transferable, PropertyChangeListene
               }
             }
           } else if (code == KeyEvent.VK_BACK_SPACE) {
+            // Sticky placement mode is intentionally NOT cleared here: Backspace only undoes the
+            // last placed component and must not stop continuous-placement mode (see
+            // docs/peler-edition/ROADMAP.md, confirmed decision).
             if (lastAddition != null && canvas.getProject().getLastAction() == lastAddition) {
               canvas.getProject().undoAction();
               lastAddition = null;
