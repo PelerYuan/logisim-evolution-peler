@@ -771,6 +771,10 @@ public class AppPreferences {
       create(new PrefMonitorBoolean("namedBoxesFixed", true));
   public static final PrefMonitor<Boolean> KMAP_LINED_STYLE =
       create(new PrefMonitorBoolean("KmapLinedStyle", false));
+  // Peler Edition: whether the one-time "right-click menu moved to Ctrl+Left-click" hint
+  // (shown by QuickRotateTool the first time it actually rotates a component) has been shown.
+  public static final PrefMonitor<Boolean> SHOWN_QUICK_ROTATE_HINT =
+      create(new PrefMonitorBoolean("shownQuickRotateHint", false));
   public static final PrefMonitor<String> DefaultAppearance =
       create(
           new PrefMonitorStringOpts(

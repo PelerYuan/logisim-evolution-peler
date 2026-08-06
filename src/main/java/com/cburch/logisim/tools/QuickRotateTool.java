@@ -18,6 +18,7 @@ import com.cburch.logisim.comp.ComponentDrawContext;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.gui.main.Canvas;
 import com.cburch.logisim.instance.StdAttr;
+import com.cburch.logisim.prefs.AppPreferences;
 import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.event.MouseEvent;
@@ -37,6 +38,15 @@ public class QuickRotateTool extends Tool {
    * <p>Identifier value must MUST be unique string among all tools.
    */
   public static final String _ID = "Quick Rotate Tool";
+
+  /**
+   * Color for the one-time hint message (Task 6). {@code canvas.setErrorMessage} is not
+   * exclusively for errors despite its name -- {@code SelectTool} already uses it for a
+   * non-error transient "computing..." status message with a custom (non-red) color, which is
+   * the same mechanism reused here; passing a non-default color is what keeps it from reading as
+   * an error.
+   */
+  private static final Color HINT_COLOR = new Color(64, 96, 192);
 
   public QuickRotateTool() {}
 
@@ -93,7 +103,13 @@ public class QuickRotateTool extends Tool {
     xn.set(comp, StdAttr.FACING, facing.getRight());
     proj.doAction(
         xn.toAction(S.getter("rotateComponentAction", comp.getFactory().getDisplayGetter())));
-    // Task 6 (separate commit) adds a one-time hint here the first time a rotate succeeds.
+
+    if (!AppPreferences.SHOWN_QUICK_ROTATE_HINT.getBoolean()) {
+      // Fire-and-forget: the rotate above has already happened, so this never blocks or delays
+      // it. Shown at most once ever, persisted via the preference.
+      canvas.setErrorMessage(S.getter("quickRotateHint"), HINT_COLOR);
+      AppPreferences.SHOWN_QUICK_ROTATE_HINT.setBoolean(true);
+    }
   }
 
   @Override
