@@ -181,6 +181,42 @@ public class AddTool extends Tool implements Transferable, PropertyChangeListene
     stickyPlace = value;
   }
 
+  /**
+   * Unconditionally exits placement mode: clears sticky placement and switches to the Edit Tool,
+   * dropping the current selection. Shared by the Esc/Enter key handling below.
+   */
+  private void exitToEditTool(Canvas canvas) {
+    stickyPlace = false;
+    final var proj = canvas.getProject();
+    final var base = proj.getLogisimFile().getLibrary(BaseLibrary._ID);
+    final var next = (base == null) ? null : base.getTool(EditTool._ID);
+    if (next != null) {
+      proj.setTool(next);
+      final var act = SelectionActions.dropAll(canvas.getSelection());
+      if (act != null) {
+        proj.doAction(act);
+      }
+    }
+  }
+
+  /**
+   * Called by {@link QuickRotateTool} when a right-click arrives while this tool is active: a
+   * right-click during continuous (sticky) placement means "stop placing", not "rotate whatever
+   * is under the cursor". Relying on Canvas's generic dragTool/tempTool swap-and-restore to stop
+   * sticky mode does NOT work -- that mechanism restores this same tool instance right after
+   * (via {@code select()}, which doesn't touch stickyPlace), so the placement UI stays fully
+   * active with no visible change. This method performs the same real exit Esc/Enter do.
+   *
+   * @return true if sticky placement was active and this call stopped it (caller should treat the
+   *     right-click as consumed, not also perform its own action); false if sticky mode wasn't
+   *     active (caller should proceed with its normal behavior).
+   */
+  public boolean stopStickyPlacement(Canvas canvas) {
+    if (!stickyPlace) return false;
+    exitToEditTool(canvas);
+    return true;
+  }
+
   private Tool determineNext(Project proj) {
     if (stickyPlace) {
       // Continuous placement mode: stay on this tool until Enter/Esc/right-click stops it.
@@ -418,30 +454,10 @@ public class AddTool extends Tool implements Transferable, PropertyChangeListene
               setFacing(canvas, Direction.NORTH);
             }
           } else if (code == KeyEvent.VK_ESCAPE) {
-            stickyPlace = false;
-            final var proj = canvas.getProject();
-            final var base = proj.getLogisimFile().getLibrary(BaseLibrary._ID);
-            final var next = (base == null) ? null : base.getTool(EditTool._ID);
-            if (next != null) {
-              proj.setTool(next);
-              final var act = SelectionActions.dropAll(canvas.getSelection());
-              if (act != null) {
-                proj.doAction(act);
-              }
-            }
+            exitToEditTool(canvas);
           } else if (code == KeyEvent.VK_ENTER) {
             // Mirrors the VK_ESCAPE branch above: Enter also stops sticky placement mode.
-            stickyPlace = false;
-            final var proj = canvas.getProject();
-            final var base = proj.getLogisimFile().getLibrary(BaseLibrary._ID);
-            final var next = (base == null) ? null : base.getTool(EditTool._ID);
-            if (next != null) {
-              proj.setTool(next);
-              final var act = SelectionActions.dropAll(canvas.getSelection());
-              if (act != null) {
-                proj.doAction(act);
-              }
-            }
+            exitToEditTool(canvas);
           } else if (code == KeyEvent.VK_BACK_SPACE) {
             // Sticky placement mode is intentionally NOT cleared here: Backspace only undoes the
             // last placed component and must not stop continuous-placement mode (see
