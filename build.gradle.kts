@@ -64,6 +64,7 @@ dependencies {
 val APP_DIR_NAME = "appDirName"
 val APP_VERSION = "appVersion"
 val APP_VERSION_SHORT = "appVersionShort"
+val PELER_APP_VERSION = "pelerAppVersion"
 val APP_URL = "appUrl"
 val BUILD_DIR = "buildDir"
 val JDEPS = "jdeps"
@@ -107,6 +108,25 @@ extra.apply {
   val appVersionShort = (project.version as String).split('-')[0]
   set(APP_VERSION_SHORT, appVersionShort)
   logger.info("appVersionShort: ${appVersionShort}")
+
+  // Peler Edition: optional override for the Windows package version (MSI/exe/zip), passed by
+  // release.yml as `-PpelerAppVersion=<peler build version>` so a released installer carries a
+  // distinct, independently-incrementing Peler Edition version number instead of always showing
+  // upstream's "4.2.0" base (which never changes between our releases). Falls back to the normal
+  // short app version for ordinary/local builds that don't pass the override.
+  //
+  // Deliberately NOT the same value as project.version/BuildInfo.version above: those must keep
+  // tracking the real upstream version, since BuildInfo.version feeds .circ file-format
+  // compatibility logic in XmlReader/XmlWriter (default-attribute-value resolution keyed off the
+  // saving version) -- corrupting that with an arbitrary "1.0.x" would silently break old/new
+  // file compatibility handling. This override only ever affects OS package metadata/filenames.
+  val pelerAppVersion = if (project.hasProperty("pelerAppVersion")) {
+    project.property("pelerAppVersion") as String
+  } else {
+    appVersionShort
+  }
+  set(PELER_APP_VERSION, pelerAppVersion)
+  logger.info("pelerAppVersion: ${pelerAppVersion}")
 
   // Architecture used for build
   val osArch = providers.systemProperty("os.arch").get()
@@ -484,9 +504,14 @@ tasks.register("createMsi") {
   val projectName = project.name
   val sharedParams = (ext.get(SHARED_PARAMS) as List<Any?>).filterIsInstance<String>()
   val jdepsFile = ext.get(JDEPS_FILE) as String
-  val outputFile = "${ext.get(TARGET_FILE_PATH_BASE_SHORT) as String}-${osArch}.msi"
   val targetDir = ext.get(TARGET_DIR) as String
-  val version = ext.get(APP_VERSION_SHORT) as String
+  // Peler Edition: PELER_APP_VERSION (not APP_VERSION_SHORT) so a release build's MSI carries our
+  // own incrementing version instead of upstream's unchanging "4.2.0". outputFile is derived from
+  // the SAME `version` used in the rename step below (not TARGET_FILE_PATH_BASE_SHORT, which is
+  // still based on the upstream version) so Gradle's output declaration and verifyFileExists
+  // actually match what gets produced.
+  val version = ext.get(PELER_APP_VERSION) as String
+  val outputFile = "${targetDir}/${projectName}-${version}-${osArch}.msi"
 
   inputs.dir(ext.get(PACKAGE_INPUT_DIR) as String)
   inputs.dir("${supportDir}/windows")
@@ -540,7 +565,8 @@ tasks.register("createExe") {
   val osArch = ext.get(OS_ARCH) as String
   val projectName = project.name
   val dest = "${buildDir}/windows-${osArch}"
-  val version = ext.get(APP_VERSION_SHORT) as String
+  // Peler Edition: see the PELER_APP_VERSION comment in the "Setting up all shared vars" block.
+  val version = ext.get(PELER_APP_VERSION) as String
   val sharedParams = (ext.get(SHARED_PARAMS) as List<Any?>).filterIsInstance<String>()
   val jdepsFile = ext.get(JDEPS_FILE) as String
 
@@ -588,7 +614,8 @@ tasks.register<Zip>("createWindowsPortableZip") {
   from(inputFiles)
 
   val osArch = ext.get(OS_ARCH) as String
-  val version = ext.get(APP_VERSION) as String
+  // Peler Edition: see the PELER_APP_VERSION comment in the "Setting up all shared vars" block.
+  val version = ext.get(PELER_APP_VERSION) as String
   val targetDir = ext.get(TARGET_DIR) as String
   val projectName = project.name
 

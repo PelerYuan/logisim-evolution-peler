@@ -11,6 +11,19 @@ Every change here must be **additive or preference-gated**, never a silent remov
 If a change trades away an existing interaction (see Feature 2), it must be a deliberate, documented
 trade-off with an easy way back, not an accident.
 
+## Peler Edition versioning (added 2026-08-07)
+
+The built Windows package (MSI ProductVersion, MSI/zip filenames) now carries its own version
+number, independent of upstream's `gradle.properties` `version` (which stays untouched at "4.2.0dev"
+and must keep tracking upstream, since `BuildInfo.version` feeds `.circ` file-format compatibility
+logic in `XmlReader`/`XmlWriter` — overwriting it with an arbitrary Peler version would risk silently
+breaking old/new file default-attribute-value resolution). See `PELER_APP_VERSION` in
+`build.gradle.kts` and the "Determine version / release tag" step in `.github/workflows/release.yml`.
+
+Release tags going forward: `v<peler major>.<peler minor>.<peler build number>` (e.g. `v1.0.5`),
+independent of upstream's own version. The historical `v1.0.0-peler.1` through `v1.0.0-peler.4` tags
+predate this and are not being renamed/rebuilt.
+
 ## Confirmed decisions (from user, 2026-08-07)
 
 - **Feature 1 / Backspace**: keep its existing meaning (undo last placed component) even while

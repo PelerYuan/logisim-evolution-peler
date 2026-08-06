@@ -18,7 +18,9 @@ on:
         description: >-
           Release tag to use for a manual run. Ignored when this workflow was triggered by
           pushing a "v*" tag (the pushed tag is used instead). If left blank, defaults to
-          "v<version from gradle.properties>".
+          "v<version from gradle.properties>". Convention: "v<peler major>.<peler minor>.<peler
+          build number>" (e.g. "v1.0.5"), independent of upstream's own version -- this also
+          becomes the built MSI/zip's own version number (see "Determine version / release tag").
         required: false
         default: ""
   push:
@@ -75,20 +77,34 @@ jobs:
           echo "lse_name=${lse_name}" >> "$GITHUB_OUTPUT"
 
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            resolved_tag="${GITHUB_REF_NAME}"
           elif [[ -n "${INPUT_TAG_NAME}" ]]; then
-            echo "tag_name=${INPUT_TAG_NAME}" >> "$GITHUB_OUTPUT"
+            resolved_tag="${INPUT_TAG_NAME}"
           else
-            echo "tag_name=v${version_prop}" >> "$GITHUB_OUTPUT"
+            resolved_tag="v${version_prop}"
           fi
+          echo "tag_name=${resolved_tag}" >> "$GITHUB_OUTPUT"
 
-      # Same Gradle task nightly.yml's build_windows job uses.
+          # Peler Edition: the Windows package's own version (MSI ProductVersion + MSI/zip
+          # filenames, via `-PpelerAppVersion` below), independent of upstream's version in
+          # gradle.properties (which never changes between our releases, so it's useless for
+          # telling one of our builds apart from another -- see the PELER_APP_VERSION comment in
+          # build.gradle.kts). Derived from the release tag: strip the leading "v" and anything
+          # from the first "-"/"+" onward, since MSI ProductVersion must be pure numeric x.y.z.
+          # Convention going forward: tag releases "v<peler major>.<peler minor>.<peler build
+          # number>" (e.g. "v1.0.5"), independent of upstream's own version number.
+          declare -r peler_version=$(echo "${resolved_tag}" | sed -E 's/^v//; s/[-+].*$//')
+          echo "peler_version=${peler_version}" >> "$GITHUB_OUTPUT"
+
+      # Same Gradle task nightly.yml's build_windows job uses, plus `-PpelerAppVersion` so the MSI
+      # carries our own release version instead of upstream's unchanging "4.2.0" base (see the
+      # PELER_APP_VERSION comment in build.gradle.kts).
       - name: "Build MSI"
-        run: .\gradlew.bat createMsi -x checkstyleMain -x checkstyleTest
+        run: .\gradlew.bat createMsi -PpelerAppVersion=${{ steps.info.outputs.peler_version }} -x checkstyleMain -x checkstyleTest
 
-      # Same Gradle task nightly.yml's build_windows job uses.
+      # Same Gradle task nightly.yml's build_windows job uses, plus `-PpelerAppVersion` (see above).
       - name: "Build self-contained archive for Windows"
-        run: .\gradlew.bat createWindowsPortableZip -x checkstyleMain -x checkstyleTest
+        run: .\gradlew.bat createWindowsPortableZip -PpelerAppVersion=${{ steps.info.outputs.peler_version }} -x checkstyleMain -x checkstyleTest
 
       - name: "Publish GitHub Release"
         uses: softprops/action-gh-release@v2
@@ -96,5 +112,5 @@ jobs:
           tag_name: ${{ steps.info.outputs.tag_name }}
           name: ${{ steps.info.outputs.tag_name }}
           files: |
-            build/dist/${{ steps.info.outputs.lse_name }}-${{ steps.info.outputs.lse_version_short }}-amd64.msi
-            build/dist/${{ steps.info.outputs.lse_name }}-${{ steps.info.outputs.lse_version }}-windows-amd64.zip
+            build/dist/${{ steps.info.outputs.lse_name }}-${{ steps.info.outputs.peler_version }}-amd64.msi
+            build/dist/${{ steps.info.outputs.lse_name }}-${{ steps.info.outputs.peler_version }}-windows-amd64.zip
