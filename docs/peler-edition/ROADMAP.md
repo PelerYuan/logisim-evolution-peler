@@ -187,13 +187,17 @@ just an ugly one.
 per-selection scoping for v1), and a confirmation dialog before running (states the scope, cancelable).
 
 **UI placement**: `MenuProject` (`gui/menu/MenuProject.java`), grouped with the existing
-`analyze`/`stats` items (both are already "whole current circuit" tools) — plus a matching toolbar
-button on the layout toolbar (`gui/main/LayoutToolbarModel.java`).
+`analyze`/`stats` items (both are already "whole current circuit" tools) — plus a matching
+toolbar button.
 
-Key files (new): a new class for the net/route computation (e.g.
-`src/main/java/com/cburch/logisim/circuit/WireTidier.java` or similar under `tools`/`circuit`) —
-exact placement TBD by whoever implements it, no existing file is an obvious fit. Touches
-`MenuProject.java`, `LayoutToolbarModel.java`, plus new string keys.
+**Implemented (2026-08-07)**: net/route computation lives in
+`src/main/java/com/cburch/logisim/circuit/WireTidier.java` (union-find net extraction, rectilinear
+MST, A* grid routing with an explicit cross-net/foreign-pin bend-safety check — see its own class
+Javadoc). `src/main/java/com/cburch/logisim/tools/TidyWiresTool.java` is the UI glue (confirm
+dialog, `Tool` wrapper). The toolbar button did **not** end up touching `LayoutToolbarModel.java`
+as originally planned above — that class only renders whatever `default.templ`'s `<toolbar>`
+section lists, so adding `Tidy Wires Tool` there was sufficient on its own (same data-driven
+mechanism the existing Poke/Edit/Wiring/Text tool buttons already use).
 
 ## Workflow for each phase
 

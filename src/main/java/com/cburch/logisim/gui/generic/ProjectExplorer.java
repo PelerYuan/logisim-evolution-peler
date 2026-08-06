@@ -377,6 +377,7 @@ public class ProjectExplorer extends JTree implements LocaleListener {
 
     private TreePath lastPressPath = null;
     private long lastPressTimeMillis = 0;
+    private int lastPressButton = -1;
 
     private static int getMultiClickIntervalMillis() {
       final var value = Toolkit.getDefaultToolkit().getDesktopProperty("awt.multiClickInterval");
@@ -395,17 +396,20 @@ public class ProjectExplorer extends JTree implements LocaleListener {
       final var now = System.currentTimeMillis();
       if (path != null
           && path.equals(lastPressPath)
+          && e.getButton() == lastPressButton
           && (now - lastPressTimeMillis) <= getMultiClickIntervalMillis()) {
         // Reset rather than leaving lastPressPath set, so a third quick click starts a fresh
         // sequence instead of firing doubleClicked() again immediately.
         lastPressPath = null;
         lastPressTimeMillis = 0;
+        lastPressButton = -1;
         if (listener != null) {
           listener.doubleClicked(new Event(path));
         }
       } else {
         lastPressPath = path;
         lastPressTimeMillis = now;
+        lastPressButton = e.getButton();
       }
     }
 
