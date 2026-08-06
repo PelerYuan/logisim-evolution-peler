@@ -48,6 +48,11 @@ public class WiringTool extends Tool {
   private static final int HORIZONTAL = 1;
   private static final int VERTICAL = 2;
 
+  // Peler Edition Feature 3: max distance (pixels) from a component pin at which a wire endpoint
+  // snaps to that pin instead of the drawing grid. One grid unit, same as the grid itself, so a
+  // near-miss click still lands cleanly on a pin rather than an adjacent empty grid point.
+  private static final int PIN_SNAP_RADIUS = 10;
+
   private boolean exists = false;
   private boolean inCanvas = false;
   private Location start = Location.create(0, 0, true);
@@ -57,6 +62,9 @@ public class WiringTool extends Tool {
   private Wire shortening = null;
   private Action lastAction = null;
   private int direction = 0;
+  // Peler Edition Feature 3: the pin the cursor is currently snapped to, if any -- drawn as a
+  // hover highlight in draw() so snapping to a pin is never silent/surprising.
+  private Location snappedPin = null;
 
   public WiringTool() {
     super.select(null);
@@ -138,6 +146,16 @@ public class WiringTool extends Tool {
       g.setColor(Color.GRAY);
       g.fillOval(cur.getX() - 2, cur.getY() - 2, 5, 5);
     }
+    // Peler Edition Feature 3: highlight the pin a wire endpoint is currently snapped to, drawn
+    // regardless of whether a wire is mid-drag, so snapping is always visible before you commit.
+    if (snappedPin != null && inCanvas) {
+      final var oldColor = g.getColor();
+      g.setColor(new Color(0, 170, 0));
+      GraphicsUtil.switchToWidth(g, 2);
+      g.drawOval(snappedPin.getX() - 4, snappedPin.getY() - 4, 8, 8);
+      g.setColor(oldColor);
+      GraphicsUtil.switchToWidth(g, 1);
+    }
   }
 
   @Override
@@ -201,7 +219,7 @@ public class WiringTool extends Tool {
   @Override
   public void mouseDragged(Canvas canvas, Graphics g, MouseEvent e) {
     if (exists) {
-      Canvas.snapToGrid(e);
+      snapToPinOrGrid(canvas, e);
       int curX = e.getX();
       int curY = e.getY();
       if (!computeMove(curX, curY)) return;
@@ -248,6 +266,7 @@ public class WiringTool extends Tool {
   @Override
   public void mouseExited(Canvas canvas, Graphics g, MouseEvent e) {
     inCanvas = false;
+    snappedPin = null;
     canvas.getProject().repaintCanvas();
   }
 
@@ -256,7 +275,7 @@ public class WiringTool extends Tool {
     if (exists) {
       exists = false;
     } else {
-      Canvas.snapToGrid(e);
+      snapToPinOrGrid(canvas, e);
       inCanvas = true;
       final var curX = e.getX();
       final var curY = e.getY();
@@ -275,7 +294,7 @@ public class WiringTool extends Tool {
       return;
     }
     
-    Canvas.snapToGrid(e);
+    snapToPinOrGrid(canvas, e);
     start = Location.create(e.getX(), e.getY(), true);
     cur = start;
     exists = true;
@@ -291,7 +310,7 @@ public class WiringTool extends Tool {
   public void mouseReleased(Canvas canvas, Graphics g, MouseEvent e) {
     if (!exists) return;
 
-    Canvas.snapToGrid(e);
+    snapToPinOrGrid(canvas, e);
     final var curX = e.getX();
     final var curY = e.getY();
     if (computeMove(curX, curY)) {
@@ -380,6 +399,55 @@ public class WiringTool extends Tool {
     startShortening = false;
     shortening = null;
     direction = 0;
+    snappedPin = null;
+  }
+
+  /**
+   * Peler Edition Feature 3: snaps {@code e} to the nearest component pin within
+   * {@link #PIN_SNAP_RADIUS} pixels, if {@link AppPreferences#WIRE_AUTO_SNAP} is on and one
+   * exists; otherwise falls back to the normal drawing-grid snap. Updates {@link #snappedPin} for
+   * the hover highlight either way.
+   */
+  private void snapToPinOrGrid(Canvas canvas, MouseEvent e) {
+    if (AppPreferences.WIRE_AUTO_SNAP.getBoolean()) {
+      final var pin = findNearestPin(canvas, e.getX(), e.getY());
+      if (pin != null) {
+        e.translatePoint(pin.getX() - e.getX(), pin.getY() - e.getY());
+        snappedPin = pin;
+        return;
+      }
+    }
+    snappedPin = null;
+    Canvas.snapToGrid(e);
+  }
+
+  /**
+   * Finds the closest component pin to raw cursor position {@code (x, y)}, considering only pins
+   * belonging to components whose bounds (expanded by {@link #PIN_SNAP_RADIUS}, a cheap
+   * broad-phase filter) contain the cursor, then only returning it if it's genuinely within
+   * {@link #PIN_SNAP_RADIUS} pixels. Returns {@code null} if nothing qualifies. Wires themselves
+   * are deliberately excluded -- this snaps to component pins specifically, per the original
+   * request (see docs/peler-edition/ROADMAP.md, Feature 3).
+   */
+  private Location findNearestPin(Canvas canvas, int x, int y) {
+    Location best = null;
+    var bestDistSq = Long.MAX_VALUE;
+    for (final var comp : canvas.getCircuit().getNonWires()) {
+      final var bds = comp.getBounds().expand(PIN_SNAP_RADIUS);
+      if (!bds.contains(x, y)) continue;
+      for (final var end : comp.getEnds()) {
+        final var loc = end.getLocation();
+        final long dx = loc.getX() - x;
+        final long dy = loc.getY() - y;
+        final var distSq = dx * dx + dy * dy;
+        if (distSq < bestDistSq) {
+          bestDistSq = distSq;
+          best = loc;
+        }
+      }
+    }
+    final var radiusSq = (long) PIN_SNAP_RADIUS * PIN_SNAP_RADIUS;
+    return (best != null && bestDistSq <= radiusSq) ? best : null;
   }
 
   void resetClick() {
