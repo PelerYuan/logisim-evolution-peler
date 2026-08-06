@@ -15,6 +15,7 @@ import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.CircuitMutation;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentDrawContext;
+import com.cburch.logisim.data.AttributeSet;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.gui.main.Canvas;
 import com.cburch.logisim.instance.StdAttr;
@@ -73,6 +74,17 @@ public class QuickRotateTool extends Tool {
   @Override
   public void mousePressed(Canvas canvas, Graphics g, MouseEvent e) {
     final var proj = canvas.getProject();
+
+    // A right-click while continuous (sticky) placement is active means "stop placing", not
+    // "rotate". Canvas dispatches this mousePressed while the sticky AddTool is still
+    // proj.getTool() (its own temp-swap to this tool happens right after this call returns), so
+    // this check reliably sees the sticky state. See AddTool.stopStickyPlacement's Javadoc for
+    // why this can't be done implicitly via the swap-and-restore mechanism alone.
+    final var curTool = proj.getTool();
+    if (curTool instanceof AddTool addTool && addTool.stopStickyPlacement(canvas)) {
+      return;
+    }
+
     final Circuit circ = canvas.getCircuit();
     if (!proj.getLogisimFile().contains(circ)) {
       // Same "can this circuit be modified" guard used by AddTool/TextTool/WiringTool.
@@ -98,11 +110,37 @@ public class QuickRotateTool extends Tool {
       return;
     }
 
+    final var factory = comp.getFactory();
+    final var oldAttrs = comp.getAttributeSet();
+    final var newAttrs = (AttributeSet) oldAttrs.clone();
+    final var facing = oldAttrs.getValue(StdAttr.FACING);
+    newAttrs.setValue(StdAttr.FACING, facing.getRight());
+
+    // Pivot around the component's visual center rather than upstream's default of leaving the
+    // anchor location untouched (which, for most components, sits at/near a pin rather than the
+    // geometric center -- see docs/peler-edition/ROADMAP.md, Feature 2 follow-up). Both bounds
+    // below are anchor-relative "offset" bounds, so the center delta is anchor-independent; it's
+    // then rounded to the nearest grid point so the component (and its pins) stay grid-aligned.
+    final var oldBounds = factory.getOffsetBounds(oldAttrs);
+    final var newBounds = factory.getOffsetBounds(newAttrs);
+    final var dx = Canvas.snapXToGrid(
+        (oldBounds.getX() + oldBounds.getWidth() / 2)
+            - (newBounds.getX() + newBounds.getWidth() / 2));
+    final var dy = Canvas.snapYToGrid(
+        (oldBounds.getY() + oldBounds.getHeight() / 2)
+            - (newBounds.getY() + newBounds.getHeight() / 2));
+    final var newLoc = comp.getLocation().translate(dx, dy);
+    final var newComp = factory.createComponent(newLoc, newAttrs);
+
+    // A component's location is fixed at construction (no in-place move), so re-pivoting means
+    // replacing it outright -- same pattern WiringTool uses to shorten/replace a Wire in place.
+    // Selection.java listens for CircuitEvent.TRANSACTION_DONE and walks the ReplacementMap, so a
+    // component that was selected before rotating stays correctly selected (as the new instance)
+    // afterward, and CircuitState transfers componentData (RAM/register contents etc.) across the
+    // replace when the factory matches, so simulation state survives a rotate too.
     final var xn = new CircuitMutation(circ);
-    final var facing = comp.getAttributeSet().getValue(StdAttr.FACING);
-    xn.set(comp, StdAttr.FACING, facing.getRight());
-    proj.doAction(
-        xn.toAction(S.getter("rotateComponentAction", comp.getFactory().getDisplayGetter())));
+    xn.replace(comp, newComp);
+    proj.doAction(xn.toAction(S.getter("rotateComponentAction", factory.getDisplayGetter())));
 
     if (!AppPreferences.SHOWN_QUICK_ROTATE_HINT.getBoolean()) {
       // Fire-and-forget: the rotate above has already happened, so this never blocks or delays
