@@ -20,6 +20,7 @@ import com.cburch.logisim.tools.PokeTool;
 import com.cburch.logisim.tools.QuickRotateTool;
 import com.cburch.logisim.tools.SelectTool;
 import com.cburch.logisim.tools.TextTool;
+import com.cburch.logisim.tools.TidyWiresTool;
 import com.cburch.logisim.tools.Tool;
 import com.cburch.logisim.tools.WiringTool;
 import java.util.Arrays;
@@ -49,7 +50,8 @@ public class BaseLibrary extends Library {
             wiring,
             new TextTool(),
             new MenuTool(),
-            new QuickRotateTool());
+            new QuickRotateTool(),
+            new TidyWiresTool());
   }
 
   @Override
