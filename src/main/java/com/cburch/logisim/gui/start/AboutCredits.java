@@ -57,6 +57,13 @@ class AboutCredits extends JComponent {
         .h2(String.format("Copyright \u00A9 2001-%s %s developers", BuildInfo.year, BuildInfo.name))
         .url(BuildInfo.url)
         .space()
+        // Peler Edition: per user instruction (2026-08-07), the About/credits content should
+        // actually say "Peler Edition" rather than relying solely on the build-derived name
+        // string in the title above. Kept as its own section rather than folded into the
+        // existing copyright/URL lines, so upstream's own attribution above is untouched.
+        .h1(S.get("creditsRolePelerEdition"))
+        .tiny(S.get("creditsPelerEditionDesc"))
+        .space()
         .h1(S.get("creditsDevelopedBy"))
         .text("Moshe Berman")
         .text("Theldo Cruz Franqueira")

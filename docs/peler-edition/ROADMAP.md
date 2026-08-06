@@ -106,15 +106,19 @@ derives `--name` (jpackage/MSI/exe), `--win-menu-group`, output artifact filenam
 `BuildInfo.displayName` (window title, see `Frame.java:600`) from, so one change covers package name,
 install path, Start Menu group, and title bar together.
 
-**Deferred to backlog** (do last, per user instruction 2026-08-07): the About dialog / credits screen
-(`About.java`, `AboutCredits.java`) and CLI help banner (`Startup.java`) already pick up the new
-`BuildInfo.name`/`displayName` automatically, but still need a real content pass:
-- `BuildInfo.url` (`build.gradle.kts`, `APP_URL`) still points at the upstream repo — should point at
-  `github.com/PelerYuan/logisim-evolution-peler` once the About page work happens.
-- App icon (`support/jpackage/windows/Logisim-evolution.ico`) is still upstream's icon — worth a distinct
-  icon so the taskbar/Start Menu entry is visually distinguishable from the official install too.
-- About/credits copy should actually say "Peler Edition" somewhere rather than relying solely on the
-  build-derived name string.
+**Backlog** (do last, per user instruction 2026-08-07): the About dialog / credits screen (`About.java`,
+`AboutCredits.java`) and CLI help banner (`Startup.java`) already pick up the new `BuildInfo.name`/
+`displayName` automatically. Status as of 2026-08-07:
+- ✅ `BuildInfo.url` (`gradle.properties` `url`) now points at `github.com/PelerYuan/logisim-evolution-peler`
+  instead of upstream — confirmed all its usages (About credits link, `.circ`/VHDL file header comments,
+  CLI banner, Help menu "website" link, exported project bundle README) are display/comment-only, no
+  compatibility logic depends on it, unlike `version`.
+- ✅ `AboutCredits.java` now has its own "Peler Edition" section (new `creditsRolePelerEdition`/
+  `creditsPelerEditionDesc` keys, English + `zh`) right after the existing title/copyright/URL block,
+  which is left untouched so upstream's own attribution stays intact.
+- ⬜ App icon (`support/jpackage/windows/Logisim-evolution.ico`) is still upstream's icon — worth a
+  distinct icon so the taskbar/Start Menu entry is visually distinguishable from the official install
+  too. Not done: needs an actual art asset, not something worth hand-hacking a placeholder for.
 
 ## Workflow for each phase
 
