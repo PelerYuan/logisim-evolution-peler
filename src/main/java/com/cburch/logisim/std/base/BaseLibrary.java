@@ -17,6 +17,7 @@ import com.cburch.logisim.tools.EditTool;
 import com.cburch.logisim.tools.Library;
 import com.cburch.logisim.tools.MenuTool;
 import com.cburch.logisim.tools.PokeTool;
+import com.cburch.logisim.tools.QuickRotateTool;
 import com.cburch.logisim.tools.SelectTool;
 import com.cburch.logisim.tools.TextTool;
 import com.cburch.logisim.tools.Tool;
@@ -47,7 +48,8 @@ public class BaseLibrary extends Library {
             new EditTool(selectTool, wiring),
             wiring,
             new TextTool(),
-            new MenuTool());
+            new MenuTool(),
+            new QuickRotateTool());
   }
 
   @Override
