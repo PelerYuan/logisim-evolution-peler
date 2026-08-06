@@ -1,0 +1,100 @@
+#
+# Logisim-evolution Windows release builder (Peler Edition)
+#
+# Manually triggered (workflow_dispatch), or triggered by pushing a tag matching "v*".
+# Builds the Windows MSI installer and the portable ZIP archive using the same Gradle
+# tasks nightly.yml's "build_windows" job uses, then publishes them as a GitHub Release.
+#
+# This workflow intentionally does NOT touch nightly.yml and does not run on ordinary
+# pushes or pull requests.
+#
+
+name: "Release (Windows)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: >-
+          Release tag to use for a manual run. Ignored when this workflow was triggered by
+          pushing a "v*" tag (the pushed tag is used instead). If left blank, defaults to
+          "v<version from gradle.properties>".
+        required: false
+        default: ""
+  push:
+    tags:
+      - "v*"
+
+env:
+  JDK_VERSION: 21
+  JDK_DISTRO: 'temurin'
+
+# Narrowly scoped to this workflow only - nightly.yml and other workflows are untouched
+# and keep their own (more restrictive) default permissions.
+permissions:
+  contents: write
+
+jobs:
+  build_windows_release:
+    name: "Windows build + GitHub Release"
+    runs-on: windows-latest
+
+    steps:
+      # https://github.com/marketplace/actions/checkout
+      - name: "Checkout sources"
+        uses: actions/checkout@v7
+
+      - name: Set up JDK ${{ env.JDK_VERSION }} ${{ env.JDK_DISTRO }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ env.JDK_VERSION }}
+          distribution: ${{ env.JDK_DISTRO }}
+
+      # Same version-string parsing nightly.yml's "git_check" job uses, plus resolving the
+      # tag to publish the release under.
+      - name: "Determine version / release tag"
+        id: info
+        shell: bash
+        env:
+          INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
+        run: |
+          # Have no mercy.
+          set -euo pipefail
+
+          declare -r version_prop=$(grep '^version\s*=.*' gradle.properties | awk '{print $3}')
+
+          # Remove "-" (if present) from version string (mirrors nightly.yml).
+          declare -r lse_version=$(echo "${version_prop}" | awk '{gsub("-","", $0); print}')
+          echo "lse_version=${lse_version}" >> "$GITHUB_OUTPUT"
+
+          # Version string with suffix stripped (mirrors nightly.yml).
+          declare -r lse_version_short=$(echo "${version_prop}" | awk '{ split($0, v, "-")} {print v[1]}')
+          echo "lse_version_short=${lse_version_short}" >> "$GITHUB_OUTPUT"
+
+          declare -r lse_name="$(grep -F name gradle.properties | awk '{print $3}')"
+          echo "lse_name=${lse_name}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "tag_name=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${INPUT_TAG_NAME}" ]]; then
+            echo "tag_name=${INPUT_TAG_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag_name=v${version_prop}" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Same Gradle task nightly.yml's build_windows job uses.
+      - name: "Build MSI"
+        run: .\gradlew.bat createMsi -x checkstyleMain -x checkstyleTest
+
+      # Same Gradle task nightly.yml's build_windows job uses.
+      - name: "Build self-contained archive for Windows"
+        run: .\gradlew.bat createWindowsPortableZip -x checkstyleMain -x checkstyleTest
+
+      - name: "Publish GitHub Release"
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.info.outputs.tag_name }}
+          name: ${{ steps.info.outputs.tag_name }}
+          files: |
+            build/dist/${{ steps.info.outputs.lse_name }}-${{ steps.info.outputs.lse_version_short }}-amd64.msi
+            build/dist/${{ steps.info.outputs.lse_name }}-${{ steps.info.outputs.lse_version }}-windows-amd64.zip
