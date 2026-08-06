@@ -49,9 +49,11 @@ public class WiringTool extends Tool {
   private static final int VERTICAL = 2;
 
   // Peler Edition Feature 3: max distance (pixels) from a component pin at which a wire endpoint
-  // snaps to that pin instead of the drawing grid. One grid unit, same as the grid itself, so a
-  // near-miss click still lands cleanly on a pin rather than an adjacent empty grid point.
-  private static final int PIN_SNAP_RADIUS = 10;
+  // snaps to that pin instead of the drawing grid. Two grid units: verified hands-on (2026-08-07)
+  // that one grid unit (10px) technically worked but felt too tight to be noticeable/useful in
+  // practice -- widened so the snap actually feels "magnetic" rather than requiring the cursor to
+  // already be almost exactly on the pin.
+  private static final int PIN_SNAP_RADIUS = 20;
 
   private boolean exists = false;
   private boolean inCanvas = false;
@@ -148,11 +150,17 @@ public class WiringTool extends Tool {
     }
     // Peler Edition Feature 3: highlight the pin a wire endpoint is currently snapped to, drawn
     // regardless of whether a wire is mid-drag, so snapping is always visible before you commit.
+    // Sized/weighted (2026-08-07, after hands-on testing) to actually catch the eye rather than
+    // blend into the grid dots -- a soft outer halo plus a bold ring, not just a thin 8px circle.
     if (snappedPin != null && inCanvas) {
       final var oldColor = g.getColor();
+      final var x = snappedPin.getX();
+      final var y = snappedPin.getY();
+      g.setColor(new Color(0, 200, 0, 60));
+      g.fillOval(x - 9, y - 9, 18, 18);
       g.setColor(new Color(0, 170, 0));
-      GraphicsUtil.switchToWidth(g, 2);
-      g.drawOval(snappedPin.getX() - 4, snappedPin.getY() - 4, 8, 8);
+      GraphicsUtil.switchToWidth(g, 3);
+      g.drawOval(x - 6, y - 6, 12, 12);
       g.setColor(oldColor);
       GraphicsUtil.switchToWidth(g, 1);
     }
