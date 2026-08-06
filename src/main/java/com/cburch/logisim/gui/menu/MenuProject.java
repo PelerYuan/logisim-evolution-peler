@@ -11,8 +11,10 @@ package com.cburch.logisim.gui.menu;
 
 import static com.cburch.logisim.gui.Strings.S;
 
+import com.cburch.logisim.gui.generic.OptionPane;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.prefs.PrefMonitorKeyStroke;
+import com.cburch.logisim.tools.TidyWiresTool;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import javax.swing.JMenu;
@@ -42,6 +44,11 @@ class MenuProject extends Menu {
       new MenuItemImpl(this, LogisimMenuBar.TOGGLE_APPEARANCE);
   private final MenuItemImpl analyze = new MenuItemImpl(this, LogisimMenuBar.ANALYZE_CIRCUIT);
   private final MenuItemImpl stats = new MenuItemImpl(this, LogisimMenuBar.CIRCUIT_STATS);
+  // Peler Edition Feature 4: plain JMenuItem + MyListener dispatch, same simpler pattern already
+  // used below for `options` -- NOT the LogisimMenuBar.ANALYZE_CIRCUIT-style MenuItemImpl/registry
+  // mechanism (that's a bigger, more invasive extensibility mechanism meant for core app menu
+  // items). See docs/peler-edition/ROADMAP.md, Feature 4.
+  private final JMenuItem tidyWires = new JMenuItem();
   private final JMenuItem options = new JMenuItem();
 
   MenuProject(LogisimMenuBar menubar) {
@@ -70,6 +77,7 @@ class MenuProject extends Menu {
     menubar.registerItem(LogisimMenuBar.TOGGLE_APPEARANCE, toggleLayoutAppearance);
     menubar.registerItem(LogisimMenuBar.ANALYZE_CIRCUIT, analyze);
     menubar.registerItem(LogisimMenuBar.CIRCUIT_STATS, stats);
+    tidyWires.addActionListener(myListener);
     options.addActionListener(myListener);
 
     loadLibrary.add(loadBuiltin);
@@ -96,6 +104,7 @@ class MenuProject extends Menu {
     addSeparator();
     add(analyze);
     add(stats);
+    add(tidyWires);
     addSeparator();
     add(options);
 
@@ -155,6 +164,7 @@ class MenuProject extends Menu {
     toggleLayoutAppearance.setText(S.get("projectToggleCircuitAppearanceItem"));
     analyze.setText(S.get("projectAnalyzeCircuitItem"));
     stats.setText(S.get("projectGetCircuitStatisticsItem"));
+    tidyWires.setText(S.get("tidyWiresMenuItem"));
     options.setText(S.get("projectOptionsItem"));
   }
 
@@ -174,6 +184,18 @@ class MenuProject extends Menu {
         ProjectLibraryActions.doLoadJarLibrary(proj);
       } else if (src == unload) {
         ProjectLibraryActions.doUnloadLibraries(proj);
+      } else if (src == tidyWires) {
+        final var circ = proj.getCurrentCircuit();
+        if (proj.getLogisimFile().contains(circ)) {
+          TidyWiresTool.confirmAndTidy(proj, circ, proj.getFrame());
+        } else {
+          // Same "can this circuit be modified" guard AddTool/WiringTool/QuickRotateTool/
+          // TidyWiresTool.select() all use. "cannotModifyError" lives in the tools string bundle
+          // (com.cburch.logisim.tools.Strings), not this file's gui bundle -- reusing the
+          // existing key there rather than duplicating it into gui.properties too.
+          OptionPane.showMessageDialog(
+              proj.getFrame(), com.cburch.logisim.tools.Strings.S.get("cannotModifyError"));
+        }
       } else if (src == options) {
         proj.getOptionsFrame().setVisible(true);
       }
