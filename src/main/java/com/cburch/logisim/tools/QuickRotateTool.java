@@ -1,0 +1,112 @@
+/*
+ * Logisim-evolution - digital logic design tool and simulator
+ * Copyright by the Logisim-evolution developers
+ *
+ * https://github.com/logisim-evolution/
+ *
+ * This is free software released under GNU GPLv3 license
+ */
+
+package com.cburch.logisim.tools;
+
+import static com.cburch.logisim.tools.Strings.S;
+
+import com.cburch.logisim.circuit.Circuit;
+import com.cburch.logisim.circuit.CircuitMutation;
+import com.cburch.logisim.comp.Component;
+import com.cburch.logisim.comp.ComponentDrawContext;
+import com.cburch.logisim.data.Location;
+import com.cburch.logisim.gui.main.Canvas;
+import com.cburch.logisim.instance.StdAttr;
+import java.awt.Color;
+import java.awt.Graphics;
+import java.awt.event.MouseEvent;
+
+/**
+ * Peler Edition Feature 2: rotates the component under the cursor 90&deg; clockwise on a single
+ * press, with no popup menu. Modeled closely on {@link MenuTool.MenuComponent}'s component
+ * lookup (selection first, then circuit hit-test) and its {@code rotateRight} handler.
+ *
+ * <p>See {@code docs/peler-edition/ROADMAP.md}, Feature 2.
+ */
+public class QuickRotateTool extends Tool {
+  /**
+   * Unique identifier of the tool, used as reference in project files. Do NOT change as it will
+   * prevent project files from loading.
+   *
+   * <p>Identifier value must MUST be unique string among all tools.
+   */
+  public static final String _ID = "Quick Rotate Tool";
+
+  public QuickRotateTool() {}
+
+  @Override
+  public boolean equals(Object other) {
+    return other instanceof QuickRotateTool;
+  }
+
+  @Override
+  public int hashCode() {
+    return QuickRotateTool.class.hashCode();
+  }
+
+  @Override
+  public String getDescription() {
+    return S.get("quickRotateToolDesc");
+  }
+
+  @Override
+  public String getDisplayName() {
+    return S.get("quickRotateTool");
+  }
+
+  @Override
+  public void mousePressed(Canvas canvas, Graphics g, MouseEvent e) {
+    final var proj = canvas.getProject();
+    final Circuit circ = canvas.getCircuit();
+    if (!proj.getLogisimFile().contains(circ)) {
+      // Same "can this circuit be modified" guard used by AddTool/TextTool/WiringTool.
+      canvas.setErrorMessage(S.getter("cannotModifyError"));
+      return;
+    }
+
+    final var pt = Location.create(e.getX(), e.getY(), false);
+    final var sel = proj.getSelection();
+    final var inSel = sel.getComponentsContaining(pt, g);
+    Component comp = null;
+    if (!inSel.isEmpty()) {
+      comp = inSel.iterator().next();
+    } else {
+      final var cl = circ.getAllContaining(pt, g);
+      if (!cl.isEmpty()) {
+        comp = cl.iterator().next();
+      }
+    }
+
+    // No component under the cursor, or it has no facing to rotate: silently do nothing.
+    if (comp == null || !comp.getAttributeSet().containsAttribute(StdAttr.FACING)) {
+      return;
+    }
+
+    final var xn = new CircuitMutation(circ);
+    final var facing = comp.getAttributeSet().getValue(StdAttr.FACING);
+    xn.set(comp, StdAttr.FACING, facing.getRight());
+    proj.doAction(
+        xn.toAction(S.getter("rotateComponentAction", comp.getFactory().getDisplayGetter())));
+    // Task 6 (separate commit) adds a one-time hint here the first time a rotate succeeds.
+  }
+
+  @Override
+  public void paintIcon(ComponentDrawContext c, int x, int y) {
+    // Minimal placeholder icon: a curved arrow suggesting clockwise rotation, drawn with simple
+    // line segments in the style of WiringTool.paintIcon (no image resources needed).
+    final var g = c.getGraphics();
+    final var oldColor = g.getColor();
+    g.setColor(Color.BLACK);
+    g.drawArc(x + 2, y + 2, 12, 12, 45, 270);
+    // Arrowhead at the end of the arc (pointing clockwise).
+    g.drawLine(x + 13, y + 3, x + 15, y + 5);
+    g.drawLine(x + 13, y + 3, x + 11, y + 6);
+    g.setColor(oldColor);
+  }
+}
