@@ -407,9 +407,16 @@ public class WiringTool extends Tool {
    * {@link #PIN_SNAP_RADIUS} pixels, if {@link AppPreferences#WIRE_AUTO_SNAP} is on and one
    * exists; otherwise falls back to the normal drawing-grid snap. Updates {@link #snappedPin} for
    * the hover highlight either way.
+   *
+   * <p>Pin-snap is skipped whenever the plain grid-snapped cursor position already coincides with
+   * an existing wire endpoint ({@link #nearsExistingWireEndpoint}) -- otherwise, in a dense
+   * circuit, pin-snap could pull the click toward an unrelated component's pin instead of the
+   * dangling wire stub the user is actually trying to grab, silently defeating the pre-existing
+   * wire-shortening gesture ({@link #startShortening}/{@link #willShorten}). Grabbing/shortening
+   * an existing wire always takes priority over snapping to a nearby pin.
    */
   private void snapToPinOrGrid(Canvas canvas, MouseEvent e) {
-    if (AppPreferences.WIRE_AUTO_SNAP.getBoolean()) {
+    if (AppPreferences.WIRE_AUTO_SNAP.getBoolean() && !nearsExistingWireEndpoint(canvas, e)) {
       final var pin = findNearestPin(canvas, e.getX(), e.getY());
       if (pin != null) {
         e.translatePoint(pin.getX() - e.getX(), pin.getY() - e.getY());
@@ -419,6 +426,18 @@ public class WiringTool extends Tool {
     }
     snappedPin = null;
     Canvas.snapToGrid(e);
+  }
+
+  /**
+   * True if the raw cursor position in {@code e}, once grid-snapped, already lands exactly on an
+   * existing wire's endpoint. Computed without mutating {@code e} (unlike {@link
+   * Canvas#snapToGrid}), using the same {@link Canvas#snapXToGrid}/{@link Canvas#snapYToGrid}
+   * math every other grid-snap in this class already relies on.
+   */
+  private boolean nearsExistingWireEndpoint(Canvas canvas, MouseEvent e) {
+    final var gridLoc = Location.create(
+        Canvas.snapXToGrid(e.getX()), Canvas.snapYToGrid(e.getY()), false);
+    return !canvas.getCircuit().getWires(gridLoc).isEmpty();
   }
 
   /**
