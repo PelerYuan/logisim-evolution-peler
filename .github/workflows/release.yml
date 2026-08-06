@@ -98,13 +98,17 @@ jobs:
 
       # Same Gradle task nightly.yml's build_windows job uses, plus `-PpelerAppVersion` so the MSI
       # carries our own release version instead of upstream's unchanging "4.2.0" base (see the
-      # PELER_APP_VERSION comment in build.gradle.kts).
+      # PELER_APP_VERSION comment in build.gradle.kts). The whole `-Pkey=value` MUST be quoted as
+      # one argument: this runner's default shell is PowerShell, which (confirmed by reproducing
+      # locally) mis-tokenizes an unquoted "-Pkey=1.0.5"-shaped argument, splitting it mid-value
+      # and handing Gradle a bogus extra task name (e.g. "createMsi" + ".0.5") -> build failure.
       - name: "Build MSI"
-        run: .\gradlew.bat createMsi -PpelerAppVersion=${{ steps.info.outputs.peler_version }} -x checkstyleMain -x checkstyleTest
+        run: .\gradlew.bat createMsi "-PpelerAppVersion=${{ steps.info.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
 
-      # Same Gradle task nightly.yml's build_windows job uses, plus `-PpelerAppVersion` (see above).
+      # Same Gradle task nightly.yml's build_windows job uses, plus `-PpelerAppVersion` (see above
+      # -- same quoting requirement applies here too).
       - name: "Build self-contained archive for Windows"
-        run: .\gradlew.bat createWindowsPortableZip -PpelerAppVersion=${{ steps.info.outputs.peler_version }} -x checkstyleMain -x checkstyleTest
+        run: .\gradlew.bat createWindowsPortableZip "-PpelerAppVersion=${{ steps.info.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
 
       - name: "Publish GitHub Release"
         uses: softprops/action-gh-release@v2
