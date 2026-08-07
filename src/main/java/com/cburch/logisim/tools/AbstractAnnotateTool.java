@@ -23,6 +23,7 @@ import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.std.annotate.Annotation;
 import com.cburch.logisim.std.annotate.AnnotationAnchorTracker;
 import com.cburch.logisim.std.annotate.AnnotationAttributes;
+import com.cburch.logisim.std.base.BaseLibrary;
 import com.cburch.logisim.std.base.Text;
 import com.cburch.logisim.util.StringGetter;
 import com.cburch.logisim.util.StringUtil;
@@ -81,11 +82,14 @@ public abstract class AbstractAnnotateTool extends Tool {
     for (final var comp : circ.getAllContaining(loc, g)) {
       if (!(comp.getFactory() instanceof Annotation)) continue;
       editExisting(proj, circ, comp, owner);
+      exitToEditTool(canvas);
       return;
     }
 
     final var anchor = findAnchorTarget(circ, loc, g);
     if (anchor == null) {
+      // Stay armed here on purpose: the click simply missed, so let the next one land rather than
+      // making the user re-pick the tool from the toolbox just to retry.
       canvas.setErrorMessage(noTargetHint());
       return;
     }
@@ -100,10 +104,27 @@ public abstract class AbstractAnnotateTool extends Tool {
     final var existing = findAnnotationAnchoredAt(circ, anchorLoc);
     if (existing != null) {
       editExisting(proj, circ, existing, owner);
-      return;
+    } else {
+      createNew(proj, circ, anchor, anchorLoc, owner);
     }
+    exitToEditTool(canvas);
+  }
 
-    createNew(proj, circ, anchor, anchorLoc, owner);
+  /**
+   * Hands control back to the Edit Tool once a note has been dealt with. Annotating is a one-shot
+   * action -- pick the tool, annotate one thing, back to editing -- not an armed placement mode
+   * that keeps firing on every following click, which is what it used to be and made it far too
+   * easy to annotate a second thing by accident on the way to doing something else. Same exit that
+   * {@link AddTool#exitToEditTool} performs when it leaves placement mode.
+   *
+   * <p>Called after the text dialog closes whether or not it was confirmed: cancelling is an
+   * explicit "never mind", so leaving the tool armed after it would defeat the point.
+   */
+  private static void exitToEditTool(Canvas canvas) {
+    final var proj = canvas.getProject();
+    final var base = proj.getLogisimFile().getLibrary(BaseLibrary._ID);
+    final var next = (base == null) ? null : base.getTool(EditTool._ID);
+    if (next != null) proj.setTool(next);
   }
 
   private static Component findAnnotationAnchoredAt(Circuit circ, Location anchorLoc) {
