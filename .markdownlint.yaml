@@ -61,13 +61,20 @@ MD012:
   maximum: 1
 
 # MD013/line-length - Line length
+# Peler Edition: raised from upstream's 130 to 160. The linter action pulls a floating Docker
+# image, so it now runs a newer markdownlint than this repo's docs were written against, and 16
+# lines of upstream's own documentation (docs/test_vector.md, docs/localization.md, docs/docs.md,
+# docs/automatic_library_import.md, .github/SECURITY.md, artwork/README.md) fail at 130 -- the
+# longest being 155. Re-wrapping upstream prose to satisfy a rule that postdates it would put
+# permanent divergence into files this fork has no interest in, and would conflict on every future
+# upstream sync. Relaxing the limit keeps every file linted while leaving that prose alone.
 MD013:
   # Number of characters
-  line_length: 130
+  line_length: 160
   # Number of characters for headings
-  heading_line_length: 130
+  heading_line_length: 160
   # Number of characters for code blocks
-  code_block_line_length: 130
+  code_block_line_length: 160
   # Include code blocks
   code_blocks: true
   # Include tables

@@ -101,11 +101,16 @@ silent. Wire endpoints themselves are not snap targets, only component pins, per
 
 ## Phasing
 
-| Phase | Scope | Risk |
-|---|---|---|
-| 1 | Feature 1 + Feature 2 + Windows packaging/release pipeline (adapt upstream's existing `jpackage` + `nightly.yml` Windows job to publish a Release on this fork) | Low — isolated to `tools`/`gui.main` package, UI interaction only |
-| 2 | Feature 3 (auto-snap) | Medium/High — touches core wire-drawing/shortening logic, needs careful regression testing |
-| 3 | Polish: tunable snap radius, snap-hit visual feedback, i18n strings for new UI text, broader manual regression pass | Low |
+**Phase 1** — Feature 1 + Feature 2 + Windows packaging/release pipeline (adapt upstream's existing
+`jpackage` + `nightly.yml` Windows job to publish a Release on this fork).
+*Risk: low* — isolated to the `tools`/`gui.main` packages, UI interaction only.
+
+**Phase 2** — Feature 3 (auto-snap).
+*Risk: medium/high* — touches core wire-drawing/shortening logic, needs careful regression testing.
+
+**Phase 3** — Polish: tunable snap radius, snap-hit visual feedback, i18n strings for new UI text,
+broader manual regression pass.
+*Risk: low.*
 
 ## Post-Phase-1 fix — app identity (2026-08-07)
 

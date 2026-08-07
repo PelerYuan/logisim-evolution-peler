@@ -15,6 +15,7 @@ import com.cburch.logisim.generated.BuildInfo;
 import com.cburch.logisim.gui.generic.LFrame;
 import com.cburch.logisim.gui.generic.OptionPane;
 import com.cburch.logisim.gui.start.About;
+import com.cburch.logisim.gui.start.AboutPelerEdition;
 import com.cburch.logisim.util.MacCompatibility;
 import java.awt.Desktop;
 import java.awt.Dimension;
@@ -36,6 +37,9 @@ class MenuHelp extends JMenu implements ActionListener {
   private final JMenuItem guide = new JMenuItem();
   private final JMenuItem library = new JMenuItem();
   private final JMenuItem about = new JMenuItem();
+  // Peler Edition: the fork's own About window. Separate from `about` on purpose -- that one is
+  // upstream's credits/copyright screen and is left untouched. See AboutPelerEdition.
+  private final JMenuItem aboutPelerEdition = new JMenuItem();
   private final JMenuItem www = new JMenuItem();
   private HelpSet helpSet;
   private String helpSetUrl = "";
@@ -49,6 +53,7 @@ class MenuHelp extends JMenu implements ActionListener {
     guide.addActionListener(this);
     library.addActionListener(this);
     about.addActionListener(this);
+    aboutPelerEdition.addActionListener(this);
     www.addActionListener(this);
 
     add(tutorial);
@@ -62,6 +67,13 @@ class MenuHelp extends JMenu implements ActionListener {
       addSeparator();
       add(about);
     }
+    // Added unconditionally, unlike `about`: macOS hoists only the standard About item into the
+    // application menu, so this fork-specific one would simply disappear there if it were inside
+    // that guard.
+    if (MacCompatibility.isAboutAutomaticallyPresent()) {
+      addSeparator();
+    }
+    add(aboutPelerEdition);
   }
 
   @Override
@@ -75,6 +87,8 @@ class MenuHelp extends JMenu implements ActionListener {
       showHelp("libs");
     } else if (about.equals(src)) {
       About.showAboutDialog(menubar.getParentFrame());
+    } else if (aboutPelerEdition.equals(src)) {
+      AboutPelerEdition.showDialog(menubar.getParentFrame());
     } else if (www.equals(src)) {
       openProjectWebsite();
     }
@@ -152,6 +166,7 @@ class MenuHelp extends JMenu implements ActionListener {
     guide.setText(S.get("helpGuideItem"));
     library.setText(S.get("helpLibraryItem"));
     about.setText(S.get("helpAboutItem"));
+    aboutPelerEdition.setText(S.get("helpAboutPelerEditionItem"));
     www.setText(S.get("helpProjectWebsite"));
     if (helpFrame != null) {
       helpFrame.setLocale(Locale.getDefault());

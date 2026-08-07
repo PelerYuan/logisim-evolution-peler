@@ -2,142 +2,127 @@
 
 ---
 
-# Logisim-evolution #
+# Logisim-evolution — Peler's Edition #
 
-* **Table of contents**
-  * [Features](#features)
-  * [Requirements](#requirements)
-  * **[Downloads](#download)**
-    * [Package Manager](#package-manager)
-    * [Nightly builds (unstable)](#nightly-builds)
-  * [Pictures of Logisim-evolution](docs/pics.md)
-  * [More Information](docs/docs.md)
-  * [Bug reports & feature requests](https://github.com/logisim-evolution/logisim-evolution/issues)
-  * [For developers](docs/developers.md)
-  * [How to contribute](docs/developers.md#how-to-contribute)
-  * [Credits](docs/credits.md)
+> ## This is an unofficial personal fork. ##
+>
+> **Essentially all of this software is the work of the
+> [Logisim-evolution](https://github.com/logisim-evolution/logisim-evolution) developers and its
+> contributors**, built on decades of effort by many people. This fork adds a handful of small
+> workflow conveniences for one person's coursework, and nothing more.
+>
+> It is **not affiliated with, endorsed by, or supported by** the Logisim-evolution project.
+>
+> **If you are looking for Logisim-evolution, go to
+> [the official project](https://github.com/logisim-evolution/logisim-evolution) — not here.**
+> It is better maintained, better tested, properly released, and it is the software you actually
+> want. Please give the upstream project your stars, your bug reports, and your credit.
 
 ---
 
-## Features ##
+* **Table of contents**
+  * [What this fork changes](#what-this-fork-changes)
+  * [Relationship to the upstream project](#relationship-to-the-upstream-project)
+  * [Downloads](#downloads)
+  * [Requirements](#requirements)
+  * [Reporting problems](#reporting-problems)
+  * [License and credits](#license-and-credits)
 
-`Logisim-evolution` is educational software for designing and simulating digital logic circuits.
-`Logisim-evolution` is [free](#license), [open-source](https://github.com/logisim-evolution), and [cross-platform](#requirements).
+---
 
-Project highlights:
+## What this fork changes ##
 
-* easy to use circuit designer,
-* logic circuit simulations,
-* chronogram (to see the evolution of signals in your circuit),
-* electronic board integration (schematics can be simulated on real hardware),
-* VHDL components (components behavior can be specified in VHDL!),
-* TCL/TK console (interfaces between the circuit and the user),
-* huge library of components (LEDs, TTLs, switches, SoCs),
-* allows for custom libraries to be [loaded on startup](docs/automatic_library_import.md)
-* supports [multiple languages](docs/docs.md#translations),
-* and more!
+Based on the official Logisim-evolution **v4.1.0** release. Everything else behaves as upstream
+does; the additions below are the entire difference.
 
-[![Logisim-evolution](docs/img/logisim-evolution-01-small.png)](docs/pics.md)
-[![Logisim-evolution](docs/img/logisim-evolution-02-small.png)](docs/pics.md)
-[![Logisim-evolution](docs/img/logisim-evolution-03-small.png)](docs/pics.md)
+**Continuous placement**
+Double-click a component in the toolbox to keep placing it instead of re-picking it each time.
+<kbd>Esc</kbd>, <kbd>Enter</kbd> or a right-click stops.
+
+**Quick Rotate**
+Right-click a component to rotate it 90° clockwise. The original right-click menu moved to
+<kbd>Ctrl</kbd>+left-click.
+
+**Wire auto-snap**
+While drawing a wire, endpoints snap to a nearby component pin, with a green ring marking the pin.
+Can be turned off in preferences.
+
+**Schematic annotations**
+A new **Annotate** category for attaching free-text notes to a component or a wire endpoint. Notes
+support multiple lines and follow whatever they are attached to when it is moved, rotated, or
+deleted.
+
+The application is packaged as `logisim-evolution-peler` and its icon carries a red **P**, so it
+installs alongside an official Logisim-evolution install rather than colliding with it. The
+in-application **Help → About** window is left exactly as upstream ships it, crediting upstream;
+this fork's own changes are described under **Help → About Peler's Edition**.
+
+---
+
+## Relationship to the upstream project ##
+
+* This fork tracks official Logisim-evolution **releases**, not upstream's development branch, so
+  it does not ship unreleased upstream work.
+* No upstream functionality is removed or altered beyond the additions listed above.
+* Upstream's copyright notices, credits, and attribution are left intact.
+* Bug reports for **this build** belong in
+  [this fork's issue tracker](https://github.com/PelerYuan/logisim-evolution-peler/issues).
+  **Never report them to the upstream project** — they did not build this and cannot support it.
+  If you can reproduce a problem in the official Logisim-evolution release, report it upstream instead,
+  where it will actually get fixed for everyone.
+
+---
+
+## Downloads ##
+
+Installable packages are on the
+[releases page](https://github.com/PelerYuan/logisim-evolution-peler/releases). Each bundles its
+own Java runtime, so Java does not need to be installed separately:
+
+* `logisim-evolution-peler-<version>-amd64.msi` — Windows installer (Intel/AMD)
+* `logisim-evolution-peler-<version>-windows-amd64.zip` — Windows, no installer
+* `logisim-evolution-peler-<version>-x86_64.dmg` — macOS (Intel)
+* `logisim-evolution-peler-<version>-aarch64.dmg` — macOS (Apple silicon)
+* `logisim-evolution-peler_<version>_amd64.deb` — Debian/Ubuntu (x86-64)
+* `logisim-evolution-peler_<version>_arm64.deb` — Debian/Ubuntu (ARM64)
+* `logisim-evolution-peler-<version>-1.x86_64.rpm` — Fedora/RHEL/SUSE (x86-64)
+* `logisim-evolution-peler-<version>-1.aarch64.rpm` — Fedora/RHEL/SUSE (ARM64)
+
+Releases marked *pre-release* are development builds kept only for history; use the latest normal
+release.
+
+**Note for macOS users**: these packages are not signed with an Apple certificate. On first launch,
+right-click (or <kbd>Ctrl</kbd>+click) the application icon in Finder and choose **Open**, then
+confirm. See [Safely open apps on your Mac](https://support.apple.com/en-us/HT202491).
 
 ---
 
 ## Requirements ##
 
-`Logisim-evolution` is a Java application; therefore, it can run on any operating system supporting the Java runtime enviroment.
-It requires [Java 21 (or newer)](https://adoptium.net/temurin/releases/).
+A Java application, so it runs anywhere with a Java runtime. The packages above bundle
+[Java 21](https://adoptium.net/temurin/releases/); building from source requires it.
 
 ---
 
-## Download ###
+## Reporting problems ##
 
-`Logisim-evolution` is available for
-[download in compiled form](https://github.com/logisim-evolution/logisim-evolution/releases)
-with ready to use installable packages for Windows, macOS, and Linux
-or in [source code form](https://github.com/logisim-evolution), which you can [build yourself](docs/developers.md).
+Please check first whether the problem also happens in the
+[official Logisim-evolution release](https://github.com/logisim-evolution/logisim-evolution/releases).
 
-The following [platform specific packages](https://github.com/logisim-evolution/logisim-evolution/releases)
-include the Java runtime and do not require it to be installed separately:
-
-* `logisim-evolution_<version>-1_amd64.deb`: Debian package (also suitable for Ubuntu and derivatives),
-* `logisim-evolution-<version>-1.x86_64.rpm`: Package for Fedora/Redhat/CentOS/SuSE Linux distributions,
-* `logisim-evolution-<version>_amd64.snap`: The [Snap](https://snapcraft.io/docs) archive for all
-  supported Linux distributions (also available in [Snapcraft store](https://snapcraft.io/logisim-evolution)),
-* `logisim-evolution-<version>-aarch64.msi`: Installer package for Microsoft Windows for Arm processors,
-* `logisim-evolution-<version>-amd64.msi`: Installer package for Microsoft Windows for Intel processors,
-* `logisim-evolution-<version>-aarch64.dmg`: macOS package for Apple processors,
-* `logisim-evolution-<version>-x86_64.dmg`: macOS package for Intel processors (also runs on Apple processors in simulation).
-
-The Java JAR [`logisim-evolution-<version>-all.jar`](https://github.com/logisim-evolution/logisim-evolution/releases)
-is also available and can be run on any system with a supported Java runtime installed.
-
-[![Get it from the Snap Store](https://snapcraft.io/static/images/badges/en/snap-store-black.svg)](https://snapcraft.io/logisim-evolution)
+* **Happens in the official release too** → report it
+  [upstream](https://github.com/logisim-evolution/logisim-evolution/issues), so the fix reaches
+  everyone.
+* **Only happens here** → it is this fork's fault; report it in
+  [this fork's issue tracker](https://github.com/PelerYuan/logisim-evolution-peler/issues).
 
 ---
 
-**Note for macOS users**:
-The Logisim-evolution.app is not signed with an Apple approved certificate.
+## License and credits ##
 
-When launching the application for the first time, you will have to start it via the "Open" entry in the
-application icon's context menu in the macOS Finder. This is either done by clicking the application
-icon with the right mouse button or holding down <kbd>CTRL</kbd> while clicking the icon with the
-left mouse button. This will open a panel asking you to verify that you wish to launch the application.
-On more recent versions of macOS, the panel will only give you a choice of moving the app to the trash or Cancel.
-On those systems, click Cancel, open `System Preferences`, and select `Security & Privacy`.
-There you may need to click the lock to make changes and authenticate with an administrative acccount.
-It should show an option to open the app.
-See [Safely open apps on your Mac](https://support.apple.com/en-us/HT202491) for more information.
-
-Depending on your security settings, you may also get a panel asking if you wish to allow it to accept
-network connections. You can click "Deny" as we do not need network access currently nor we do request any.
-
-### Package Manager ###
-
-`Logisim-evolution` is available from a bunch of [package managers](https://repology.org/project/logisim-evolution/versions).
-Note that these (except for Snap) are not maintained by the core developers.
-If you should observe a bug in Logisim-evolution while using one of these packages,
-first make sure that it can be reproduced with the most recent official packages
-[provided through this repository](https://github.com/logisim-evolution/logisim-evolution/releases)
-and ideally the HEAD of our [main branch](https://github.com/logisim-evolution/logisim-evolution/tree/main)
-before [creating an issue](https://github.com/logisim-evolution/logisim-evolution/issues) on
-the official [Logisim-evolution repository](https://github.com/logisim-evolution/logisim-evolution).
-Otherwise, report the issue to the package maintainer!
-
-* [Snap](https://snapcraft.io/logisim-evolution) (`snap install logisim-evolution`)
-* [Flathub](https://flathub.org/apps/details/com.github.reds.LogisimEvolution) (`flatpak install flathub com.github.reds.LogisimEvolution`)
-* [Homebrew](https://formulae.brew.sh/cask/logisim-evolution) (`brew install --cask logisim-evolution`)
-* [MacPorts](https://ports.macports.org/port/logisim-evolution/details/) (`port install logisim-evolution`)
-* [Chocolatey](https://community.chocolatey.org/packages/logisim-evolution) (`choco install logisim-evolution`)
-* [winget](https://winget.run/pkg/logisim-evolution/logisim-evolution) (`winget install -e --id logisim-evolution.logisim-evolution`)
-* [Arch User Repository](https://aur.archlinux.org/packages/logisim-evolution)
-* [nixpkgs](https://search.nixos.org/packages?channel=24.05&show=logisim-evolution)(`nix-shell -p logisim-evolution`)
-
-### Nightly builds ###
-
-We also offer builds based on the current state of the
-[main](https://github.com/logisim-evolution/logisim-evolution/tree/main) branch.
-If the main branch has been changed,
-a new `Nightly build` is created at midnight [UTC](https://en.wikipedia.org/wiki/Coordinated_Universal_Time).
-
-Note that these builds may be unstable since the main branch is a work in progress.
-
-To get nightly downloads, please go to the
-[nightly workflow page](https://github.com/logisim-evolution/logisim-evolution/actions/workflows/nightly.yml)
-and browse to the last successful build from the `Nightly` worker.
-Nightly runs each night, but terminates quickly and does not produce new packages if nothing has changed since the last run.
-Find the most recent run that contains the packages.
-The time Nightly took to run, given near the clock icon on the right, helps your search.
-Note that due to GitHub internals, all files are provided as ZIP archives.
-You must unzip the downloaded file to get the installation package.
-
-Please share your experience in [Discussions](https://github.com/logisim-evolution/logisim-evolution/discussions)
-or [open a ticket](https://github.com/logisim-evolution/logisim-evolution/issues)
-if you found a bug or have suggestions for improvement.
-
----
-
-## License ##
-
-* `Logisim-evolution` is copyrighted ©2001-2024 by Logisim-evolution [developers](docs/credits.md).
-* This is free software licensed under [GNU General Public License v3](https://www.gnu.org/licenses/gpl-3.0.en.html).
+* `Logisim-evolution` is copyrighted ©2001-2024 by the Logisim-evolution
+  [developers](docs/credits.md). The overwhelming majority of this codebase is their work.
+* This fork is released under the same license: the
+  [GNU General Public License v3](https://www.gnu.org/licenses/gpl-3.0.en.html).
+* Original Logisim was created by Carl Burch; Logisim-evolution is the continuation of that work by
+  its developers and contributors. Full credits: [docs/credits.md](docs/credits.md) and the
+  application's **Help → About** window.

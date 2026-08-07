@@ -40,6 +40,16 @@ class AboutCredits extends JComponent {
    */
   private static final String HENDRIX_LOGO_PATH = "resources/logisim/hendrix.png";
 
+  /**
+   * The upstream project's own identity, held separately from {@link BuildInfo} (which carries
+   * this fork's packaging name and URL) so that upstream's credits screen keeps crediting
+   * upstream. See the comment in the constructor.
+   */
+  private static final String UPSTREAM_NAME = "logisim-evolution";
+
+  private static final String UPSTREAM_DISPLAY_NAME = "Logisim-evolution";
+  private static final String UPSTREAM_URL = "https://github.com/logisim-evolution/logisim-evolution";
+
   private final Lines lines;
 
   public AboutCredits(int width, int height) {
@@ -53,16 +63,15 @@ class AboutCredits extends JComponent {
 
     lines = new Lines();
     lines
-        .title(BuildInfo.displayName)
-        .h2(String.format("Copyright \u00A9 2001-%s %s developers", BuildInfo.year, BuildInfo.name))
-        .url(BuildInfo.url)
-        .space()
-        // Peler Edition: per user instruction (2026-08-07), the About/credits content should
-        // actually say "Peler Edition" rather than relying solely on the build-derived name
-        // string in the title above. Kept as its own section rather than folded into the
-        // existing copyright/URL lines, so upstream's own attribution above is untouched.
-        .h1(S.get("creditsRolePelerEdition"))
-        .tiny(S.get("creditsPelerEditionDesc"))
+        // Deliberately upstream's own identity, NOT this fork's build-derived BuildInfo values.
+        // This screen is upstream's credits roll and its copyright notice: rendering it with
+        // BuildInfo.name would have it read "Copyright (c) 2001-2026 logisim-evolution-peler
+        // developers", claiming a quarter-century of other people's work for a personal fork.
+        // The fork's own changes are described in its own window instead -- see
+        // com.cburch.logisim.gui.start.AboutPelerEdition, reachable from the Help menu.
+        .title(UPSTREAM_DISPLAY_NAME)
+        .h2(String.format("Copyright \u00A9 2001-%s %s developers", BuildInfo.year, UPSTREAM_NAME))
+        .url(UPSTREAM_URL)
         .space()
         .h1(S.get("creditsDevelopedBy"))
         .text("Moshe Berman")

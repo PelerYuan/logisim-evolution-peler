@@ -31,6 +31,8 @@ import java.awt.Cursor;
 import java.awt.Frame;
 import java.awt.Graphics;
 import java.awt.event.MouseEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import javax.swing.JOptionPane;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
@@ -186,13 +188,24 @@ public abstract class AbstractAnnotateTool extends Tool {
     final var textArea = new JTextArea(initialText == null ? "" : initialText, 6, 32);
     textArea.setLineWrap(true);
     textArea.setWrapStyleWord(true);
+    textArea.setCaretPosition(textArea.getDocument().getLength()); // editing: continue at the end
     final var scroll = new JScrollPane(textArea);
 
     final var pane = new JOptionPane(scroll, JOptionPane.PLAIN_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
     final var dialog = pane.createDialog(owner, S.get("annotateDialogTitle"));
     dialog.getRootPane().setDefaultButton(null);
     dialog.setResizable(true);
-    textArea.requestFocusInWindow();
+    // Focus has to be requested once the dialog is actually on screen. Calling
+    // requestFocusInWindow() before setVisible() -- as this used to -- is silently a no-op: the
+    // component isn't displayable yet, so the request is refused and returns false, and the dialog
+    // opened with focus on the OK button, meaning you had to click into the box before typing.
+    dialog.addWindowListener(
+        new WindowAdapter() {
+          @Override
+          public void windowOpened(WindowEvent e) {
+            textArea.requestFocusInWindow();
+          }
+        });
     dialog.setVisible(true);
     dialog.dispose();
 
