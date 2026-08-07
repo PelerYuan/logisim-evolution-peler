@@ -16,7 +16,6 @@ import com.cburch.logisim.circuit.Wire;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentDrawContext;
 import com.cburch.logisim.data.Location;
-import com.cburch.logisim.gui.main.Canvas;
 import com.cburch.logisim.std.annotate.Annotation;
 import com.cburch.logisim.std.annotate.AnnotationAnchorTracker;
 import com.cburch.logisim.util.StringGetter;
@@ -36,8 +35,10 @@ public class AnnotateComponentTool extends AbstractAnnotateTool {
    */
   public static final String _ID = "Annotate Component Tool";
 
-  // Grid-snapped vertical gap between a component's top edge and the note placed above it.
-  private static final int DEFAULT_OFFSET_Y = -30;
+  // Vertical gap between a component's top edge and the note placed above it. Same one grid
+  // square the wire tool uses, so a schematic mixing both kinds of note reads as one consistent
+  // band of annotation rather than two heights.
+  private static final int OFFSET_Y = -10;
 
   @Override
   public boolean equals(Object other) {
@@ -78,9 +79,12 @@ public class AnnotateComponentTool extends AbstractAnnotateTool {
 
   @Override
   Location placementFor(Component anchor, Location anchorLoc) {
-    final var x = Canvas.snapXToGrid(anchorLoc.getX());
-    final var y = Canvas.snapYToGrid(anchorLoc.getY() + DEFAULT_OFFSET_Y);
-    return Location.create(x, y, false);
+    // Deliberately NOT grid-snapped. A component's bounding-box centre is frequently off-grid --
+    // a 2-input gate is 50px wide anchored at an on-grid pin, putting its centre on a half-square
+    // -- so snapping shifted centre-aligned text up to half a square sideways and the note visibly
+    // sat off-centre above its component. Annotations carry no connectivity, and the factory
+    // already declares setShouldSnap(false), so there is nothing for the grid to buy here.
+    return Location.create(anchorLoc.getX(), anchorLoc.getY() + OFFSET_Y, false);
   }
 
   @Override

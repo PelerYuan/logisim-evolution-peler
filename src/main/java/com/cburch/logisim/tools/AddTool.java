@@ -201,18 +201,23 @@ public class AddTool extends Tool implements Transferable, PropertyChangeListene
 
   /**
    * Called by {@link QuickRotateTool} when a right-click arrives while this tool is active: a
-   * right-click during continuous (sticky) placement means "stop placing", not "rotate whatever
+   * right-click with a component armed for placement means "stop placing", not "rotate whatever
    * is under the cursor". Relying on Canvas's generic dragTool/tempTool swap-and-restore to stop
-   * sticky mode does NOT work -- that mechanism restores this same tool instance right after
+   * placement does NOT work -- that mechanism restores this same tool instance right after
    * (via {@code select()}, which doesn't touch stickyPlace), so the placement UI stays fully
    * active with no visible change. This method performs the same real exit Esc/Enter do.
    *
-   * @return true if sticky placement was active and this call stopped it (caller should treat the
-   *     right-click as consumed, not also perform its own action); false if sticky mode wasn't
-   *     active (caller should proceed with its normal behavior).
+   * <p>Applies to ordinary placement (armed by a single click on a toolbox entry) as well as
+   * continuous/sticky placement (armed by double-click), per user request: having right-click
+   * back out of one but silently rotate a component during the other is the kind of inconsistency
+   * that makes the escape hatch untrustworthy -- if right-click is how you say "never mind", it
+   * should mean that whenever something is armed.
+   *
+   * @return always true, so the caller treats the right-click as consumed rather than also
+   *     performing its own rotate. This tool being the project's current tool is itself the
+   *     signal that a component is armed for placement.
    */
-  public boolean stopStickyPlacement(Canvas canvas) {
-    if (!stickyPlace) return false;
+  public boolean stopPlacement(Canvas canvas) {
     exitToEditTool(canvas);
     return true;
   }

@@ -20,6 +20,7 @@ import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.data.AttributeSet;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.proj.Project;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
@@ -112,17 +113,28 @@ public final class AnnotationAnchorTracker implements CircuitListener {
   }
 
   private Component findAt(Location loc, Component exclude) {
+    // Components first, and by pin before wire: a wire endpoint that sits on a component's pin is
+    // better owned by the component, for the reason spelled out on pinAnchorPoint below.
+    for (final var c : circuit.getNonWires()) {
+      if (c == exclude) continue;
+      if (loc.equals(componentAnchorPoint(c))) return c;
+      for (final var end : c.getEnds()) {
+        if (loc.equals(end.getLocation())) return c;
+      }
+    }
     for (final var w : circuit.getWires()) {
       if (w.getEnd0().equals(loc) || w.getEnd1().equals(loc)) return w;
-    }
-    for (final var c : circuit.getNonWires()) {
-      if (c != exclude && loc.equals(componentAnchorPoint(c))) return c;
     }
     return null;
   }
 
-  private static Location anchorLocationOf(Component target, Location lastKnown) {
+  /**
+   * Recomputes where {@code target} anchors an annotation of the given {@code kind}, given the
+   * annotation's last known anchor location.
+   */
+  private static Location anchorLocationOf(Component target, Location lastKnown, String kind) {
     if (target instanceof Wire w) return wireAnchorPoint(w, lastKnown);
+    if (AnnotationAttributes.KIND_POINT.equals(kind)) return pinAnchorPoint(target, lastKnown);
     return componentAnchorPoint(target);
   }
 
@@ -149,10 +161,61 @@ public final class AnnotationAnchorTracker implements CircuitListener {
     return distSq(w.getEnd0(), preferNear) <= distSq(w.getEnd1(), preferNear) ? w.getEnd0() : w.getEnd1();
   }
 
+  /**
+   * The anchor point for a note pinned to one specific point on a non-wire component: whichever of
+   * that component's pins is nearest {@code preferNear}.
+   *
+   * <p>This exists because anchoring an endpoint note to the *wire* is not durable. Dragging a
+   * component makes Logisim re-route every wire attached to it, and a re-route is not a tidy
+   * one-old-wire-to-one-new-wire swap -- a single run can be torn up and rebuilt as several
+   * segments with different endpoints, so a note chasing "the wire it was on" ends up stranded
+   * mid-canvas. The component at that junction, by contrast, survives a move as exactly one
+   * identifiable replacement whose pins the factory recomputes for us -- which also means this
+   * keeps working through rotation, where the pin moves somewhere a pure translation would never
+   * have predicted.
+   */
+  public static Location pinAnchorPoint(Component target, Location preferNear) {
+    Location best = null;
+    var bestDist = Long.MAX_VALUE;
+    for (final var end : target.getEnds()) {
+      final var d = distSq(end.getLocation(), preferNear);
+      if (d < bestDist) {
+        bestDist = d;
+        best = end.getLocation();
+      }
+    }
+    return (best != null) ? best : componentAnchorPoint(target);
+  }
+
   private static long distSq(Location a, Location b) {
     final var dx = (long) a.getX() - b.getX();
     final var dy = (long) a.getY() - b.getY();
     return dx * dx + dy * dy;
+  }
+
+  /**
+   * Picks which of a replaced anchor's successors an annotation should follow: the one that lands
+   * nearest where the anchor last was.
+   *
+   * <p>One removal can map to several replacements -- re-routing a wire run tears it up into new
+   * segments -- and this used to just take {@code replacements.iterator().next()}, i.e. whichever
+   * the set happened to yield first. That is arbitrary, and picking a segment at the far end of a
+   * re-routed run is exactly how a note ended up drifting off across the canvas. Nearest-to-last-
+   * known is both stable and the obvious intent.
+   */
+  private static Component nearestReplacement(
+      Collection<Component> replacements, Location lastKnown, String kind) {
+    Component best = null;
+    var bestDist = Long.MAX_VALUE;
+    for (final var candidate : replacements) {
+      if (lastKnown == null) return candidate;
+      final var d = distSq(anchorLocationOf(candidate, lastKnown, kind), lastKnown);
+      if (d < bestDist) {
+        bestDist = d;
+        best = candidate;
+      }
+    }
+    return (best != null) ? best : replacements.iterator().next();
   }
 
   @Override
@@ -185,7 +248,8 @@ public final class AnnotationAnchorTracker implements CircuitListener {
           anchorOf.remove(annotation);
           scheduleRemoveAnnotation(annotation);
         } else {
-          final var newAnchor = replacements.iterator().next();
+          final var attrs = (AnnotationAttributes) annotation.getAttributeSet();
+          final var newAnchor = nearestReplacement(replacements, attrs.getAnchorLoc(), attrs.getAnchorKind());
           anchorOf.put(annotation, newAnchor);
           scheduleFollowMove(annotation, newAnchor);
         }
@@ -205,7 +269,7 @@ public final class AnnotationAnchorTracker implements CircuitListener {
           final var attrs = (AnnotationAttributes) annotation.getAttributeSet();
           final var oldAnchorLoc = attrs.getAnchorLoc();
           if (oldAnchorLoc == null) return;
-          final var newAnchorLoc = anchorLocationOf(newAnchor, oldAnchorLoc);
+          final var newAnchorLoc = anchorLocationOf(newAnchor, oldAnchorLoc, attrs.getAnchorKind());
           final var dx = newAnchorLoc.getX() - oldAnchorLoc.getX();
           final var dy = newAnchorLoc.getY() - oldAnchorLoc.getY();
           if (dx == 0 && dy == 0) return; // anchor didn't actually move

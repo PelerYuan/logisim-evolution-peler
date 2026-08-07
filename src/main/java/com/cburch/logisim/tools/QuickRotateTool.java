@@ -75,13 +75,14 @@ public class QuickRotateTool extends Tool {
   public void mousePressed(Canvas canvas, Graphics g, MouseEvent e) {
     final var proj = canvas.getProject();
 
-    // A right-click while continuous (sticky) placement is active means "stop placing", not
-    // "rotate". Canvas dispatches this mousePressed while the sticky AddTool is still
-    // proj.getTool() (its own temp-swap to this tool happens right after this call returns), so
-    // this check reliably sees the sticky state. See AddTool.stopStickyPlacement's Javadoc for
-    // why this can't be done implicitly via the swap-and-restore mechanism alone.
+    // A right-click while a component is armed for placement means "stop placing", not "rotate" --
+    // for ordinary single-click placement just as much as for continuous (sticky) placement.
+    // Canvas dispatches this mousePressed while the AddTool is still proj.getTool() (its own
+    // temp-swap to this tool happens right after this call returns), so simply being an AddTool
+    // here means something is armed. See AddTool.stopPlacement's Javadoc for why this can't be
+    // done implicitly via the swap-and-restore mechanism alone.
     final var curTool = proj.getTool();
-    if (curTool instanceof AddTool addTool && addTool.stopStickyPlacement(canvas)) {
+    if (curTool instanceof AddTool addTool && addTool.stopPlacement(canvas)) {
       return;
     }
 

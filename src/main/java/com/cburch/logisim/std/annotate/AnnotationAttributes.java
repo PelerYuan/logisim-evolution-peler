@@ -47,10 +47,30 @@ public class AnnotationAttributes extends AbstractAttributeSet {
         }
       };
 
+  /** {@link #ANCHOR_KIND} value: anchored to a component's body, measured from its bounding-box top-centre. */
+  public static final String KIND_BODY = "body";
+
+  /** {@link #ANCHOR_KIND} value: anchored to one specific point -- a wire endpoint, or a component's pin. */
+  public static final String KIND_POINT = "point";
+
+  /**
+   * Which sort of thing {@link #ANCHOR_LOC} names, so the tracker knows how to recompute it after
+   * the anchor moves: {@link #KIND_BODY} recomputes as the anchor's bounding-box top-centre,
+   * {@link #KIND_POINT} as whichever of its pins/endpoints is nearest the last known location.
+   * Hidden and saved, exactly like {@link #ANCHOR_LOC}.
+   */
+  public static final Attribute<String> ANCHOR_KIND =
+      new Attribute<>("annotationAnchorKind", null, true) {
+        @Override
+        public String parse(String value) {
+          return value;
+        }
+      };
+
   private static final List<Attribute<?>> ATTRIBUTES =
       Arrays.asList(
           Text.ATTR_TEXT, Text.ATTR_FONT, Text.ATTR_COLOR, Text.ATTR_HALIGN, Text.ATTR_VALIGN,
-          ANCHOR_LOC);
+          ANCHOR_LOC, ANCHOR_KIND);
 
   private String text;
   private Font font;
@@ -58,6 +78,7 @@ public class AnnotationAttributes extends AbstractAttributeSet {
   private AttributeOption halign;
   private AttributeOption valign;
   private Location anchorLoc;
+  private String anchorKind;
   private Bounds offsetBounds;
 
   public AnnotationAttributes() {
@@ -67,6 +88,7 @@ public class AnnotationAttributes extends AbstractAttributeSet {
     halign = Text.ATTR_HALIGN.parse("center");
     valign = Text.ATTR_VALIGN.parse("base");
     anchorLoc = null;
+    anchorKind = KIND_BODY;
     offsetBounds = null;
   }
 
@@ -101,6 +123,10 @@ public class AnnotationAttributes extends AbstractAttributeSet {
     return anchorLoc;
   }
 
+  String getAnchorKind() {
+    return anchorKind;
+  }
+
   @Override
   @SuppressWarnings("unchecked")
   public <V> V getValue(Attribute<V> attr) {
@@ -110,6 +136,7 @@ public class AnnotationAttributes extends AbstractAttributeSet {
     if (attr == Text.ATTR_VALIGN) return (V) valign;
     if (attr == Text.ATTR_COLOR) return (V) color;
     if (attr == ANCHOR_LOC) return (V) anchorLoc;
+    if (attr == ANCHOR_KIND) return (V) anchorKind;
     return null;
   }
 
@@ -138,6 +165,10 @@ public class AnnotationAttributes extends AbstractAttributeSet {
       color = (Color) value;
     } else if (attr == ANCHOR_LOC) {
       anchorLoc = (Location) value;
+      fireAttributeValueChanged(attr, value, null);
+      return;
+    } else if (attr == ANCHOR_KIND) {
+      anchorKind = (String) value;
       fireAttributeValueChanged(attr, value, null);
       return;
     } else {
