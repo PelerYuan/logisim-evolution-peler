@@ -15,6 +15,7 @@ import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.CircuitMutation;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentDrawContext;
+import com.cburch.logisim.data.AttributeOption;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.gui.main.Canvas;
 import com.cburch.logisim.gui.main.SelectionActions;
@@ -88,7 +89,31 @@ public abstract class AbstractAnnotateTool extends Tool {
       canvas.setErrorMessage(noTargetHint());
       return;
     }
-    createNew(proj, circ, anchor, loc, owner);
+    final var anchorLoc = anchorLocationOf(anchor, loc);
+
+    // One note per anchor point. Clicking a target that already carries one re-opens THAT note
+    // instead of stacking a second one on top of it -- which is what used to happen, leaving two
+    // notes rendered over each other illegibly, and made clicking a target mean "edit" or "add
+    // another" depending on whether you happened to hit the note's own text or the target
+    // underneath it. Matched via the saved ANCHOR_LOC attribute rather than the tracker's live
+    // map so this still holds for notes loaded from a .circ file in a later session.
+    final var existing = findAnnotationAnchoredAt(circ, anchorLoc);
+    if (existing != null) {
+      editExisting(proj, circ, existing, owner);
+      return;
+    }
+
+    createNew(proj, circ, anchor, anchorLoc, owner);
+  }
+
+  private static Component findAnnotationAnchoredAt(Circuit circ, Location anchorLoc) {
+    for (final var comp : circ.getNonWires()) {
+      if (!(comp.getFactory() instanceof Annotation)) continue;
+      if (anchorLoc.equals(comp.getAttributeSet().getValue(AnnotationAttributes.ANCHOR_LOC))) {
+        return comp;
+      }
+    }
+    return null;
   }
 
   private void editExisting(Project proj, Circuit circ, Component comp, Frame owner) {
@@ -106,15 +131,15 @@ public abstract class AbstractAnnotateTool extends Tool {
     }
   }
 
-  private void createNew(Project proj, Circuit circ, Component anchor, Location clickLoc, Frame owner) {
+  private void createNew(Project proj, Circuit circ, Component anchor, Location anchorLoc, Frame owner) {
     final var text = showAnnotationDialog(owner, "");
     if (StringUtil.isNullOrEmpty(text)) return; // cancelled, or nothing typed -- don't add a blank note
 
-    final var anchorLoc = anchorLocationOf(anchor, clickLoc);
-    final var placeLoc = placementFor(anchorLoc);
+    final var placeLoc = placementFor(anchor, anchorLoc);
 
     final var attrs = (AnnotationAttributes) Annotation.FACTORY.createAttributeSet();
     attrs.setValue(Text.ATTR_TEXT, text);
+    attrs.setValue(Text.ATTR_HALIGN, horizontalAlignFor(anchor, anchorLoc));
     attrs.setValue(AnnotationAttributes.ANCHOR_LOC, anchorLoc);
     final var comp = Annotation.FACTORY.createComponent(placeLoc, attrs);
 
@@ -183,8 +208,18 @@ public abstract class AbstractAnnotateTool extends Tool {
   /** Where {@code target} is anchored, given the click that selected it. */
   abstract Location anchorLocationOf(Component target, Location clickLoc);
 
-  /** Where to place a brand new note given the anchor point it's attached to. */
-  abstract Location placementFor(Location anchorLoc);
+  /** Where to place a brand new note, given the target it's attached to and that target's anchor point. */
+  abstract Location placementFor(Component anchor, Location anchorLoc);
+
+  /**
+   * How a brand new note's text lines up with {@link #placementFor}'s point. Centered by default,
+   * which is what you want for a note sitting squarely above a component; overridden by {@link
+   * AnnotateWireTool} so a note offset to one side of a wire endpoint runs *away* from the wire
+   * rather than back across it.
+   */
+  AttributeOption horizontalAlignFor(Component anchor, Location anchorLoc) {
+    return Text.ATTR_HALIGN.parse("center");
+  }
 
   abstract StringGetter noTargetHint();
 }
