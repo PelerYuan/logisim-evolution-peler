@@ -280,7 +280,20 @@ folded into `BaseLibrary`, per user's explicit ask for "a new category on the le
 `AddTool`-like placement tool: click a component or a wire endpoint to drop a text-entry annotation
 anchored there.
 
-**Not yet started** — this section is the design only; implementation is next.
+**Implemented (2026-08-07)**: `Annotation.java`/`AnnotationAttributes.java`/`AnnotationAnchorTracker.java`
+(`src/main/java/com/cburch/logisim/std/annotate/`) and `AnnotateTool.java`
+(`src/main/java/com/cburch/logisim/tools/`), registered as `AnnotationLibrary` in `Builtin.java`.
+Shipped in `v1.0.9` with i18n coverage across all 11 languages.
+
+**Bug found in v1.0.9, fixed same day**: the new category didn't actually appear anywhere in a
+fresh project — confirmed by the user testing the real build, not caught by CI (compiling and
+registering a `Library` in `Builtin.java` is necessary but not sufficient). Root cause: which
+builtin libraries a *new* project actually loads is controlled by an entirely separate allowlist —
+`default.templ`'s `<lib>` element list, consulted by `LibraryManager.loadLibrary` via `Library.getLibrary(String)`
+matching each library's `_ID` — not by what's merely registered in `Builtin.java`. Every other
+builtin library (Wiring, Gates, Base, ...) has a `<lib name="X" desc="#Y" />` entry there; `AnnotationLibrary`
+never got one. Fixed by adding `<lib name="E" desc="#Annotation" />` to `default.templ`. Worth
+remembering for any *future* new top-level library: registering in `Builtin.java` alone is not enough.
 
 ## Workflow for each phase
 
