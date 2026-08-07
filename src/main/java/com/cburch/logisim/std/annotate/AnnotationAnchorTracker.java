@@ -60,8 +60,8 @@ public final class AnnotationAnchorTracker implements CircuitListener {
   /**
    * Returns the tracker for {@code circuit}, creating and attaching it (plus best-effort
    * re-resolving any already-present {@link Annotation}s' anchors) the first time this is called
-   * for that circuit. Idempotent. Called from {@link com.cburch.logisim.tools.AnnotateTool}
-   * whenever it touches a circuit -- so a circuit that's freshly loaded but never visited with the
+   * for that circuit. Idempotent. Called from {@link com.cburch.logisim.tools.AbstractAnnotateTool}
+   * whenever it touches a circuit -- so a circuit that's freshly loaded but never visited with an
    * Annotate tool this session won't have a tracker attached yet, and pre-existing annotations in
    * it won't follow a move that happens before that first visit. Documented, not yet closed.
    */
@@ -89,7 +89,7 @@ public final class AnnotationAnchorTracker implements CircuitListener {
     this.circuit = circuit;
   }
 
-  /** Registers a freshly-placed annotation's live anchor. Called by AnnotateTool. */
+  /** Registers a freshly-placed annotation's live anchor. Called by the annotate tools. */
   public void registerAnchor(Component annotation, Component anchor) {
     anchorOf.put(annotation, anchor);
   }
@@ -116,18 +116,37 @@ public final class AnnotationAnchorTracker implements CircuitListener {
       if (w.getEnd0().equals(loc) || w.getEnd1().equals(loc)) return w;
     }
     for (final var c : circuit.getNonWires()) {
-      if (c != exclude && loc.equals(c.getLocation())) return c;
+      if (c != exclude && loc.equals(componentAnchorPoint(c))) return c;
     }
     return null;
   }
 
   private static Location anchorLocationOf(Component target, Location lastKnown) {
-    if (target instanceof Wire w) {
-      // A wire replacement can move both endpoints; follow whichever one is closer to where the
-      // anchor last was, since that's the one this annotation was actually attached to.
-      return distSq(w.getEnd0(), lastKnown) <= distSq(w.getEnd1(), lastKnown) ? w.getEnd0() : w.getEnd1();
-    }
-    return target.getLocation();
+    if (target instanceof Wire w) return wireAnchorPoint(w, lastKnown);
+    return componentAnchorPoint(target);
+  }
+
+  /**
+   * The anchor point a non-wire component's annotation is measured from: its bounding box's
+   * top-center, NOT {@link Component#getLocation()} -- that's often a pin (e.g. a gate's output,
+   * off to one side), which is why annotations used to land beside a component instead of
+   * directly above it. Shared with {@link com.cburch.logisim.tools.AnnotateComponentTool} so a
+   * freshly-placed annotation's anchor and this tracker's follow-along recomputation always agree
+   * on the same point.
+   */
+  public static Location componentAnchorPoint(Component target) {
+    final var bounds = target.getBounds();
+    return Location.create(bounds.getCenterX(), bounds.getY(), false);
+  }
+
+  /**
+   * The anchor point a wire annotation is measured from: whichever endpoint is closer to {@code
+   * preferNear} (the original click, or -- when re-resolving after the wire itself was replaced
+   * -- the annotation's last-known anchor location). Shared with {@link
+   * com.cburch.logisim.tools.AnnotateWireTool}.
+   */
+  public static Location wireAnchorPoint(Wire w, Location preferNear) {
+    return distSq(w.getEnd0(), preferNear) <= distSq(w.getEnd1(), preferNear) ? w.getEnd0() : w.getEnd1();
   }
 
   private static long distSq(Location a, Location b) {
