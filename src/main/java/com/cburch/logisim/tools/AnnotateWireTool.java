@@ -138,17 +138,28 @@ public class AnnotateWireTool extends AbstractAnnotateTool {
 
   /**
    * Which side of the endpoint to put the note on: {@code +1} for up-and-right, {@code -1} for
-   * up-and-left. Follows the direction the wire runs -- a wire heading right gets its note to the
-   * upper right, a wire heading left to the upper left -- so the note reads as belonging to that
-   * run of wire and trails off in the same direction the eye is already travelling.
+   * up-and-left.
+   *
+   * <p>When the endpoint is a component's pin, the note goes to the side AWAY from that
+   * component's body, so it never fights the thing it labels for space -- component on the right,
+   * note on the left. This case was previously missed: the method only understood {@code Wire}
+   * anchors, so once endpoint notes started anchoring to component pins (to stop them drifting
+   * when wires get re-routed) every pin note fell through to the default and piled onto the
+   * component.
+   *
+   * <p>For an endpoint that belongs to no component, there is no body to avoid, so the note
+   * follows the direction the wire runs instead and trails off the way the eye is already
+   * travelling.
    */
   private static int sideOf(Component anchor, Location anchorLoc) {
     if (anchor instanceof Wire w) {
       final var other = w.getEnd0().equals(anchorLoc) ? w.getEnd1() : w.getEnd0();
       if (other.getX() > anchorLoc.getX()) return 1;
       if (other.getX() < anchorLoc.getX()) return -1;
+      return 1; // vertical wire: neither side is implied, pick the right.
     }
-    return 1; // vertical wire (or a non-wire anchor): neither side is implied, pick the right.
+    final var bodyX = anchor.getBounds().getCenterX();
+    return (bodyX > anchorLoc.getX()) ? -1 : 1;
   }
 
   @Override

@@ -140,15 +140,16 @@ public final class AnnotationAnchorTracker implements CircuitListener {
 
   /**
    * The anchor point a non-wire component's annotation is measured from: its bounding box's
-   * top-center, NOT {@link Component#getLocation()} -- that's often a pin (e.g. a gate's output,
-   * off to one side), which is why annotations used to land beside a component instead of
-   * directly above it. Shared with {@link com.cburch.logisim.tools.AnnotateComponentTool} so a
+   * top-LEFT corner, NOT {@link Component#getLocation()} -- that's often a pin (e.g. a gate's
+   * output, off to one side), which is why annotations used to land beside a component instead of
+   * above it. The note is then left-aligned here, so its first character lines up with the
+   * component's left edge. Shared with {@link com.cburch.logisim.tools.AnnotateComponentTool} so a
    * freshly-placed annotation's anchor and this tracker's follow-along recomputation always agree
    * on the same point.
    */
   public static Location componentAnchorPoint(Component target) {
     final var bounds = target.getBounds();
-    return Location.create(bounds.getCenterX(), bounds.getY(), false);
+    return Location.create(bounds.getX(), bounds.getY(), false);
   }
 
   /**
