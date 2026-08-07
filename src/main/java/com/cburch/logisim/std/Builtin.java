@@ -12,6 +12,7 @@ package com.cburch.logisim.std;
 import static com.cburch.logisim.std.Strings.S;
 
 import com.cburch.logisim.soc.Soc;
+import com.cburch.logisim.std.annotate.AnnotationLibrary;
 import com.cburch.logisim.std.arith.ArithmeticLibrary;
 import com.cburch.logisim.std.arith.floating.FPArithmeticLibrary;
 import com.cburch.logisim.std.base.BaseLibrary;
@@ -46,6 +47,10 @@ public class Builtin extends Library {
     libraries =
         Arrays.asList(
             new BaseLibrary(),
+            // Peler Edition Feature 5: a standalone top-level category (not folded into
+            // BaseLibrary), per explicit user request. See docs/peler-edition/ROADMAP.md,
+            // Feature 5.
+            new AnnotationLibrary(),
             new GatesLibrary(),
             new WiringLibrary(),
             new PlexersLibrary(),
