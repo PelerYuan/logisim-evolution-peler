@@ -16,27 +16,38 @@ import com.cburch.logisim.circuit.CircuitMutation;
 import com.cburch.logisim.circuit.Wire;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentDrawContext;
-import com.cburch.logisim.comp.ComponentUserEvent;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.gui.main.Canvas;
 import com.cburch.logisim.gui.main.SelectionActions;
-import com.cburch.logisim.proj.Action;
+import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.std.annotate.Annotation;
 import com.cburch.logisim.std.annotate.AnnotationAnchorTracker;
 import com.cburch.logisim.std.annotate.AnnotationAttributes;
+import com.cburch.logisim.std.base.Text;
 import com.cburch.logisim.util.StringUtil;
 import java.awt.Cursor;
+import java.awt.Frame;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
-import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
+import javax.swing.JOptionPane;
+import javax.swing.JScrollPane;
+import javax.swing.JTextArea;
 
 /**
  * Peler Edition Feature 5: click a component or wire endpoint to attach a free-text annotation to
  * it, anchored so it moves/deletes along with its target (see {@link AnnotationAnchorTracker}).
- * Structurally a close cousin of {@link TextTool} -- same caret-editing machinery via {@link
- * TextEditable} -- but placement requires clicking an existing target rather than anywhere on the
- * canvas, and every placement is registered with the target circuit's anchor tracker.
+ *
+ * <p>Text entry is a modal dialog (a multi-line {@link JTextArea}), not inline canvas caret
+ * editing like {@link TextTool} uses for {@code Text} -- deliberately: caret editing on a
+ * hand-rolled {@link Caret}/{@link CaretListener} pair turned out fragile for this tool (typed
+ * text could silently fail to reach the placed component -- {@code xn.add(comp)} adds whatever
+ * the component's attributes were AT CREATION TIME, and nothing copied the caret's live buffer
+ * back into them before that) and doesn't support newlines at all, both real problems reported
+ * against the first cut of this feature. A modal dialog sidesteps both: {@code getText()} is read
+ * directly when the user clicks OK and set on the component's attributes before it's ever added,
+ * and Enter is a newline by default since there's no default-button binding to steal it (see
+ * {@link #showAnnotationDialog}).
  *
  * <p>See docs/peler-edition/ROADMAP.md, Feature 5.
  */
@@ -59,27 +70,6 @@ public class AnnotateTool extends Tool {
   private static final int DEFAULT_OFFSET_Y = -30;
 
   private static final Cursor cursor = Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR);
-
-  private final MyListener listener = new MyListener();
-  private Caret caret;
-  private boolean caretCreatingText;
-  private Canvas caretCanvas;
-  private Circuit caretCircuit;
-  private Component caretComponent;
-  private Component pendingAnchor; // only meaningful while caretCreatingText
-
-  @Override
-  public void deselect(Canvas canvas) {
-    if (caret != null) {
-      caret.stopEditing();
-      caret = null;
-    }
-  }
-
-  @Override
-  public void draw(Canvas canvas, ComponentDrawContext context) {
-    if (caret != null) caret.draw(context.getGraphics());
-  }
 
   @Override
   public boolean equals(Object other) {
@@ -107,38 +97,6 @@ public class AnnotateTool extends Tool {
   }
 
   @Override
-  public void keyPressed(Canvas canvas, KeyEvent e) {
-    if (caret != null) {
-      caret.keyPressed(e);
-      canvas.getProject().repaintCanvas();
-    }
-  }
-
-  @Override
-  public void keyReleased(Canvas canvas, KeyEvent e) {
-    if (caret != null) {
-      caret.keyReleased(e);
-      canvas.getProject().repaintCanvas();
-    }
-  }
-
-  @Override
-  public void keyTyped(Canvas canvas, KeyEvent e) {
-    if (caret != null) {
-      caret.keyTyped(e);
-      canvas.getProject().repaintCanvas();
-    }
-  }
-
-  @Override
-  public void mouseDragged(Canvas canvas, Graphics g, MouseEvent e) {
-    if (caret != null) {
-      caret.mouseDragged(e);
-      canvas.getProject().repaintCanvas();
-    }
-  }
-
-  @Override
   public void mousePressed(Canvas canvas, Graphics g, MouseEvent e) {
     final var proj = canvas.getProject();
     final var circ = canvas.getCircuit();
@@ -148,80 +106,96 @@ public class AnnotateTool extends Tool {
     proj.doAction(act);
 
     if (!proj.getLogisimFile().contains(circ)) {
-      if (caret != null) caret.cancelEditing();
       canvas.setErrorMessage(S.getter("cannotModifyError"));
       return;
     }
 
-    if (caret != null) {
-      if (caret.getBounds(g).contains(e.getX(), e.getY())) {
-        caret.mousePressed(e);
-        proj.repaintCanvas();
-        return;
-      }
-      caret.stopEditing();
-    }
-    // caret is null at this point
+    final var loc = Location.create(e.getX(), e.getY(), false);
+    final var owner = proj.getFrame();
 
-    final var x = e.getX();
-    final var y = e.getY();
-    final var loc = Location.create(x, y, false);
-    final var event = new ComponentUserEvent(canvas, x, y);
-
-    // Clicking an existing Annotation re-opens it for editing, same as TextTool re-opening Text.
+    // Clicking an existing Annotation re-opens it for editing -- checked first so editing an
+    // annotation always takes priority over accidentally re-anchoring a new one to it.
     for (final var comp : circ.getAllContaining(loc, g)) {
       if (!(comp.getFactory() instanceof Annotation)) continue;
-      final var editable = (TextEditable) comp.getFeature(TextEditable.class);
-      if (editable == null) continue;
-      caret = editable.getTextCaret(event);
-      if (caret != null) {
-        proj.getFrame().viewComponentAttributes(circ, comp);
-        caretComponent = comp;
-        caretCreatingText = false;
-        pendingAnchor = null;
-        break;
-      }
+      editExisting(proj, circ, comp, owner);
+      return;
     }
 
     // Otherwise, look for something to anchor a brand new annotation to.
-    if (caret == null) {
-      final var anchor = findAnchorTarget(circ, loc, g);
-      if (anchor == null) {
-        canvas.setErrorMessage(S.getter("annotateNoTargetHint"));
-      } else {
-        final var anchorLoc = anchorLocationOf(anchor, loc);
-        final var placeX = Canvas.snapXToGrid(anchorLoc.getX());
-        final var placeY = Canvas.snapYToGrid(anchorLoc.getY() + DEFAULT_OFFSET_Y);
-        final var placeLoc = Location.create(placeX, placeY, false);
-
-        final var attrs = (AnnotationAttributes) Annotation.FACTORY.createAttributeSet();
-        attrs.setValue(AnnotationAttributes.ANCHOR_LOC, anchorLoc);
-        caretComponent = Annotation.FACTORY.createComponent(placeLoc, attrs);
-        caretCreatingText = true;
-        pendingAnchor = anchor;
-
-        final var editable = (TextEditable) caretComponent.getFeature(TextEditable.class);
-        if (editable != null) {
-          caret = editable.getTextCaret(event);
-          proj.getFrame().viewComponentAttributes(circ, caretComponent);
-        }
-      }
+    final var anchor = findAnchorTarget(circ, loc, g);
+    if (anchor == null) {
+      canvas.setErrorMessage(S.getter("annotateNoTargetHint"));
+      return;
     }
-
-    if (caret != null) {
-      caretCanvas = canvas;
-      caretCircuit = circ;
-      caret.addCaretListener(listener);
-    }
-    proj.repaintCanvas();
+    createNew(proj, circ, anchor, loc);
   }
 
-  @Override
-  public void mouseReleased(Canvas canvas, Graphics g, MouseEvent e) {
-    if (caret != null) {
-      caret.mouseReleased(e);
-      canvas.getProject().repaintCanvas();
+  private void editExisting(Project proj, Circuit circ, Component comp, Frame owner) {
+    final var currentText = comp.getAttributeSet().getValue(Text.ATTR_TEXT);
+    final var newText = showAnnotationDialog(owner, currentText);
+    if (newText == null) return; // cancelled
+    final var xn = new CircuitMutation(circ);
+    if (StringUtil.isNullOrEmpty(newText)) {
+      xn.remove(comp);
+      proj.doAction(xn.toAction(S.getter("removeComponentAction", Annotation.FACTORY.getDisplayGetter())));
+      AnnotationAnchorTracker.getOrAttach(proj, circ).forget(comp);
+    } else if (!newText.equals(currentText)) {
+      xn.set(comp, Text.ATTR_TEXT, newText);
+      proj.doAction(xn.toAction(S.getter("changeComponentAttributesAction")));
     }
+  }
+
+  private void createNew(Project proj, Circuit circ, Component anchor, Location clickLoc) {
+    final var owner = proj.getFrame();
+    final var text = showAnnotationDialog(owner, "");
+    if (StringUtil.isNullOrEmpty(text)) return; // cancelled, or nothing typed -- don't add a blank note
+
+    final var anchorLoc = anchorLocationOf(anchor, clickLoc);
+    final var placeX = Canvas.snapXToGrid(anchorLoc.getX());
+    final var placeY = Canvas.snapYToGrid(anchorLoc.getY() + DEFAULT_OFFSET_Y);
+    final var placeLoc = Location.create(placeX, placeY, false);
+
+    final var attrs = (AnnotationAttributes) Annotation.FACTORY.createAttributeSet();
+    attrs.setValue(Text.ATTR_TEXT, text);
+    attrs.setValue(AnnotationAttributes.ANCHOR_LOC, anchorLoc);
+    final var comp = Annotation.FACTORY.createComponent(placeLoc, attrs);
+
+    final var xn = new CircuitMutation(circ);
+    xn.add(comp);
+    proj.doAction(xn.toAction(S.getter("addComponentAction", Annotation.FACTORY.getDisplayGetter())));
+    AnnotationAnchorTracker.getOrAttach(proj, circ).registerAnchor(comp, anchor);
+  }
+
+  /**
+   * Modal multi-line text entry. Returns the entered text, {@code ""} if the user cleared it
+   * (caller decides what emptying means -- discard for a new annotation, delete for an existing
+   * one), or {@code null} if the dialog was cancelled/closed without confirming.
+   *
+   * <p>Uses a raw {@link JOptionPane} rather than a hand-built modal dialog for everything else
+   * (button layout, Escape-to-cancel, centering on the owner) but explicitly clears the resulting
+   * dialog's default button -- otherwise {@code JOptionPane} binds Enter to the OK button at the
+   * root-pane level, which would steal every newline the user tries to type into the text area
+   * instead of the intended "add a line break" behavior.
+   */
+  private static String showAnnotationDialog(Frame owner, String initialText) {
+    final var textArea = new JTextArea(initialText == null ? "" : initialText, 6, 32);
+    textArea.setLineWrap(true);
+    textArea.setWrapStyleWord(true);
+    final var scroll = new JScrollPane(textArea);
+
+    final var pane = new JOptionPane(scroll, JOptionPane.PLAIN_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
+    final var dialog = pane.createDialog(owner, S.get("annotateDialogTitle"));
+    dialog.getRootPane().setDefaultButton(null);
+    dialog.setResizable(true);
+    textArea.requestFocusInWindow();
+    dialog.setVisible(true);
+    dialog.dispose();
+
+    final var selected = pane.getValue();
+    if (selected instanceof Integer i && i == JOptionPane.OK_OPTION) {
+      return textArea.getText();
+    }
+    return null;
   }
 
   @Override
@@ -238,13 +212,23 @@ public class AnnotateTool extends Tool {
   }
 
   /**
-   * Finds a click target to anchor a new annotation to: a wire endpoint within {@link
-   * #ANCHOR_SNAP_RADIUS} pixels (checked first, since it's a small precise target easily missed
-   * otherwise), else any non-wire, non-Annotation component whose painted shape contains the
-   * click. Returns {@code null} if neither is found -- empty canvas is not a valid target, per the
-   * original request ("click a component or wire endpoint").
+   * Finds a click target to anchor a new annotation to. Checked in this order: (1) any non-wire,
+   * non-Annotation component whose painted shape directly contains the click -- checked FIRST so
+   * clicking a component's body always wins even when one of its own connected wires' endpoints
+   * happens to be nearby (routine in a real wired-up circuit, since a pin's wire endpoint sits
+   * right at the component's edge -- this ordering used to be reversed, which made it look like
+   * annotating a component was broken any time it had a wire attached); (2) failing that, a wire
+   * endpoint within {@link #ANCHOR_SNAP_RADIUS} pixels. Returns {@code null} if neither is found
+   * -- empty canvas is not a valid target, per the original request ("click a component or wire
+   * endpoint").
    */
   private Component findAnchorTarget(Circuit circ, Location loc, Graphics g) {
+    for (final var comp : circ.getAllContaining(loc, g)) {
+      if (comp instanceof Wire) continue;
+      if (comp.getFactory() instanceof Annotation) continue;
+      return comp;
+    }
+
     Wire nearestWire = null;
     var best = (long) ANCHOR_SNAP_RADIUS * ANCHOR_SNAP_RADIUS;
     for (final var wire : circ.getWires()) {
@@ -258,13 +242,7 @@ public class AnnotateTool extends Tool {
         }
       }
     }
-    if (nearestWire != null) return nearestWire;
-
-    for (final var comp : circ.getAllContaining(loc, g)) {
-      if (comp.getFactory() instanceof Annotation) continue;
-      return comp;
-    }
-    return null;
+    return nearestWire;
   }
 
   private static Location anchorLocationOf(Component target, Location clickLoc) {
@@ -280,69 +258,5 @@ public class AnnotateTool extends Tool {
     final var dx = (long) a.getX() - b.getX();
     final var dy = (long) a.getY() - b.getY();
     return dx * dx + dy * dy;
-  }
-
-  private class MyListener implements CaretListener {
-    @Override
-    public void editingCanceled(CaretEvent e) {
-      if (e.getCaret() != caret) {
-        e.getCaret().removeCaretListener(this);
-        return;
-      }
-      caret.removeCaretListener(this);
-      reset();
-    }
-
-    @Override
-    public void editingStopped(CaretEvent e) {
-      if (e.getCaret() != caret) {
-        e.getCaret().removeCaretListener(this);
-        return;
-      }
-      caret.removeCaretListener(this);
-
-      final var circ = caretCircuit;
-      final var comp = caretComponent;
-      final var wasCreating = caretCreatingText;
-      final var anchor = pendingAnchor;
-      final var proj = caretCanvas.getProject();
-
-      final var val = caret.getText();
-      final var isEmpty = StringUtil.isNullOrEmpty(val);
-      Action a = null;
-      if (wasCreating) {
-        if (!isEmpty) {
-          final var xn = new CircuitMutation(circ);
-          xn.add(comp);
-          a = xn.toAction(S.getter("addComponentAction", Annotation.FACTORY.getDisplayGetter()));
-        }
-        // empty text on a brand-new annotation -> just don't add it, matching TextTool.
-      } else {
-        if (isEmpty) {
-          final var xn = new CircuitMutation(circ);
-          xn.remove(comp);
-          a = xn.toAction(S.getter("removeComponentAction", Annotation.FACTORY.getDisplayGetter()));
-          AnnotationAnchorTracker.getOrAttach(proj, circ).forget(comp);
-        } else {
-          final var editable = (TextEditable) comp.getFeature(TextEditable.class);
-          if (editable != null) a = editable.getCommitAction(circ, e.getOldText(), val);
-        }
-      }
-
-      reset();
-      if (a != null) proj.doAction(a);
-      if (wasCreating && !isEmpty && anchor != null) {
-        AnnotationAnchorTracker.getOrAttach(proj, circ).registerAnchor(comp, anchor);
-      }
-    }
-
-    private void reset() {
-      caretCircuit = null;
-      caretComponent = null;
-      caretCreatingText = false;
-      pendingAnchor = null;
-      caret = null;
-      caretCanvas = null;
-    }
   }
 }
