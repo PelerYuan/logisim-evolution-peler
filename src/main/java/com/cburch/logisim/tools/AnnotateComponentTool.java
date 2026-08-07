@@ -77,7 +77,7 @@ public class AnnotateComponentTool extends AbstractAnnotateTool {
   }
 
   @Override
-  Location placementFor(Location anchorLoc) {
+  Location placementFor(Component anchor, Location anchorLoc) {
     final var x = Canvas.snapXToGrid(anchorLoc.getX());
     final var y = Canvas.snapYToGrid(anchorLoc.getY() + DEFAULT_OFFSET_Y);
     return Location.create(x, y, false);
