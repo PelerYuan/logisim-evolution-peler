@@ -160,12 +160,23 @@ jobs:
           chmod +x gradlew
           ./gradlew createRpm "-PpelerAppVersion=${{ needs.prep.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
 
+      # Snap is deliberately NOT included below: `snap/snapcraft.yaml` is still unbranded (produces
+      # "logisim-evolution_3.8.0-dev_amd64.snap" -- wrong name and version, see ROADMAP.md backlog),
+      # so it isn't fit to publish yet. Built above purely to keep CI signal that snap packaging
+      # still works; `steps.snapcraft.outputs.snap` intentionally goes unused past that point.
+      #
+      # Also: don't mix a path outside `build/dist/` into this list. `actions/upload-artifact`
+      # computes each artifact's root as the least-common-ancestor of every listed path -- when
+      # every path shares `build/dist/`, that directory itself disappears from the zip (matching
+      # every other platform job here), but a single outside path (the snap used to be one) forces
+      # the LCA up to the repo root, which silently nests the deb/rpm one level deeper than
+      # `publish`'s artifact-merge step expects. Confirmed by v1.0.8's first automated release: the
+      # deb/rpm silently failed to reach the release while the snap (at the now-common root) did.
       - name: "Upload Linux artifacts"
         uses: actions/upload-artifact@v7
         with:
           name: release-linux
           path: |
-            ${{ steps.snapcraft.outputs.snap }}
             build/dist/${{ needs.prep.outputs.lse_name }}_${{ needs.prep.outputs.peler_version }}_amd64.deb
             build/dist/${{ needs.prep.outputs.lse_name }}-${{ needs.prep.outputs.peler_version }}-1.x86_64.rpm
           if-no-files-found: error
@@ -268,9 +279,12 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # Recursive glob (`dist/**/*`, not `dist/*`) on purpose: if any future job's artifact ever ends
+      # up with a nested path again (see the comment on build_linux's upload step above for exactly
+      # how that happens), this still finds the files instead of silently dropping them.
       - name: "Publish GitHub Release"
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prep.outputs.tag_name }}
           name: ${{ needs.prep.outputs.tag_name }}
-          files: dist/*
+          files: dist/**/*

@@ -218,6 +218,70 @@ as originally planned above — that class only renders whatever `default.templ`
 section lists, so adding `Tidy Wires Tool` there was sufficient on its own (same data-driven
 mechanism the existing Poke/Edit/Wiring/Text tool buttons already use).
 
+## Feature 5 — Schematic annotations (Phase 5, design 2026-08-07)
+
+New user request, prompted by schematic-capture tutorials that recommend annotating parts as you draw.
+Investigated upstream first: `Circuit.annotate()` (`circuit/Circuit.java:369`) already exists and
+auto-labels components in bulk, but it's wired to the FPGA/HDL download flow only (`Download.java`,
+`FpgaCommander.java`), only touches components whose factory `requiresNonZeroLabel()` (register-like
+parts, not general gates), and produces HDL-variable-style names (`AND_GATE_0`), not EE-style reference
+designators. There is no click-a-component-and-type-a-note interaction anywhere — manual labeling today
+means opening the Attribute Table sidebar and editing the `Label` attribute row, which is the friction
+being reported. Confirmed with user, in order:
+
+1. Scope for v1: a free-text annotation you click onto a **component or a wire endpoint**, rendered
+   floating above the target — a genuinely new tool/category, not a reuse or extension of the existing
+   `Label` attribute (must not touch `StdAttr.LABEL` or `Circuit.annotate()`'s behavior at all).
+2. **Anchored**: moving, rotating, or deleting the target must carry the annotation along / delete it
+   with it — not left behind as an orphaned floating note.
+3. No batch/auto-numbering (i.e. not building on `Circuit.annotate()`'s engine) for v1 — purely manual,
+   one annotation at a time. Auto reference-designator numbering (`U1`, `R1`, ...) stays a backlog idea,
+   revisit after the manual tool ships and gets used.
+
+**The hard part, and why this isn't just "Text Tool but pre-positioned"**: `Component` has no
+`setLocation`/`translate` — confirmed by reading `comp/Component.java`. Every move, rotate, or reshape in
+this codebase (drag via `SelectTool`, `QuickRotateTool`'s rotation, `WiringTool` reshaping a wire) is
+implemented as remove-old/add-new through a `ReplacementMap`, never in-place mutation. So a Java object
+reference to "the component this annotation is anchored to" goes stale the instant that component is
+moved — anchoring can't be "just store a reference and let it ride along" the way `Label` rides along for
+free (an attribute *does* survive a move, since `ReplacementMap`-driven moves clone the old component's
+`AttributeSet` onto the new instance — which is incidentally *why* `Label` visually tracks a component
+today with zero extra code). Two ways to get real anchoring given that constraint:
+
+- **(Rejected) Piggyback on each component's `AttributeSet`.** Would make anchoring free (same mechanism
+  `Label` already gets), but requires adding a new attribute to every `ComponentFactory` in the standard
+  library (gates, memory, wiring, I/O, ...) to have a slot for it — a broad, invasive diff across shared
+  core code, and it still wouldn't cover wire endpoints (`Wire` doesn't carry a general-purpose attribute
+  slot for this). Against the "additive, narrowly-scoped" principle this fork has followed so far.
+- **(Chosen) Standalone `Annotation` component + a `CircuitListener` that follows replacements.** A new,
+  self-contained component (sibling to `Text`, not derived from it) stores its own text and a reference to
+  its anchor (component or wire). A new `CircuitListener`, registered once per `Circuit`, watches for
+  `CircuitEvent.TRANSACTION_DONE` and inspects the completed transaction's `ReplacementMap`: if the old
+  half of any `old → new` pair is something an `Annotation` is anchored to, the listener issues a small
+  follow-up action that re-anchors (and re-positions, preserving the original offset) the `Annotation` to
+  `new` — or removes the `Annotation` if the target was removed outright (`new == null`). This is a
+  second, immediately-adjacent undo step right after the move/delete that triggered it, not folded into
+  the same one — an accepted trade-off (one extra Ctrl+Z to also undo the follow-along), not a bug,
+  because folding it into the *same* transaction would mean patching the internals of `SelectTool`,
+  `WiringTool`, and every other move/delete code path individually. That's precisely the kind of broad,
+  invasive surgery this fork avoids — a purely additive listener that touches zero existing tool classes
+  is the same trade Logisim's own `Circuit.annotate()` already makes (it also does one `proj.doAction()`
+  per labeled component instead of one atomic batch, for the same "additive over invasive" reason).
+
+**Persistence**: `Annotation` is a real `Component` in the circuit's component list, so it saves/loads
+through the existing `.circ` XML component mechanism automatically — no schema changes needed for the
+annotation's own text/position. The anchor reference itself, however, is a live object link that (like
+everything else keyed by object identity in this codebase) does not survive a save/reload by itself;
+needs a load-time re-resolution step (match by the anchor's last-known `Location` + factory, best-effort)
+documented as a known limitation until implemented and tested.
+
+**UI placement**: new top-level library/category in the component tree (a new `Tool`/`Library`, not
+folded into `BaseLibrary`, per user's explicit ask for "a new category on the left"), with its own
+`AddTool`-like placement tool: click a component or a wire endpoint to drop a text-entry annotation
+anchored there.
+
+**Not yet started** — this section is the design only; implementation is next.
+
 ## Workflow for each phase
 
 1. **Product manager** turns the phase scope above into a concrete task list with acceptance criteria.
