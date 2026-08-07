@@ -53,7 +53,6 @@ import javax.swing.KeyStroke;
 import javax.swing.SwingUtilities;
 import javax.swing.ToolTipManager;
 import javax.swing.UIManager;
-
 import javax.swing.event.TreeModelEvent;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
@@ -66,7 +65,7 @@ import javax.swing.tree.TreeSelectionModel;
  * Code taken from Cornell's version of Logisim: http://www.cs.cornell.edu/courses/cs3410/2015sp/
  */
 public class ProjectExplorer extends JTree implements LocaleListener {
-  public static final Color MAGNIFYING_INTERIOR = ColorUtil.MAGNIFYING_INTERIOR;
+  public static final Color MAGNIFYING_INTERIOR = new Color(200, 200, 255, 64);
   private static final long serialVersionUID = 1L;
 
   private final Project proj;
@@ -311,17 +310,9 @@ public class ProjectExplorer extends JTree implements LocaleListener {
                     : (vhdl != null && vhdl == proj.getFrame().getHdlEditorView());
           }
           label.setFont(viewed ? boldFont : plainFont);
-          label.setText(
-              highlightFilterMatches(
-                  viewed ? tool.getDisplayName() + " ●" : tool.getDisplayName(), selected));
+          label.setText(highlightFilterMatches(tool.getDisplayName(), selected));
           label.setIcon(new ToolIcon(tool));
           label.setToolTipText(tool.getDescription());
-
-          if (viewed) {
-            label.setForeground(ColorUtil.getThemeAccentColor());
-          } else {
-            label.setForeground(selected ? getTextSelectionColor() : getTextNonSelectionColor());
-          }
         }
       } else if (value instanceof ProjectExplorerLibraryNode libNode) {
         final var lib = libNode.getValue();
@@ -605,16 +596,13 @@ public class ProjectExplorer extends JTree implements LocaleListener {
           y + AppPreferences.getScaled(AppPreferences.BOX_SIZE - 2),
           ty - 1
         };
-        final var magFill = ColorUtil.getMagnifyingInterior(ProjectExplorer.this);
-        final var magBorder = ColorUtil.getThemeAccentColor();
-
-        g.setColor(magFill);
+        g.setColor(MAGNIFYING_INTERIOR);
         g.fillOval(
             x + AppPreferences.getScaled(AppPreferences.BOX_SIZE >> 2),
             y + AppPreferences.getScaled(AppPreferences.BOX_SIZE >> 2),
             AppPreferences.getScaled(AppPreferences.BOX_SIZE >> 1),
             AppPreferences.getScaled(AppPreferences.BOX_SIZE >> 1));
-        g.setColor(magBorder);
+        g.setColor(new Color(139, 69, 19));
         g.drawOval(
             x + AppPreferences.getScaled(AppPreferences.BOX_SIZE >> 2),
             y + AppPreferences.getScaled(AppPreferences.BOX_SIZE >> 2),

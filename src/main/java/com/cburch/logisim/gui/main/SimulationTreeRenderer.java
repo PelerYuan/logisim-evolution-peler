@@ -11,11 +11,9 @@ package com.cburch.logisim.gui.main;
 
 import com.cburch.logisim.comp.ComponentDrawContext;
 import com.cburch.logisim.comp.ComponentFactory;
-import com.cburch.logisim.prefs.AppPreferences;
-import com.cburch.logisim.util.ColorUtil;
+import com.cburch.logisim.gui.generic.ProjectExplorer;
 import java.awt.Color;
 import java.awt.Component;
-import java.awt.Font;
 import java.awt.Graphics;
 import javax.swing.Icon;
 import javax.swing.JLabel;
@@ -39,21 +37,9 @@ public class SimulationTreeRenderer extends DefaultTreeCellRenderer {
     final var model = (SimulationTreeModel) tree.getModel();
     if (ret instanceof JLabel label) {
       if (value instanceof SimulationTreeNode node) {
-        final var viewed = node.isCurrentView(model);
         final var factory = node.getComponentFactory();
         if (factory != null) {
-          label.setIcon(new RendererIcon(factory, viewed));
-        }
-
-        final var plainFont = AppPreferences.getScaledFont(label.getFont());
-        final var boldFont = plainFont.deriveFont(Font.BOLD);
-
-        label.setFont(viewed ? boldFont : plainFont);
-        if (viewed) {
-          label.setText(node.toString() + " ●");
-          label.setForeground(ColorUtil.getThemeAccentColor());
-        } else {
-          label.setForeground(selected ? getTextSelectionColor() : getTextNonSelectionColor());
+          label.setIcon(new RendererIcon(factory, node.isCurrentView(model)));
         }
       }
     }
@@ -90,9 +76,9 @@ public class SimulationTreeRenderer extends DefaultTreeCellRenderer {
         final var ty = y + 13;
         int[] xp = {tx - 1, x + 18, x + 20, tx + 1};
         int[] yp = {ty + 1, y + 20, y + 18, ty - 1};
-        g.setColor(ColorUtil.getMagnifyingInterior(c));
+        g.setColor(ProjectExplorer.MAGNIFYING_INTERIOR);
         g.fillOval(x + 5, y + 5, 10, 10);
-        g.setColor(ColorUtil.getThemeAccentColor());
+        g.setColor(Color.BLACK);
         g.drawOval(x + 5, y + 5, 10, 10);
         g.fillPolygon(xp, yp, xp.length);
       }
