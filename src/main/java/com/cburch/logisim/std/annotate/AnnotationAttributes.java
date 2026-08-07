@@ -39,7 +39,7 @@ import java.util.Objects;
  * docs/peler-edition/ROADMAP.md, Feature 5, "Persistence".
  */
 public class AnnotationAttributes extends AbstractAttributeSet {
-  static final Attribute<Location> ANCHOR_LOC =
+  public static final Attribute<Location> ANCHOR_LOC =
       new Attribute<>("annotationAnchorLoc", null, true) {
         @Override
         public Location parse(String value) {
