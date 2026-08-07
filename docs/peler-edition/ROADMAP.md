@@ -384,6 +384,37 @@ testing.
    attribute rather than the tracker's live in-memory map, so it still holds for notes loaded from
    a `.circ` file in a later session.
 
+## First stable release — v1.1.0 (2026-08-08)
+
+Everything before this was a development build. All 18 earlier tags (`v1.0.0-peler.1` through
+`v1.0.19`) are now marked **pre-release** on GitHub, so they no longer appear as the project's
+latest release; they are kept only as history.
+
+**Why `v1.1.0` and not `v1.0.0`.** The obvious number for a first stable release is 1.0.0, but the
+development builds already consumed the whole `1.0.x` range. Publishing 1.0.0 now would leave the
+first stable release sorting *below* nineteen superseded dev builds in every tag listing and
+version comparison. `v1.1.0` is the lowest number that sorts above them, which makes "1.0.x were
+the dev builds, 1.1.0 is the first real one" true both by convention and by ordering. Retagging is
+cheap if a different scheme is preferred later.
+
+Release contents, on top of official Logisim-evolution v4.1.0:
+
+- Continuous placement (Feature 1), Quick Rotate (Feature 2), wire auto-snap (Feature 3), and
+  schematic annotations (Feature 5). Tidy Wires (Feature 4) remains deferred and unregistered.
+- Upstream's **Help > About** window is restored to upstream's own content. It had been edited to
+  add a Peler Edition section, and it rendered the copyright line from `BuildInfo.name`, so it read
+  `Copyright (c) 2001-2026 logisim-evolution-peler developers` — claiming a quarter-century of other
+  people's work for a personal fork. `AboutCredits` now holds upstream's name and URL as explicit
+  constants, independent of this fork's packaging identity.
+- New **Help > About Peler's Edition** window (`AboutPelerEdition`) describing what the fork adds
+  and stating plainly that it is unofficial, unaffiliated, and unsupported by upstream, with bug
+  reports routed here rather than to upstream.
+- Application icons carry a red **P** in the bottom-left corner, so the fork is distinguishable in
+  the taskbar and Start Menu from an official install beside it. Applied to jpackage artwork for
+  all three platforms and to the in-app window icons, generated from the pristine v4.1.0 artwork so
+  regeneration cannot stamp a P onto a P.
+- README rewritten to lead with attribution to upstream.
+
 ## Workflow for each phase
 
 1. **Product manager** turns the phase scope above into a concrete task list with acceptance criteria.
