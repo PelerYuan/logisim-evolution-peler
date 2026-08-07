@@ -4,7 +4,7 @@
 
 # Logisim-evolution — Peler's Edition #
 
-> ### This is an unofficial personal fork. ###
+> ## This is an unofficial personal fork. ##
 >
 > **Essentially all of this software is the work of the
 > [Logisim-evolution](https://github.com/logisim-evolution/logisim-evolution) developers and its
@@ -65,7 +65,8 @@ this fork's own changes are described under **Help → About Peler's Edition**.
   it does not ship unreleased upstream work.
 * No upstream functionality is removed or altered beyond the additions listed above.
 * Upstream's copyright notices, credits, and attribution are left intact.
-* Bug reports for **this build** belong [here](https://github.com/PelerYuan/logisim-evolution-peler/issues).
+* Bug reports for **this build** belong in
+  [this fork's issue tracker](https://github.com/PelerYuan/logisim-evolution-peler/issues).
   **Never report them to the upstream project** — they did not build this and cannot support it.
   If you can reproduce a problem in the official Logisim-evolution release, report it upstream instead,
   where it will actually get fixed for everyone.
@@ -111,8 +112,8 @@ Please check first whether the problem also happens in the
 * **Happens in the official release too** → report it
   [upstream](https://github.com/logisim-evolution/logisim-evolution/issues), so the fix reaches
   everyone.
-* **Only happens here** → it is this fork's fault; report it
-  [here](https://github.com/PelerYuan/logisim-evolution-peler/issues).
+* **Only happens here** → it is this fork's fault; report it in
+  [this fork's issue tracker](https://github.com/PelerYuan/logisim-evolution-peler/issues).
 
 ---
 
