@@ -20,7 +20,6 @@ import com.cburch.logisim.tools.PokeTool;
 import com.cburch.logisim.tools.QuickRotateTool;
 import com.cburch.logisim.tools.SelectTool;
 import com.cburch.logisim.tools.TextTool;
-import com.cburch.logisim.tools.TidyWiresTool;
 import com.cburch.logisim.tools.Tool;
 import com.cburch.logisim.tools.WiringTool;
 import java.util.Arrays;
@@ -43,6 +42,11 @@ public class BaseLibrary extends Library {
     setHidden();
     WiringTool wiring = new WiringTool();
 
+    // Peler Edition Feature 4 (Tidy Wires) is deferred out of the default toolset: the reroute
+    // engine (WireTidier/TidyWiresTool) is still in the tree and passed review, but hasn't had
+    // enough hands-on mileage to ship as an on-by-default tool yet. See docs/peler-edition/
+    // ROADMAP.md, Feature 4 status. Not registered here -> doesn't appear in the Base palette,
+    // independent of also being pulled from default.templ's toolbar and MenuProject's menu item.
     tools =
         Arrays.asList(
             new PokeTool(),
@@ -50,8 +54,7 @@ public class BaseLibrary extends Library {
             wiring,
             new TextTool(),
             new MenuTool(),
-            new QuickRotateTool(),
-            new TidyWiresTool());
+            new QuickRotateTool());
   }
 
   @Override

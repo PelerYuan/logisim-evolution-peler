@@ -144,7 +144,26 @@ upgradeable from everything before it. One transitional gap: upgrading from `v1.
 used jpackage's undocumented default UUID) to the first release carrying this pinned UUID may still not
 be recognized as an upgrade — from that release onward, all upgrades work correctly.
 
-## Feature 4 — Tidy Wires (Phase 4, in progress 2026-08-07)
+## Feature 4 — Tidy Wires (Phase 4, implemented 2026-08-07, **deferred from default build 2026-08-07**)
+
+**Status: deferred.** Shipped active in `v1.0.7`, but pulled from the default toolset the same day at
+user request — it hasn't had enough hands-on mileage yet to be trusted as an on-by-default tool, and a
+mis-route is the one failure mode of this feature that would actually be bad (see the correctness
+invariant below; the invariant itself is believed sound and was independently reviewed, but "reviewed"
+and "battle-tested across real user circuits" are different bars, and this feature only clears the
+first one so far). The engine (`WireTidier.java`) and UI glue (`TidyWiresTool.java`) are untouched and
+still compile — only the three registration points that expose them to the user were removed:
+`BaseLibrary.java` (tool no longer in the Base palette list), `default.templ` (toolbar button removed),
+`MenuProject.java` (Project-menu item, field, and dispatch branch removed). To re-enable: reverse those
+three edits. Re-enabling should happen after a dedicated testing pass — at minimum a fan-out net (one
+output to 3+ inputs) and an obstacle-between-two-components case, per the original test plan that was
+never actually run by a human before `v1.0.7` shipped.
+
+One known edge case from having shipped it active in `v1.0.7`: a user who customized their own toolbar/
+template to include `Tidy Wires Tool` while running `v1.0.7` will have that reference silently unresolved
+by `BaseLibrary.getTool()` once they upgrade past this point (expected to warn/skip on load, not crash —
+not separately verified). Not fixed; deferring is itself the fix for the underlying maturity concern, and
+this only affects a self-customized toolbar, not the default one.
 
 New user request: a menu item + toolbar button that re-routes all wiring in the current circuit for
 readability, without moving any components. Upstream has nothing like this.
