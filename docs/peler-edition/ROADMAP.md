@@ -295,6 +295,60 @@ builtin library (Wiring, Gates, Base, ...) has a `<lib name="X" desc="#Y" />` en
 never got one. Fixed by adding `<lib name="E" desc="#Annotation" />` to `default.templ`. Worth
 remembering for any *future* new top-level library: registering in `Builtin.java` alone is not enough.
 
+**Bug found in v1.0.10, fixed same day**: the fix above's own explanatory XML comment in
+`default.templ` contained a literal `--`, which is illegal anywhere inside an XML comment body
+(only legal as part of the closing `-->`). Broke parsing of the *entire* template — every project
+failed to open with a `SAXParseException`, reported by the user as an empty project greeting them
+on launch. Fixed by rewriting the comment to avoid `--`, and validated with a Python XML parse
+check before pushing (`python3 -c "import xml.dom.minidom as m; m.parse(...)"`) — now standard
+practice before touching `default.templ` again.
+
+**Bugs found in v1.0.11 testing, fixed as v1.0.12**: two, both from the user clicking around the
+real build. (1) Anchoring always favored the nearest wire endpoint over the component actually
+clicked, because `findAnchorTarget` checked wire endpoints across the whole circuit *before*
+checking component hit-boxes — and a component's own pins/wires always sit within the snap radius
+of its body, so the wire won every time. Fixed by checking component hit-boxes first, wire
+endpoints only as a fallback (later superseded entirely by the v1.0.13 tool split below, which
+removes the ambiguity instead of just re-ordering it). (2) Typed annotation text was silently
+lost for brand-new annotations: the original design used inline canvas caret editing
+(`TextEditable`/`Caret`, mirroring `TextTool`), and its `editingStopped()` commit path did
+`xn.add(comp)` where `comp`'s attributes were fixed *at creation time*, before any text was typed
+— nothing ever copied the caret's live buffer back into them. Replaced the whole input mechanism
+with a modal `JOptionPane` + `JTextArea` dialog (also delivering multi-line support, requested at
+the same time): `getText()` is read directly on OK and set on the attributes *before* the
+component is ever created, eliminating the class of bug rather than patching around it. Had to
+explicitly `dialog.getRootPane().setDefaultButton(null)`, since `JOptionPane` otherwise binds
+Enter to the OK button and steals every newline meant for the text area.
+
+**Redesign after v1.0.12 testing, shipped as v1.0.13**: three more issues from continued hands-on
+testing.
+
+1. **Saving any circuit with an annotation on it failed outright** (`File Error: Annotation
+   component not found`, then dropped the component from the saved XML). Root cause:
+   `AnnotationLibrary.getTools()` only ever contained the bespoke `AnnotateTool`, never an
+   `AddTool(Annotation.FACTORY)` — and `Library.contains(ComponentFactory)` / `Library.getTool(String)`
+   (used by `XmlWriter.findLibrary` on save and `XmlReader.findTool` on load, respectively) only
+   look inside `AddTool`s. So the library could never resolve its own component factory by name,
+   on either the save or the load path — the save path just happened to be what the user hit
+   first. `BaseLibrary` already solved this exact problem for `Text` (also placed by a bespoke
+   `Tool`, not a drag-and-drop `AddTool`): override both methods with a private `AddTool` fallback
+   purely so the lookup has something to find. Same fix applied here.
+2. **Split `AnnotateTool` into `AnnotateComponentTool` and `AnnotateWireTool`**, per explicit user
+   request ("one dedicated to marking components, one dedicated to marking wire endpoints, so
+   it's easier to tell apart during actual use") — replacing the single tool's click-priority
+   heuristic (component hit-box, then nearest wire endpoint) with two tools that each only ever
+   look for their own kind of target. Shared logic (the edit-existing-annotation flow, the modal
+   dialog, the circuit-mutation/tracker plumbing) lives in a new `AbstractAnnotateTool` base class;
+   each subclass supplies its own target search, anchor-point calculation, and toolbox icon.
+3. **Component annotations didn't land directly above the component.** The anchor point used to
+   be `Component.getLocation()`, which for most components is a pin coordinate (e.g. a 2-input AND
+   gate's location is its output pin, off to one side), not the visual center of its body — so a
+   horizontally-centered note ended up centered on the wrong point. Fixed by anchoring component
+   annotations to the component's bounding box top-center (`Bounds.getCenterX()`, `Bounds.getY()`)
+   instead. `AnnotationAnchorTracker` exposes this as `componentAnchorPoint(Component)` (and the
+   wire equivalent as `wireAnchorPoint(Wire, Location)`) so both annotate tools and the tracker's
+   own follow-along recomputation agree on the same point.
+
 ## Workflow for each phase
 
 1. **Product manager** turns the phase scope above into a concrete task list with acceptance criteria.

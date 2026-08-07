@@ -24,7 +24,8 @@ import java.awt.Graphics2D;
 
 /**
  * Peler Edition Feature 5: a free-text schematic annotation, anchored to a component or wire
- * endpoint by {@link com.cburch.logisim.tools.AnnotateTool} and kept in sync by {@link
+ * endpoint by {@link com.cburch.logisim.tools.AnnotateComponentTool} or {@link
+ * com.cburch.logisim.tools.AnnotateWireTool} and kept in sync by {@link
  * AnnotationAnchorTracker}. Deliberately a *sibling* of {@link Text}, not a subclass -- reuses
  * its text/font/color/alignment {@code Attribute} objects directly (so no new i18n keys, no
  * duplicated attribute-table UI), but is otherwise fully independent: has no relationship to
