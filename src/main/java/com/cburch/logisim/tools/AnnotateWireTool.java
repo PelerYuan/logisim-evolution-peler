@@ -15,9 +15,11 @@ import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.Wire;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentDrawContext;
+import com.cburch.logisim.data.AttributeOption;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.gui.main.Canvas;
 import com.cburch.logisim.std.annotate.AnnotationAnchorTracker;
+import com.cburch.logisim.std.base.Text;
 import com.cburch.logisim.util.StringGetter;
 import java.awt.Graphics;
 
@@ -40,8 +42,12 @@ public class AnnotateWireTool extends AbstractAnnotateTool {
   // rather than reusing that one directly since the two tools have no other coupling.
   private static final int ANCHOR_SNAP_RADIUS = 20;
 
-  // Grid-snapped vertical gap between a wire endpoint and the note placed above it.
-  private static final int DEFAULT_OFFSET_Y = -30;
+  // Grid-snapped offsets from the endpoint to the note: one grid square up, one to the side.
+  // Deliberately much tighter than the component tool's gap -- a wire endpoint is a point, not a
+  // body, so there's nothing to clear, and a far-flung note reads as belonging to nothing in
+  // particular. Diagonal rather than straight up so the note never sits on the wire itself.
+  private static final int OFFSET_Y = -10;
+  private static final int OFFSET_X = 10;
 
   @Override
   public boolean equals(Object other) {
@@ -87,10 +93,33 @@ public class AnnotateWireTool extends AbstractAnnotateTool {
   }
 
   @Override
-  Location placementFor(Location anchorLoc) {
-    final var x = Canvas.snapXToGrid(anchorLoc.getX());
-    final var y = Canvas.snapYToGrid(anchorLoc.getY() + DEFAULT_OFFSET_Y);
+  Location placementFor(Component anchor, Location anchorLoc) {
+    final var x = Canvas.snapXToGrid(anchorLoc.getX() + OFFSET_X * sideOf(anchor, anchorLoc));
+    final var y = Canvas.snapYToGrid(anchorLoc.getY() + OFFSET_Y);
     return Location.create(x, y, false);
+  }
+
+  @Override
+  AttributeOption horizontalAlignFor(Component anchor, Location anchorLoc) {
+    // Text runs outward from the endpoint: placed to its right it's left-aligned, and vice versa.
+    // Without this the note would be centered on the offset point and half of it would fall back
+    // across the endpoint (and the wire) it's offset away from.
+    return Text.ATTR_HALIGN.parse(sideOf(anchor, anchorLoc) > 0 ? "left" : "right");
+  }
+
+  /**
+   * Which side of the endpoint to put the note on: {@code +1} for up-and-right, {@code -1} for
+   * up-and-left. Leans away from whichever direction the wire itself runs, so the note clears the
+   * wire instead of lying along it -- for a wire running right from this endpoint, the space to
+   * the upper left is the free one.
+   */
+  private static int sideOf(Component anchor, Location anchorLoc) {
+    if (anchor instanceof Wire w) {
+      final var other = w.getEnd0().equals(anchorLoc) ? w.getEnd1() : w.getEnd0();
+      if (other.getX() > anchorLoc.getX()) return -1;
+      if (other.getX() < anchorLoc.getX()) return 1;
+    }
+    return 1; // vertical wire (or a non-wire anchor): both sides are clear, pick the right.
   }
 
   @Override

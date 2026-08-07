@@ -11,6 +11,7 @@ package com.cburch.logisim.std.annotate;
 
 import static com.cburch.logisim.std.Strings.S;
 
+import com.cburch.draw.util.TextMetrics;
 import com.cburch.logisim.data.AttributeSet;
 import com.cburch.logisim.data.Bounds;
 import com.cburch.logisim.instance.Instance;
@@ -50,21 +51,13 @@ public class Annotation extends InstanceFactory {
     setShouldSnap(false);
   }
 
-  private void configureLabel(Instance instance) {
-    final var attrs = (AnnotationAttributes) instance.getAttributeSet();
-    final var loc = instance.getLocation();
-    instance.setTextField(
-        Text.ATTR_TEXT,
-        Text.ATTR_FONT,
-        loc.getX(),
-        loc.getY(),
-        attrs.getHorizontalAlign(),
-        attrs.getVerticalAlign());
-  }
-
   @Override
   protected void configureNewInstance(Instance instance) {
-    configureLabel(instance);
+    // Deliberately NO instance.setTextField(...) here, unlike Text.java. That call registers an
+    // InstanceTextField as this component's TextEditable feature, which hands the Text Tool an
+    // inline caret editor for annotation text -- a second way in, alongside the annotate tools'
+    // dialog, that renders and edits the text as a single line and so silently can't handle the
+    // newlines the dialog exists to accept. One component, one editing path.
     instance.addAttributeListener();
   }
 
@@ -97,10 +90,12 @@ public class Annotation extends InstanceFactory {
   }
 
   //
-  // graphics methods -- deliberately identical rendering approach to Text.java (same estimate-
-  // then-paint two-pass so bounds settle after the first real paint), just without that class's
-  // horizontal/vertical alignment configureLabel() re-trigger since Annotation doesn't expose
-  // those as separately mutable post-creation.
+  // graphics methods -- same estimate-then-paint two-pass as Text.java (so bounds settle after
+  // the first real paint), but rendering each line separately rather than handing the whole
+  // string to one GraphicsUtil.drawText call. That call bottoms out in Graphics.drawString,
+  // which has no notion of '\n' -- it renders an embedded newline as a missing-glyph box on a
+  // single line. Since annotation text is entered through a multi-line JTextArea, newlines are
+  // expected input here in a way they never are for Text.
   //
   @Override
   public void paintGhost(InstancePainter painter) {
@@ -113,22 +108,37 @@ public class Annotation extends InstanceFactory {
     final var g = painter.getGraphics();
     final var old = g.getFont();
     g.setFont(attrs.getFont());
-    GraphicsUtil.drawText(g, text, 0, 0, halign, valign);
 
-    final var textTrim = text.endsWith(" ") ? text.substring(0, text.length() - 1) : text;
-    Bounds newBds;
-    if (textTrim.isEmpty()) {
-      newBds = Bounds.EMPTY_BOUNDS;
-    } else {
-      final var bdsOut = GraphicsUtil.getTextBounds(g, textTrim, 0, 0, halign, valign);
-      newBds = Bounds.create(bdsOut).expand(4);
+    final var lines = splitLines(text);
+    final var lineHeight = new TextMetrics(g).height;
+
+    Bounds newBds = null;
+    for (var i = 0; i < lines.length; i++) {
+      // Lines stack UPWARD from the component's own location: the LAST line sits on it and
+      // earlier ones go above. Notes are placed above whatever they annotate, so growing upward
+      // keeps the bottom line a fixed distance from the target -- adding a line pushes the note
+      // further away from the circuit instead of down into it.
+      final var lineY = (i - (lines.length - 1)) * lineHeight;
+      final var line = lines[i];
+      if (!line.isEmpty()) GraphicsUtil.drawText(g, line, 0, lineY, halign, valign);
+      // Empty lines still contribute their slot's height (TextMetrics.height is font-derived,
+      // not text-derived) with zero width, which is exactly what a blank line should occupy.
+      final var lineBds = Bounds.create(GraphicsUtil.getTextBounds(g, line, 0, lineY, halign, valign));
+      newBds = (newBds == null) ? lineBds : newBds.add(lineBds);
     }
+    newBds = (newBds == null) ? Bounds.EMPTY_BOUNDS : newBds.expand(4);
+
     if (attrs.setOffsetBounds(newBds)) {
       final var instance = painter.getInstance();
       if (instance != null) instance.recomputeBounds();
     }
 
     g.setFont(old);
+  }
+
+  /** Splits annotation text into its rendered lines, preserving trailing blank lines. */
+  static String[] splitLines(String text) {
+    return text.split("\n", -1);
   }
 
   @Override

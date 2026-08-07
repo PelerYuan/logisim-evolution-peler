@@ -349,6 +349,35 @@ testing.
    wire equivalent as `wireAnchorPoint(Wire, Location)`) so both annotate tools and the tracker's
    own follow-along recomputation agree on the same point.
 
+**Polish pass after v1.0.13 testing, shipped as v1.0.14**: three more from hands-on use.
+
+1. **Newlines never rendered.** The dialog accepted them (that's what it was added for in v1.0.12)
+   and `StringUtil.estimateBounds` already counted them, but painting went through a single
+   `GraphicsUtil.drawText` call, which bottoms out in `Graphics.drawString` — that has no notion of
+   `\n` and renders an embedded newline as a missing-glyph box on one line. `Annotation.paintGhost`
+   now splits on `\n` and paints line by line, unioning the per-line bounds. Lines stack *upward*
+   from the component's location so the bottom line stays a fixed distance from whatever is being
+   annotated: adding a line pushes the note away from the circuit rather than down into it.
+   Relatedly, `configureNewInstance` no longer calls `instance.setTextField(...)`. That registered
+   an `InstanceTextField` as the component's `TextEditable` feature, which handed the Text Tool an
+   inline single-line caret editor for annotation text — a second way in, alongside the dialog,
+   that silently could not handle the newlines the dialog exists to accept.
+2. **Wire notes sat too far from their endpoint.** They reused the component tool's 30px gap,
+   which exists to clear a component's *body*; a wire endpoint is a point, so a note that far away
+   reads as belonging to nothing in particular. Now one grid square up and one to the side, and
+   diagonal rather than straight up so the note never lies along the wire. Which side is chosen by
+   leaning away from wherever the wire itself runs (`AnnotateWireTool.sideOf`), with the text
+   aligned to run outward from the endpoint (`horizontalAlignFor`) so the note doesn't fold back
+   across the wire it was offset away from.
+3. **Clicking an already-annotated target stacked a second note on it** instead of editing the
+   first, so a target could accumulate notes rendered illegibly on top of each other (visible in
+   the user's screenshot). Worse, whether a click meant "edit" or "add another" depended on
+   whether it happened to land on the existing note's own text bounds or on the target underneath.
+   Now one note per anchor point: `AbstractAnnotateTool` looks for an annotation already anchored
+   at the computed anchor location and re-opens it if found. Matched via the saved `ANCHOR_LOC`
+   attribute rather than the tracker's live in-memory map, so it still holds for notes loaded from
+   a `.circ` file in a later session.
+
 ## Workflow for each phase
 
 1. **Product manager** turns the phase scope above into a concrete task list with acceptance criteria.
