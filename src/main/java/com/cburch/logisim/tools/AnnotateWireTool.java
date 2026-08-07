@@ -17,8 +17,8 @@ import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentDrawContext;
 import com.cburch.logisim.data.AttributeOption;
 import com.cburch.logisim.data.Location;
-import com.cburch.logisim.gui.main.Canvas;
 import com.cburch.logisim.std.annotate.AnnotationAnchorTracker;
+import com.cburch.logisim.std.annotate.AnnotationAttributes;
 import com.cburch.logisim.std.base.Text;
 import com.cburch.logisim.util.StringGetter;
 import java.awt.Graphics;
@@ -72,6 +72,7 @@ public class AnnotateWireTool extends AbstractAnnotateTool {
   @Override
   Component findAnchorTarget(Circuit circ, Location loc, Graphics g) {
     Wire nearestWire = null;
+    Location nearestEnd = null;
     var best = (long) ANCHOR_SNAP_RADIUS * ANCHOR_SNAP_RADIUS;
     for (final var wire : circ.getWires()) {
       for (final var end : new Location[] {wire.getEnd0(), wire.getEnd1()}) {
@@ -81,21 +82,49 @@ public class AnnotateWireTool extends AbstractAnnotateTool {
         if (distSq <= best) {
           best = distSq;
           nearestWire = wire;
+          nearestEnd = end;
         }
       }
     }
-    return nearestWire;
+    if (nearestWire == null) return null;
+
+    // If that endpoint sits on a component's pin, anchor to the COMPONENT rather than the wire.
+    // A component survives a move as one identifiable replacement whose pins get recomputed; a
+    // wire does not -- dragging a component re-routes its wires into fresh segments, and a note
+    // chasing "the wire it was on" is how notes ended up stranded mid-canvas. See
+    // AnnotationAnchorTracker.pinAnchorPoint.
+    final var owner = pinOwnerAt(circ, nearestEnd);
+    return (owner != null) ? owner : nearestWire;
+  }
+
+  private static Component pinOwnerAt(Circuit circ, Location end) {
+    for (final var comp : circ.getNonWires()) {
+      for (final var data : comp.getEnds()) {
+        if (data.getLocation().equals(end)) return comp;
+      }
+    }
+    return null;
   }
 
   @Override
   Location anchorLocationOf(Component target, Location clickLoc) {
-    return AnnotationAnchorTracker.wireAnchorPoint((Wire) target, clickLoc);
+    return (target instanceof Wire w)
+        ? AnnotationAnchorTracker.wireAnchorPoint(w, clickLoc)
+        : AnnotationAnchorTracker.pinAnchorPoint(target, clickLoc);
+  }
+
+  @Override
+  String anchorKind() {
+    return AnnotationAttributes.KIND_POINT;
   }
 
   @Override
   Location placementFor(Component anchor, Location anchorLoc) {
-    final var x = Canvas.snapXToGrid(anchorLoc.getX() + OFFSET_X * sideOf(anchor, anchorLoc));
-    final var y = Canvas.snapYToGrid(anchorLoc.getY() + OFFSET_Y);
+    // Not grid-snapped, matching AnnotateComponentTool -- wire endpoints are already on-grid, so
+    // snapping would be a no-op here anyway, and keeping both tools on the same rule means the
+    // offsets stay exactly as written instead of quietly rounding.
+    final var x = anchorLoc.getX() + OFFSET_X * sideOf(anchor, anchorLoc);
+    final var y = anchorLoc.getY() + OFFSET_Y;
     return Location.create(x, y, false);
   }
 
@@ -109,17 +138,17 @@ public class AnnotateWireTool extends AbstractAnnotateTool {
 
   /**
    * Which side of the endpoint to put the note on: {@code +1} for up-and-right, {@code -1} for
-   * up-and-left. Leans away from whichever direction the wire itself runs, so the note clears the
-   * wire instead of lying along it -- for a wire running right from this endpoint, the space to
-   * the upper left is the free one.
+   * up-and-left. Follows the direction the wire runs -- a wire heading right gets its note to the
+   * upper right, a wire heading left to the upper left -- so the note reads as belonging to that
+   * run of wire and trails off in the same direction the eye is already travelling.
    */
   private static int sideOf(Component anchor, Location anchorLoc) {
     if (anchor instanceof Wire w) {
       final var other = w.getEnd0().equals(anchorLoc) ? w.getEnd1() : w.getEnd0();
-      if (other.getX() > anchorLoc.getX()) return -1;
-      if (other.getX() < anchorLoc.getX()) return 1;
+      if (other.getX() > anchorLoc.getX()) return 1;
+      if (other.getX() < anchorLoc.getX()) return -1;
     }
-    return 1; // vertical wire (or a non-wire anchor): both sides are clear, pick the right.
+    return 1; // vertical wire (or a non-wire anchor): neither side is implied, pick the right.
   }
 
   @Override

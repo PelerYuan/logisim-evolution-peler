@@ -162,6 +162,7 @@ public abstract class AbstractAnnotateTool extends Tool {
     attrs.setValue(Text.ATTR_TEXT, text);
     attrs.setValue(Text.ATTR_HALIGN, horizontalAlignFor(anchor, anchorLoc));
     attrs.setValue(AnnotationAttributes.ANCHOR_LOC, anchorLoc);
+    attrs.setValue(AnnotationAttributes.ANCHOR_KIND, anchorKind());
     final var comp = Annotation.FACTORY.createComponent(placeLoc, attrs);
 
     final var xn = new CircuitMutation(circ);
@@ -240,6 +241,15 @@ public abstract class AbstractAnnotateTool extends Tool {
    */
   AttributeOption horizontalAlignFor(Component anchor, Location anchorLoc) {
     return Text.ATTR_HALIGN.parse("center");
+  }
+
+  /**
+   * How {@link AnnotationAnchorTracker} should recompute this note's anchor point after the anchor
+   * moves. Defaults to the component-body rule (bounding-box top-centre); {@link AnnotateWireTool}
+   * overrides it to pin the note to one specific point instead.
+   */
+  String anchorKind() {
+    return AnnotationAttributes.KIND_BODY;
   }
 
   abstract StringGetter noTargetHint();
