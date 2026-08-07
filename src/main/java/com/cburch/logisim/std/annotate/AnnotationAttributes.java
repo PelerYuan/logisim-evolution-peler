@@ -14,7 +14,6 @@ import com.cburch.logisim.data.Attribute;
 import com.cburch.logisim.data.AttributeOption;
 import com.cburch.logisim.data.Bounds;
 import com.cburch.logisim.data.Location;
-import com.cburch.logisim.instance.StdAttr;
 import com.cburch.logisim.std.base.Text;
 import java.awt.Color;
 import java.awt.Font;
@@ -72,6 +71,21 @@ public class AnnotationAttributes extends AbstractAttributeSet {
           Text.ATTR_TEXT, Text.ATTR_FONT, Text.ATTR_COLOR, Text.ATTR_HALIGN, Text.ATTR_VALIGN,
           ANCHOR_LOC, ANCHOR_KIND);
 
+  /**
+   * Annotations are commentary, not part of the drawing, and should read that way. Deliberately
+   * NOT {@code StdAttr.DEFAULT_LABEL_FONT} (SansSerif BOLD 16), which a label wants because a
+   * label names a real signal -- at that weight and size a note shouts over the circuit it is
+   * annotating. Plain and smaller instead.
+   */
+  private static final Font DEFAULT_ANNOTATION_FONT = new Font("SansSerif", Font.PLAIN, 12);
+
+  /**
+   * A muted slate grey rather than black, for the same reason: black is what the schematic itself
+   * is drawn in, so a black note reads as part of the circuit instead of a remark about it. Dark
+   * enough to stay legible against the canvas, light enough to recede behind the gates and wires.
+   */
+  private static final Color DEFAULT_ANNOTATION_COLOR = new Color(90, 100, 115);
+
   private String text;
   private Font font;
   private Color color;
@@ -83,8 +97,8 @@ public class AnnotationAttributes extends AbstractAttributeSet {
 
   public AnnotationAttributes() {
     text = "";
-    font = StdAttr.DEFAULT_LABEL_FONT;
-    color = Color.BLACK;
+    font = DEFAULT_ANNOTATION_FONT;
+    color = DEFAULT_ANNOTATION_COLOR;
     halign = Text.ATTR_HALIGN.parse("center");
     valign = Text.ATTR_VALIGN.parse("base");
     anchorLoc = null;

@@ -15,9 +15,11 @@ import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.Wire;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentDrawContext;
+import com.cburch.logisim.data.AttributeOption;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.std.annotate.Annotation;
 import com.cburch.logisim.std.annotate.AnnotationAnchorTracker;
+import com.cburch.logisim.std.base.Text;
 import com.cburch.logisim.util.StringGetter;
 import java.awt.Graphics;
 
@@ -73,8 +75,16 @@ public class AnnotateComponentTool extends AbstractAnnotateTool {
   @Override
   Location anchorLocationOf(Component target, Location clickLoc) {
     // The click location doesn't matter here -- a component anchor is always its bounding box's
-    // top-center, regardless of where within its body the user happened to click.
+    // top-left corner, regardless of where within its body the user happened to click.
     return AnnotationAnchorTracker.componentAnchorPoint(target);
+  }
+
+  @Override
+  AttributeOption horizontalAlignFor(Component anchor, Location anchorLoc) {
+    // Left-aligned, so the note's first character lines up with the component's left edge rather
+    // than being centred over its middle. Centring looked unsettled across a row of differently
+    // sized components; a shared left edge gives the annotations a column to hang off.
+    return Text.ATTR_HALIGN.parse("left");
   }
 
   @Override
