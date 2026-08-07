@@ -11,11 +11,9 @@
  <lib name="A" desc="#TTL" />
  <lib name="7" desc="#TCL" />
  <lib name="8" desc="#Base" />
- <!-- Peler Edition Feature 5: matches AnnotationLibrary._ID = "Annotation" in
-      com.cburch.logisim.std.annotate.AnnotationLibrary. Being registered in Builtin.java alone is
-      NOT enough for a builtin library to appear in a brand-new project -- this explicit <lib> list
-      is the actual allowlist LibraryManager.loadLibrary consults for what a fresh project loads
-      (see docs/peler-edition/ROADMAP.md, Feature 5, "shipped without this, invisible" note). -->
+ <!-- Peler Edition Feature 5: matches AnnotationLibrary._ID, i.e. "Annotation", in
+      com.cburch.logisim.std.annotate.AnnotationLibrary. See docs/peler-edition/ROADMAP.md,
+      Feature 5, for why this entry has to exist here separately from Builtin.java. -->
  <lib name="E" desc="#Annotation" />
  <lib name="9" desc="#BFH-Praktika" />
  <lib name="B" desc="#Input/Output-Extra" />
