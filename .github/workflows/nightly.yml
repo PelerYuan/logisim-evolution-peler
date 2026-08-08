@@ -27,7 +27,7 @@ env:
 jobs:
   git_check:
     name: "Any changes since last run?"
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, local-fast, docker]
 
     # Export build vars so other steps can use it.
     outputs:
@@ -97,7 +97,7 @@ jobs:
   # Building for Linux.
   build_linux:
     name: 'Linux build'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, local-fast, docker]
     # Will run only if git_check determined it is needed.
     needs: git_check
     if: needs.git_check.outputs.run_build == 'true'

@@ -20,7 +20,7 @@ on:
 jobs:
   translations_lint:
     name: "Translations linter"
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, local-fast, docker]
 
     steps:
       # https://github.com/marketplace/actions/checkout

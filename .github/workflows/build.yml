@@ -16,7 +16,7 @@ env:
 jobs:
   analyze_sources:
     name: "Do we need to build the application?"
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, local-fast, docker]
     outputs:
       # Export 'filter' step check result so next step can use it.
       run_build: ${{ steps.filter.outputs.src }}
@@ -55,7 +55,7 @@ jobs:
   # Build step.
   build:
     name: "Gradle builder"
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, local-fast, docker]
     # Will run only if analyze_sources determined it is needed.
     needs: analyze_sources
     if: needs.analyze_sources.outputs.run_build == 'true'
