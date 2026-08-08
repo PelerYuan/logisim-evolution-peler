@@ -11,7 +11,7 @@ on:
 jobs:
   markdown_lint:
     name: "Markdown linter"
-    runs-on: [self-hosted, linux, x64, local-fast, docker]
+    runs-on: ubuntu-latest
 
     steps:
     # https://github.com/marketplace/actions/checkout

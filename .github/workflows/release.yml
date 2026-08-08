@@ -56,7 +56,7 @@ jobs:
   # and the final publish step, so they can't disagree with each other.
   prep:
     name: "Determine version / release tag"
-    runs-on: [self-hosted, linux, x64, local-fast, docker]
+    runs-on: ubuntu-latest
     outputs:
       tag_name: ${{ steps.info.outputs.tag_name }}
       peler_version: ${{ steps.info.outputs.peler_version }}
@@ -311,7 +311,7 @@ jobs:
 
   publish:
     name: "Publish GitHub Release"
-    runs-on: [self-hosted, linux, x64, local-fast, docker]
+    runs-on: ubuntu-latest
     needs: [prep, build_windows, build_linux, build_linux_arm, build_macos]
     steps:
       - name: "Download all platform artifacts"

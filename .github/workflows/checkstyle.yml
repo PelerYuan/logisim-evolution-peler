@@ -16,7 +16,7 @@ on:
 jobs:
   analyze_sources:
     name: "Is there any Java source code to lint?"
-    runs-on: [self-hosted, linux, x64, local-fast, docker]
+    runs-on: ubuntu-latest
 
     outputs:
       # Export 'filter' step check result so next step can use it.
@@ -54,7 +54,7 @@ jobs:
   # Build step.
   checkstyle:
     name: "Code style linter"
-    runs-on: [self-hosted, linux, x64, local-fast, docker]
+    runs-on: ubuntu-latest
 
     # Will run only if analyze_sources determined it is needed.
     needs: analyze_sources

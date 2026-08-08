@@ -27,7 +27,7 @@ env:
 jobs:
   git_check:
     name: "Any changes since last run?"
-    runs-on: [self-hosted, linux, x64, local-fast, docker]
+    runs-on: ubuntu-latest
 
     # Export build vars so other steps can use it.
     outputs:
