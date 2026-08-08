@@ -16,13 +16,25 @@ name: "Release (Multi-platform)"
 on:
   workflow_dispatch:
     inputs:
+      channel:
+        description: >-
+          "dev" republishes the single rolling "dev" pre-release, replacing whatever was there --
+          this is the normal choice while iterating, and keeps the releases page from filling up
+          with one superseded build per change. "stable" publishes a permanent release under
+          tag_name below. Pushing a "v*" tag always means stable.
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - "dev"
+          - "stable"
       tag_name:
         description: >-
-          Release tag to use for a manual run. Ignored when this workflow was triggered by
-          pushing a "v*" tag (the pushed tag is used instead). If left blank, defaults to
-          "v<version from gradle.properties>". Convention: "v<peler major>.<peler minor>.<peler
-          build number>" (e.g. "v1.0.5"), independent of upstream's own version -- this also
-          becomes every platform's package version number (see the "prep" job).
+          Stable releases only; ignored for the dev channel and when triggered by pushing a "v*"
+          tag (the pushed tag is used instead). If left blank, defaults to "v<version from
+          gradle.properties>". Convention: "v<peler major>.<peler minor>.<peler build number>"
+          (e.g. "v1.1.0"), independent of upstream's own version -- this also becomes every
+          platform's package version number (see the "prep" job).
         required: false
         default: ""
   push:
@@ -49,6 +61,8 @@ jobs:
       tag_name: ${{ steps.info.outputs.tag_name }}
       peler_version: ${{ steps.info.outputs.peler_version }}
       lse_name: ${{ steps.info.outputs.lse_name }}
+      is_dev: ${{ steps.info.outputs.is_dev }}
+      release_name: ${{ steps.info.outputs.release_name }}
     steps:
       - name: "Checkout sources"
         uses: actions/checkout@v7
@@ -60,6 +74,8 @@ jobs:
         shell: bash
         env:
           INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
           # Have no mercy.
           set -euo pipefail
@@ -68,12 +84,36 @@ jobs:
           declare -r lse_name="$(grep -F name gradle.properties | awk '{print $3}')"
           echo "lse_name=${lse_name}" >> "$GITHUB_OUTPUT"
 
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            resolved_tag="${GITHUB_REF_NAME}"
-          elif [[ -n "${INPUT_TAG_NAME}" ]]; then
-            resolved_tag="${INPUT_TAG_NAME}"
+          # A pushed tag is always a stable release; otherwise the channel input decides, and it
+          # defaults to dev so that a hurried manual run can't accidentally mint a permanent one.
+          is_dev="false"
+          if [[ "${GITHUB_REF_TYPE}" != "tag" && "${INPUT_CHANNEL}" != "stable" ]]; then
+            is_dev="true"
+          fi
+          echo "is_dev=${is_dev}" >> "$GITHUB_OUTPUT"
+
+          if [[ "${is_dev}" == "true" ]]; then
+            # One rolling pre-release, always at the same tag, so the releases page holds exactly
+            # one dev entry however many times we build -- and the download URL never changes.
+            resolved_tag="dev"
+            echo "release_name=Development build (${RUN_NUMBER})" >> "$GITHUB_OUTPUT"
+
+            # The package version can't come from the tag here: "dev" isn't numeric, and jpackage
+            # is strict about this in ways that only show up on some platforms. macOS rejects a
+            # first number of 0 outright, and the Windows MSI ProductVersion field caps the parts
+            # at 255.255.65535 -- so a date-derived version like 2026.8.8 would fail there too.
+            # github.run_number is monotonic, unique per build, and stays well inside 65535.
+            peler_version="1.0.${RUN_NUMBER}"
           else
-            resolved_tag="v${version_prop}"
+            if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+              resolved_tag="${GITHUB_REF_NAME}"
+            elif [[ -n "${INPUT_TAG_NAME}" ]]; then
+              resolved_tag="${INPUT_TAG_NAME}"
+            else
+              resolved_tag="v${version_prop}"
+            fi
+            echo "release_name=${resolved_tag}" >> "$GITHUB_OUTPUT"
+            peler_version=""
           fi
           echo "tag_name=${resolved_tag}" >> "$GITHUB_OUTPUT"
 
@@ -87,7 +127,9 @@ jobs:
           # value is always plain numeric anyway so it's safe there too). Convention going
           # forward: tag releases "v<peler major>.<peler minor>.<peler build number>" (e.g.
           # "v1.0.5"), independent of upstream's own version number.
-          declare -r peler_version=$(echo "${resolved_tag}" | sed -E 's/^v//; s/[-+].*$//')
+          if [[ -z "${peler_version}" ]]; then
+            peler_version=$(echo "${resolved_tag}" | sed -E 's/^v//; s/[-+].*$//')
+          fi
           echo "peler_version=${peler_version}" >> "$GITHUB_OUTPUT"
 
   # ###############################################################################################
@@ -279,6 +321,19 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # A dev build REPLACES the rolling pre-release rather than adding to it. Deleting first is
+      # the only reliable way: the asset filenames carry the version (1.0.<run number>), so they
+      # differ every build and would otherwise pile up on the same release forever. Deleting the
+      # tag too makes the next publish re-point it at this commit -- updating a release does not
+      # move an existing tag on its own.
+      - name: "Clear previous dev release"
+        if: needs.prep.outputs.is_dev == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release delete dev --repo "${GITHUB_REPOSITORY}" --yes --cleanup-tag || true
+
       # Recursive glob (`dist/**/*`, not `dist/*`) on purpose: if any future job's artifact ever ends
       # up with a nested path again (see the comment on build_linux's upload step above for exactly
       # how that happens), this still finds the files instead of silently dropping them.
@@ -286,5 +341,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.prep.outputs.tag_name }}
-          name: ${{ needs.prep.outputs.tag_name }}
+          name: ${{ needs.prep.outputs.release_name }}
           files: dist/**/*
+          prerelease: ${{ needs.prep.outputs.is_dev == 'true' }}
+          target_commitish: ${{ github.sha }}
+          body: ${{ needs.prep.outputs.is_dev == 'true' && 'Rolling development build, replaced on every change. Not a release -- expect rough edges, and use the newest normal release for anything that matters.' || '' }}
