@@ -1,8 +1,0 @@
-name: "Runner Test"
-on:
-  workflow_dispatch: {}
-jobs:
-  ping:
-    runs-on: self-hosted
-    steps:
-      - run: echo "hello from $(hostname)"

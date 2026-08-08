@@ -97,7 +97,7 @@ jobs:
   # Building for Linux.
   build_linux:
     name: 'Linux build'
-    runs-on: [self-hosted, linux, x64, local-fast, docker]
+    runs-on: ubuntu-latest
     # Will run only if git_check determined it is needed.
     needs: git_check
     if: needs.git_check.outputs.run_build == 'true'

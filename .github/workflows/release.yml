@@ -172,7 +172,7 @@ jobs:
 
   build_linux:
     name: "Linux build"
-    runs-on: [self-hosted, linux, x64, local-fast, docker]
+    runs-on: ubuntu-latest
     needs: prep
     steps:
       - name: "Checkout sources"
