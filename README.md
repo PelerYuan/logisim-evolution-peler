@@ -36,21 +36,29 @@ Based on the official Logisim-evolution **v4.1.0** release. Everything else beha
 does; the additions below are the entire difference.
 
 **Continuous placement**
-Double-click a component in the toolbox to keep placing it instead of re-picking it each time.
-<kbd>Esc</kbd>, <kbd>Enter</kbd> or a right-click stops.
+Double-click a component — in the toolbox or the toolbar — to keep placing it instead of re-picking
+it each time. <kbd>Esc</kbd>, <kbd>Enter</kbd> or a right-click stops.
+
+![Placing several gates in a row after one double-click](docs/img/peler-edition/ContinuousPlacement.gif)
 
 **Quick Rotate**
 Right-click a component to rotate it 90° clockwise. The original right-click menu moved to
 <kbd>Ctrl</kbd>+left-click.
 
+![Right-clicking a gate to rotate it in place](docs/img/peler-edition/QuickRotation.gif)
+
 **Wire auto-snap**
-While drawing a wire, endpoints snap to a nearby component pin, with a green ring marking the pin.
-Can be turned off in preferences.
+While drawing a wire, endpoints snap to a nearby component pin, with a green ring marking the pin it
+will attach to. Can be turned off in preferences.
+
+![A wire end snapping onto a highlighted component pin](docs/img/peler-edition/AutoSwap.gif)
 
 **Schematic annotations**
-A new **Annotate** category for attaching free-text notes to a component or a wire endpoint. Notes
-support multiple lines and follow whatever they are attached to when it is moved, rotated, or
-deleted.
+A new **Annotate** category for attaching free-text notes to a component, or to a wire endpoint
+where it meets a component. Notes take multiple lines and follow whatever they are attached to when
+it is moved, rotated, or deleted. Double-click an annotate tool to keep annotating.
+
+![Adding a note above a gate with the annotate tool](docs/img/peler-edition/Annotation.gif)
 
 The application is packaged as `logisim-evolution-peler` and its icon carries a red **P**, so it
 installs alongside an official Logisim-evolution install rather than colliding with it. The
