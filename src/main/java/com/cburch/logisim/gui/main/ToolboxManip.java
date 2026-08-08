@@ -27,6 +27,7 @@ import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.proj.ProjectEvent;
 import com.cburch.logisim.proj.ProjectListener;
 import com.cburch.logisim.std.base.BaseLibrary;
+import com.cburch.logisim.tools.AbstractAnnotateTool;
 import com.cburch.logisim.tools.AddTool;
 import com.cburch.logisim.tools.EditTool;
 import com.cburch.logisim.tools.Library;
@@ -100,6 +101,11 @@ class ToolboxManip implements ProjectExplorer.Listener {
           proj.setTool(tool);
           tool.setStickyPlace(true);
         }
+      } else if (baseTool instanceof AbstractAnnotateTool annotateTool) {
+        // Same gesture, same meaning for the annotate tools: double-click keeps the tool armed so
+        // you can annotate several things in a row instead of re-picking the tool each time.
+        proj.setTool(annotateTool);
+        annotateTool.setStickyAnnotate(true);
       }
     }
   }

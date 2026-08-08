@@ -30,6 +30,7 @@ import com.cburch.logisim.util.StringUtil;
 import java.awt.Cursor;
 import java.awt.Frame;
 import java.awt.Graphics;
+import java.awt.event.KeyEvent;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
@@ -56,9 +57,47 @@ import javax.swing.JTextArea;
 public abstract class AbstractAnnotateTool extends Tool {
   private static final Cursor cursor = Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR);
 
+  /**
+   * Continuous ("sticky") annotation, armed by double-clicking the tool in the toolbox or toolbar
+   * exactly as {@link AddTool#setStickyPlace} arms continuous placement. Off by default: a single
+   * click annotates one thing and hands control straight back to the Edit Tool.
+   */
+  private boolean stickyAnnotate = false;
+
   @Override
   public Cursor getCursor() {
     return cursor;
+  }
+
+  /** See {@link #stickyAnnotate}. Public for the same reason {@code AddTool.setStickyPlace} is. */
+  public void setStickyAnnotate(boolean value) {
+    stickyAnnotate = value;
+  }
+
+  @Override
+  public void deselect(Canvas canvas) {
+    stickyAnnotate = false;
+  }
+
+  /**
+   * Stops continuous annotation and returns to the Edit Tool. Called for Esc, Enter, and
+   * right-click, matching how {@link AddTool} leaves placement mode.
+   *
+   * @return true if this call actually did something, so a right-click can be treated as consumed
+   *     rather than also rotating whatever is under the cursor.
+   */
+  public boolean stopAnnotating(Canvas canvas) {
+    stickyAnnotate = false;
+    exitToEditTool(canvas);
+    return true;
+  }
+
+  @Override
+  public void keyPressed(Canvas canvas, KeyEvent event) {
+    final var code = event.getKeyCode();
+    if (code == KeyEvent.VK_ESCAPE || code == KeyEvent.VK_ENTER) {
+      stopAnnotating(canvas);
+    }
   }
 
   @Override
@@ -109,15 +148,17 @@ public abstract class AbstractAnnotateTool extends Tool {
     } else {
       createNew(proj, circ, anchor, anchorLoc, owner);
     }
-    exitToEditTool(canvas);
+    // Sticky mode keeps the tool armed for the next note; otherwise annotating is a one-shot
+    // action -- pick the tool, annotate one thing, back to editing.
+    if (!stickyAnnotate) exitToEditTool(canvas);
   }
 
   /**
-   * Hands control back to the Edit Tool once a note has been dealt with. Annotating is a one-shot
-   * action -- pick the tool, annotate one thing, back to editing -- not an armed placement mode
-   * that keeps firing on every following click, which is what it used to be and made it far too
-   * easy to annotate a second thing by accident on the way to doing something else. Same exit that
-   * {@link AddTool#exitToEditTool} performs when it leaves placement mode.
+   * Hands control back to the Edit Tool once a note has been dealt with. Without sticky mode
+   * armed, annotating is a one-shot action rather than a mode that keeps firing on every following
+   * click, which is what it used to be and made it far too easy to annotate a second thing by
+   * accident on the way to doing something else. Same exit that {@link AddTool} performs when it
+   * leaves placement mode.
    *
    * <p>Called after the text dialog closes whether or not it was confirmed: cancelling is an
    * explicit "never mind", so leaving the tool armed after it would defeat the point.

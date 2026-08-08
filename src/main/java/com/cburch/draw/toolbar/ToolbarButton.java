@@ -84,6 +84,12 @@ class ToolbarButton extends JComponent implements BaseMouseListenerContract {
       toolbar.setPressed(null);
       if (item != null && item.isSelectable()) {
         toolbar.getToolbarModel().itemSelected(item);
+        // Peler Edition: the second release of a left double-click additionally arms continuous
+        // placement, so the toolbar behaves like the toolbox tree. Restricted to button 1 because
+        // getClickCount() also counts repeated right- or middle-clicks, which mean other things.
+        if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() >= 2) {
+          toolbar.getToolbarModel().itemDoubleClicked(item);
+        }
       } else if (item != null && item instanceof ToolbarClickableItem clickableItem) {
         clickableItem.clicked();
       }
