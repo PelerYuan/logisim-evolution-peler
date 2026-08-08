@@ -85,6 +85,10 @@ public class QuickRotateTool extends Tool {
     if (curTool instanceof AddTool addTool && addTool.stopPlacement(canvas)) {
       return;
     }
+    // Same deal for the annotate tools' continuous mode: right-click means "stop annotating".
+    if (curTool instanceof AbstractAnnotateTool annotateTool && annotateTool.stopAnnotating(canvas)) {
+      return;
+    }
 
     final Circuit circ = canvas.getCircuit();
     if (!proj.getLogisimFile().contains(circ)) {

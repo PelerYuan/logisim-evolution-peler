@@ -88,13 +88,20 @@ public class AnnotateWireTool extends AbstractAnnotateTool {
     }
     if (nearestWire == null) return null;
 
-    // If that endpoint sits on a component's pin, anchor to the COMPONENT rather than the wire.
-    // A component survives a move as one identifiable replacement whose pins get recomputed; a
-    // wire does not -- dragging a component re-routes its wires into fresh segments, and a note
-    // chasing "the wire it was on" is how notes ended up stranded mid-canvas. See
-    // AnnotationAnchorTracker.pinAnchorPoint.
-    final var owner = pinOwnerAt(circ, nearestEnd);
-    return (owner != null) ? owner : nearestWire;
+    // Only endpoints that actually land on a component's pin can be annotated, and the anchor is
+    // that COMPONENT rather than the wire. Two reasons, and they are the same reason.
+    //
+    // Durability: a component survives a move as one identifiable replacement whose pins get
+    // recomputed, whereas dragging a component re-routes its wires into fresh segments, so a note
+    // chasing "the wire it was on" ends up stranded mid-canvas (see
+    // AnnotationAnchorTracker.pinAnchorPoint). A note on a free-floating wire corner has nothing
+    // durable to hold on to at all -- that corner is an artefact of the current routing and can
+    // simply cease to exist on the next edit.
+    //
+    // Meaning: an endpoint that meets a component is a real point in the circuit -- a signal
+    // entering or leaving a part -- which is the thing worth labelling. A bend in the middle of a
+    // run is just a drawing detail.
+    return pinOwnerAt(circ, nearestEnd);
   }
 
   private static Component pinOwnerAt(Circuit circ, Location end) {

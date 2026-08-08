@@ -12,6 +12,7 @@ package com.cburch.logisim.gui.main;
 import com.cburch.draw.toolbar.AbstractToolbarModel;
 import com.cburch.draw.toolbar.ToolbarItem;
 import com.cburch.draw.toolbar.ToolbarSeparator;
+import com.cburch.logisim.circuit.SubcircuitFactory;
 import com.cburch.logisim.comp.ComponentDrawContext;
 import com.cburch.logisim.data.AttributeEvent;
 import com.cburch.logisim.data.AttributeListener;
@@ -21,8 +22,11 @@ import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.proj.ProjectEvent;
 import com.cburch.logisim.proj.ProjectListener;
+import com.cburch.logisim.tools.AbstractAnnotateTool;
+import com.cburch.logisim.tools.AddTool;
 import com.cburch.logisim.tools.Tool;
 import com.cburch.logisim.util.InputEventUtil;
+import com.cburch.logisim.vhdl.base.VhdlEntity;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -100,6 +104,29 @@ class LayoutToolbarModel extends AbstractToolbarModel {
   public void itemSelected(ToolbarItem item) {
     if (item instanceof ToolItem toolItem) {
       proj.setTool(toolItem.tool);
+    }
+  }
+
+  /**
+   * Peler Edition: double-clicking a toolbar button arms continuous mode, the same gesture with
+   * the same meaning as double-clicking the component in the toolbox tree (see {@code
+   * ToolboxManip.doubleClicked}). Previously the toolbar offered no way to get there, so the two
+   * places you can pick a component from behaved differently for no reason the user could see.
+   */
+  @Override
+  public void itemDoubleClicked(ToolbarItem item) {
+    if (!(item instanceof ToolItem toolItem)) return;
+    if (toolItem.tool instanceof AddTool addTool) {
+      // Subcircuits and VHDL entities open for editing on double-click in the toolbox rather than
+      // arming placement; the toolbar holds neither, but guard anyway so behaviour matches if it
+      // ever does.
+      final var source = addTool.getFactory();
+      if (source instanceof SubcircuitFactory || source instanceof VhdlEntity) return;
+      proj.setTool(addTool);
+      addTool.setStickyPlace(true);
+    } else if (toolItem.tool instanceof AbstractAnnotateTool annotateTool) {
+      proj.setTool(annotateTool);
+      annotateTool.setStickyAnnotate(true);
     }
   }
 
