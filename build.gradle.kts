@@ -686,6 +686,11 @@ tasks.register("createApp") {
         // app versioning is strictly checked for macOS. No suffix allowed for `app-image` type.
         "--app-version", appVersion,
         "--type", "app-image",
+        // Peler Edition: set explicitly. jpackage otherwise derives the bundle identifier from the
+        // main class, which is com.cburch.logisim.Main in BOTH editions -- macOS keys Launch
+        // Services, the preferences domain and permission grants off that identifier, so the two
+        // installs would be the same application as far as the system is concerned.
+        "--mac-package-identifier", "com.cburch.logisim.peler",
         "--mac-app-category", "education"
     )
     func.runCommand(params, "Error while creating the .app directory.")

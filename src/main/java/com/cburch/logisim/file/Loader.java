@@ -177,8 +177,15 @@ public class Loader implements LibraryLoader {
   public static final String LOGISIM_PROJECT_BUNDLE_INFO_FILE = "LogisimEvolutionBundle.info";
   public static final String LOGISIM_LIBRARY_DIR = "library";
   public static final String LOGISIM_CIRCUIT_DIR = "circuit";
-  public static final String LOGISIM_UNNAMED_AUTOSAVE_PREFIX = ".logisim-unnamed-autosave_";
-  public static final String LOGISIM_UNNAMED_AUTOSAVE_SUFFIX = ".circ.autosave";
+  /**
+   * Peler Edition: renamed away from upstream's ".logisim-unnamed-autosave_" / ".circ.autosave".
+   * Both editions drop these in the user's home directory and both scan for them at start-up, so
+   * with the shared names, closing an unsaved project here made the OFFICIAL edition offer to
+   * recover it on its next launch -- a Peler project, annotations and all, in an edition that
+   * cannot read them.
+   */
+  public static final String LOGISIM_UNNAMED_AUTOSAVE_PREFIX = ".logisim-peler-unnamed-autosave_";
+  public static final String LOGISIM_UNNAMED_AUTOSAVE_SUFFIX = ".pcirc.autosave";
   public static final FileFilter LOGISIM_FILTER = new LogisimFileFilter();
   public static final FileFilter PELER_FILTER = new PelerFileFilter();
   public static final FileFilter LOGISIM_COMPAT_FILTER = new LogisimCompatFileFilter();
@@ -227,8 +234,13 @@ public class Loader implements LibraryLoader {
       if (!candidate.exists()) return candidate;
       return null;
     }
+    // Peler Edition: PELER_EXTENSION counts as a known extension too. Without it a "foo.pcirc"
+    // was treated as having no recognised extension and autosaved to ".foo.pcirc.circ.autosave".
     var extension = ".autosave";
-    if (!base.getName().endsWith(LOGISIM_EXTENSION)) extension = ".circ.autosave";
+    if (!base.getName().endsWith(LOGISIM_EXTENSION)
+        && !base.getName().endsWith(PELER_EXTENSION)) {
+      extension = LOGISIM_EXTENSION + ".autosave";
+    }
     final var dir = base.getParentFile();
     final var name = "." + base.getName() + extension;
     return new File(dir, name);

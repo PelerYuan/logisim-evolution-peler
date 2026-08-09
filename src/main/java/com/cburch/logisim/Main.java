@@ -13,6 +13,7 @@ import com.cburch.logisim.generated.BuildInfo;
 import com.cburch.logisim.gui.generic.OptionPane;
 import com.cburch.logisim.gui.start.Startup;
 import com.cburch.logisim.prefs.AppPreferences;
+import com.cburch.logisim.prefs.PelerPreferences;
 import com.formdev.flatlaf.FlatDarculaLaf;
 import com.formdev.flatlaf.FlatDarkLaf;
 import com.formdev.flatlaf.FlatIntelliJLaf;
@@ -38,6 +39,11 @@ public class Main {
     //    java -Dorg.slf4j.simpleLogger.defaultLogLevel=debug
     // or uncomment next line
     // System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "debug");
+
+    // Peler Edition: must come before ANY preference is read -- AppPreferences freezes every
+    // stored value as it initialises, so an import after that point would not take effect
+    // until the next restart. Asks at most once; also available later from the File menu.
+    PelerPreferences.offerImportOnFirstRun();
 
     System.setProperty("apple.awt.application.name", BuildInfo.name);
     try {

@@ -14,6 +14,7 @@ import static com.cburch.logisim.gui.Strings.S;
 import com.cburch.logisim.gui.generic.OptionPane;
 import com.cburch.logisim.gui.prefs.PreferencesFrame;
 import com.cburch.logisim.prefs.AppPreferences;
+import com.cburch.logisim.prefs.PelerPreferences;
 import com.cburch.logisim.prefs.PrefMonitorKeyStroke;
 import com.cburch.logisim.proj.ProjectActions;
 import com.cburch.logisim.proj.Projects;
@@ -40,6 +41,12 @@ class MenuFile extends Menu implements ActionListener {
   private final MenuItemImpl print = new MenuItemImpl(this, LogisimMenuBar.PRINT);
   private final MenuItemImpl exportImage = new MenuItemImpl(this, LogisimMenuBar.EXPORT_IMAGE);
   private final JMenuItem prefs = new JMenuItem();
+  /**
+   * Peler Edition. Brings the settings across from the store both editions used to share. Offered
+   * once at first launch too; this is the way back if that was declined, or if the official edition
+   * has been set up since. Next to Preferences because that is what it is about.
+   */
+  private final JMenuItem importPrefs = new JMenuItem();
   private final JMenuItem quit = new JMenuItem();
 
   public MenuFile(LogisimMenuBar menubar) {
@@ -80,8 +87,9 @@ class MenuFile extends Menu implements ActionListener {
     addSeparator();
     add(exportImage);
     add(print);
+    addSeparator();
+    add(importPrefs);
     if (!MacCompatibility.isPreferencesAutomaticallyPresent()) {
-      addSeparator();
       add(prefs);
     }
     if (!MacCompatibility.isQuitAutomaticallyPresent()) {
@@ -110,6 +118,7 @@ class MenuFile extends Menu implements ActionListener {
     menubar.registerItem(LogisimMenuBar.EXPORT_IMAGE, exportImage);
     menubar.registerItem(LogisimMenuBar.PRINT, print);
     prefs.addActionListener(this);
+    importPrefs.addActionListener(this);
     quit.addActionListener(this);
   }
 
@@ -177,6 +186,8 @@ class MenuFile extends Menu implements ActionListener {
         // Close the current project
         frame.dispose();
       }
+    } else if (src == importPrefs) {
+      PelerPreferences.importInteractively(menubar);
     } else if (src == prefs) {
       PreferencesFrame.showPreferences();
     } else if (src == quit) {
@@ -214,6 +225,7 @@ class MenuFile extends Menu implements ActionListener {
     exportImage.setText(S.get("fileExportImageItem"));
     print.setText(S.get("filePrintItem"));
     prefs.setText(S.get("filePreferencesItem"));
+    importPrefs.setText(S.get("pelerImportSettingsItem"));
     quit.setText(S.get("fileQuitItem"));
   }
 }

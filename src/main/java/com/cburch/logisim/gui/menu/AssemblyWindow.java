@@ -31,6 +31,7 @@ import java.awt.event.WindowEvent;
 import java.io.File;
 import java.util.Arrays;
 import java.util.HashMap;
+import com.cburch.logisim.prefs.PelerPreferences;
 import java.util.prefs.Preferences;
 import java.util.regex.Pattern;
 import javax.swing.JButton;
@@ -137,7 +138,9 @@ public class AssemblyWindow
     proj.getSimulator().addSimulatorListener(this);
 
     windows.pack();
-    prefs = Preferences.userRoot().node(this.getClass().getName());
+    // Peler Edition: kept under this edition's node rather than a root-level one named after
+    // the class, which both editions would otherwise share.
+    prefs = PelerPreferences.node().node("AssemblyWindow");
     windows.setLocation(prefs.getInt("X", 0), prefs.getInt("Y", 0));
     windows.setSize(
         prefs.getInt("W", windows.getSize().width), prefs.getInt("H", windows.getSize().height));

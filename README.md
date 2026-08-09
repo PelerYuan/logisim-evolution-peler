@@ -81,9 +81,13 @@ purpose, never to the file you work in.
 
 The application is packaged as `logisim-evolution-peler`, its icon carries a red **P**, and its
 installer registers `.pcirc` and its own MIME type — so it sits alongside an official
-Logisim-evolution install rather than taking over its files. The in-application **Help → About**
-window is left exactly as upstream ships it, crediting upstream; this fork's own changes are
-described under **Help → About Peler's Edition**.
+Logisim-evolution install rather than taking over its files. The two also keep their **settings**
+apart: language, window layout, recent files, keyboard shortcuts and the rest live in this
+edition's own store, not the one upstream uses. On first launch it offers to copy the existing
+settings across, and **File → Import Settings from Logisim-evolution…** does the same later.
+
+The in-application **Help → About** window is left exactly as upstream ships it, crediting
+upstream; this fork's own changes are described under **Help → About Peler's Edition**.
 
 ---
 

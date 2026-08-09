@@ -6,7 +6,7 @@
 # Marcin Orlowski
 #
 
-name: logisim-evolution
+name: logisim-evolution-peler
 base: core22
 confinement: strict
 icon: support/jpackage/linux/logisim-icon-128.png

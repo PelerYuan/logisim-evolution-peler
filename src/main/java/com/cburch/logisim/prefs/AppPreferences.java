@@ -230,7 +230,10 @@ public class AppPreferences {
     if (prefs == null) {
       synchronized (AppPreferences.class) {
         if (prefs == null) {
-          final var p = Preferences.userNodeForPackage(Main.class);
+          // Peler Edition: this edition's own node, not userNodeForPackage(Main.class) --
+          // that resolves to the package name, which is identical in both editions, so the
+          // two used to share one settings store. See PelerPreferences.
+          final var p = PelerPreferences.node();
           if (shouldClear) {
             try {
               p.clear();

@@ -1,11 +1,11 @@
 [Desktop Entry]
-Name=Logisim Evolution
+Name=Logisim Evolution - Peler's Edition
 GenericName=Logisim Logic Circuit Simulator
 Comment=Digital Logic Circuit Simulator
-Exec=LogisimEvolution.sh
-Icon=com.github.reds.LogisimEvolution
+Exec=LogisimEvolutionPeler.sh
+Icon=io.github.pelaryuan.LogisimEvolutionPeler
 Terminal=false
 Type=Application
 Categories=Education;Electronics
-MimeType=application/x-logisim-circuit;
+MimeType=application/x-logisim-peler-circuit;
 X-Desktop-File-Install-Version=0.24
