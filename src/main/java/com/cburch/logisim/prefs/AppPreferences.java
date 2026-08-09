@@ -977,6 +977,19 @@ public class AppPreferences {
       create(new PrefMonitorKeyStroke("hotkeyFilePrint", KeyEvent.VK_P, hotkeyMenuMask,
           true, true));
 
+  /**
+   * Peler Edition Feature 6: opens the component finder. Ctrl+F (Cmd+F) is the universal "find"
+   * key and, unlike most letters, was completely unused here -- checked against every accelerator
+   * in the tree. A modifier is not optional either: bare letters are already taken by the
+   * auto-label and gate-modifier hotkeys, which fire while a tool is armed.
+   *
+   * <p>Declared here rather than hardcoded so it lands in Preferences -> Hotkeys automatically --
+   * that panel finds every HOTKEY_ field by reflection -- and can be rebound if it ever collides.
+   */
+  public static final PrefMonitor<KeyStroke> HOTKEY_FIND_TOOL =
+      create(new PrefMonitorKeyStroke("hotkeyFindTool", KeyEvent.VK_F, hotkeyMenuMask,
+          true, true));
+
   public static final PrefMonitor<KeyStroke> HOTKEY_DIR_NORTH =
       create(new PrefMonitorKeyStroke("hotkeyDirNorth", KeyEvent.VK_UP, 0));
 
@@ -1066,6 +1079,7 @@ public class AppPreferences {
       HOTKEY_FILE_EXPORT.set(KeyStroke.getKeyStroke(KeyEvent.VK_E,
           InputEvent.SHIFT_DOWN_MASK | menuMask));
       HOTKEY_FILE_PRINT.set(KeyStroke.getKeyStroke(KeyEvent.VK_P, menuMask));
+      HOTKEY_FIND_TOOL.set(KeyStroke.getKeyStroke(KeyEvent.VK_F, menuMask));
       HOTKEY_PROJ_MOVE_UP.set(KeyStroke.getKeyStroke(
           KeyEvent.VK_U, InputEvent.SHIFT_DOWN_MASK | hotkeyMenuMask));
       HOTKEY_PROJ_MOVE_DOWN.set(KeyStroke.getKeyStroke(

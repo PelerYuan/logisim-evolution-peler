@@ -60,6 +60,13 @@ it is moved, rotated, or deleted. Double-click an annotate tool to keep annotati
 
 ![Adding a note above a gate with the annotate tool](docs/img/peler-edition/Annotation.gif)
 
+**Component finder**
+<kbd>Ctrl</kbd>+<kbd>F</kbd> opens a floating search box. Type part of a name — in the interface
+language or in English, so `and` finds 与门 in a Chinese interface — and pick from the matches,
+shown with their real component icons. <kbd>Enter</kbd> selects it ready to place,
+<kbd>Shift</kbd>+<kbd>Enter</kbd> keeps placing. It closes on <kbd>Esc</kbd> or as soon as it loses
+focus. The shortcut is listed under **Preferences → Hotkeys** and can be rebound.
+
 **Its own file format**
 This fork saves `.pcirc`, and `.circ` is left to official Logisim-evolution. A `.pcirc` file keeps
 everything; **Save As** also offers `.circ` for handing work to someone running the official

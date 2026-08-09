@@ -125,6 +125,7 @@ public final class AboutPelerEdition {
         + li(S.get("aboutPelerEditionFeatureQuickRotate"))
         + li(S.get("aboutPelerEditionFeatureWireSnap"))
         + li(S.get("aboutPelerEditionFeatureAnnotate"))
+        + li(S.get("aboutPelerEditionFeatureFind"))
         + li(S.get("aboutPelerEditionFeatureFormat"))
         + "</ul>"
         + "<p><b>"

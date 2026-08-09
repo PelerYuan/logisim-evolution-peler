@@ -11,6 +11,7 @@ package com.cburch.logisim.gui.menu;
 
 import static com.cburch.logisim.gui.Strings.S;
 
+import com.cburch.logisim.gui.find.FindToolDialog;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.prefs.PrefMonitorKeyStroke;
 import java.awt.event.ActionEvent;
@@ -43,6 +44,15 @@ class MenuProject extends Menu {
   private final MenuItemImpl analyze = new MenuItemImpl(this, LogisimMenuBar.ANALYZE_CIRCUIT);
   private final MenuItemImpl stats = new MenuItemImpl(this, LogisimMenuBar.CIRCUIT_STATS);
   private final JMenuItem options = new JMenuItem();
+  /**
+   * Peler Edition Feature 6. Lives in the Project menu because that is the menu that owns the
+   * toolbox and its libraries -- this finds a component to place, which is not the "find in this
+   * document" that Edit would suggest. Kept as a plain JMenuItem with its own listener, like
+   * `options` above, rather than going through LogisimMenuBar.registerItem: that machinery exists
+   * so different windows can supply different handlers for the same item, and there is only ever
+   * one handler for this one.
+   */
+  private final JMenuItem findTool = new JMenuItem();
 
   MenuProject(LogisimMenuBar menubar) {
     this.menubar = menubar;
@@ -71,6 +81,9 @@ class MenuProject extends Menu {
     menubar.registerItem(LogisimMenuBar.ANALYZE_CIRCUIT, analyze);
     menubar.registerItem(LogisimMenuBar.CIRCUIT_STATS, stats);
     options.addActionListener(myListener);
+    findTool.addActionListener(myListener);
+    findTool.setAccelerator(
+        ((PrefMonitorKeyStroke) AppPreferences.HOTKEY_FIND_TOOL).getWithMask(0));
 
     loadLibrary.add(loadBuiltin);
     loadLibrary.add(loadLogisim);
@@ -79,6 +92,8 @@ class MenuProject extends Menu {
     /* add myself to hotkey sync */
     AppPreferences.gui_sync_objects.add(this);
 
+    add(findTool);
+    addSeparator();
     add(addCircuit);
     add(addVhdl);
     add(importVhdl);
@@ -106,6 +121,7 @@ class MenuProject extends Menu {
     loadJar.setEnabled(known);
     unload.setEnabled(known);
     options.setEnabled(known);
+    findTool.setEnabled(known);
     computeEnabled();
   }
 
@@ -114,6 +130,8 @@ class MenuProject extends Menu {
         ((PrefMonitorKeyStroke) AppPreferences.HOTKEY_PROJ_MOVE_UP).getWithMask(0));
     moveDown.setAccelerator(
         ((PrefMonitorKeyStroke) AppPreferences.HOTKEY_PROJ_MOVE_DOWN).getWithMask(0));
+    findTool.setAccelerator(
+        ((PrefMonitorKeyStroke) AppPreferences.HOTKEY_FIND_TOOL).getWithMask(0));
   }
 
   @Override
@@ -156,6 +174,7 @@ class MenuProject extends Menu {
     analyze.setText(S.get("projectAnalyzeCircuitItem"));
     stats.setText(S.get("projectGetCircuitStatisticsItem"));
     options.setText(S.get("projectOptionsItem"));
+    findTool.setText(S.get("projectFindToolItem"));
   }
 
   private class MyListener implements ActionListener {
@@ -176,6 +195,8 @@ class MenuProject extends Menu {
         ProjectLibraryActions.doUnloadLibraries(proj);
       } else if (src == options) {
         proj.getOptionsFrame().setVisible(true);
+      } else if (src == findTool) {
+        FindToolDialog.open(proj.getFrame(), proj);
       }
     }
   }
