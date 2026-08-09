@@ -415,6 +415,138 @@ Release contents, on top of official Logisim-evolution v4.1.0:
   regeneration cannot stamp a P onto a P.
 - README rewritten to lead with attribution to upstream.
 
+## Feature 6 — The fork's own file format, `.pcirc` (2026-08-09)
+
+**The problem that forced this.** Every file this fork saved was a `.circ` that official
+Logisim-evolution v4.1.0 refused to open cleanly — not only annotated ones, *every* one, including a
+project with no annotations at all. The `<lib desc="#Annotation">` line comes from `default.templ`,
+and `AppPreferences.REMOVE_UNUSED_LIBRARIES` defaults to `false`, so it was written into every file
+whether used or not; upstream's reader has no such library and errors on it. Beyond that, upstream
+regenerates a file from its in-memory model when it saves, so anything it cannot represent is
+destroyed the first time it saves — silently, with no diff and no warning.
+
+Two options were weighed with the user: (A) stay on `.circ` and make the format degrade gracefully,
+or (B) take a distinct extension and add an explicit export. **B was chosen**, with the reasoning
+that it also frees future features from having to survive in official Logisim. Data safety over
+sharing convenience: a separate extension means upstream can only ever destroy a copy exported on
+purpose, never the file being worked in.
+
+**Native format**: `.pcirc` (`Loader.PELER_EXTENSION`). `LogisimFileFilter.accept` takes both
+extensions, so official `.circ` files still open exactly as upstream reads them.
+
+**Compat lowering**: `XmlWriter` gains a `compatMode` flag, set by `PelerCompat.isCompatTarget(destFile)`.
+When on, it drops `AnnotationLibrary` from the library list, skips Peler-only tools in the mouse
+mappings and toolbar (`PelerCompat.isPelerOnly` — `QuickRotateTool`, `TidyWiresTool`,
+`AbstractAnnotateTool`), and rewrites each `Annotation` as an upstream `Text` component
+(`fromAnnotationAsText`) carrying `text`/`font`/`color`/`halign`/`valign`. Multi-line notes are
+joined by a space, since `Text` cannot hold a newline. The note's link to its component is lost —
+this is documented, not hidden.
+
+**Save As semantics**: two filters (`PELER_FILTER`, `LOGISIM_COMPAT_FILTER`). A typed extension always
+wins over the selected filter (`chosenExtension`). Choosing the compatible format for a file with
+annotations raises a three-option dialog (switch to `.pcirc` / keep `.circ` anyway / cancel), and the
+acceptance is remembered per `LogisimFile` in a weak set so it warns once, not on every save.
+
+**File associations**: the installers used to declare `extension=circ` and
+`application/x-logisim-circuit`, byte-identical to upstream's, so whichever edition was installed
+last owned every `.circ` on the machine. Now `extension=pcirc` and
+`application/x-logisim-peler-circuit` across all three `support/jpackage/*/file.jpackage` files.
+
+**Newline fix, found on the way.** Multi-line annotations lost their newlines on save. The cause was
+`Attribute.toStandardString` (`data/Attribute.java:62`), which strips the entire C0 range
+0x00 through 0x1F — newline included. `XmlWriter`/`XmlReader`/`Font` already had a child-text-node
+path for multi-line values; it was simply unreachable. Fixed with a dedicated `ATTR_TEXT` in
+`AnnotationAttributes` that strips the same range minus `0x0A`. It keeps the attribute name `"text"`,
+so files saved before the fix still load. Note for whoever edits it: the escapes there are written as
+regex-level `\x0A`, not Java's own backslash-u form, because the compiler's lexer expands the
+latter before the regex engine ever sees it — and does so even inside a comment, which is a compile
+error.
+
+Key files: `file/PelerCompat.java` (new), `file/Loader.java`, `file/XmlWriter.java`,
+`proj/ProjectActions.java`, `std/annotate/AnnotationAttributes.java`, `support/jpackage/*/file.jpackage`.
+
+## Feature 7 — Component finder, Ctrl+F (2026-08-09)
+
+User request: a hotkey-summoned floating search box for finding and selecting a component without
+hunting through the tree. Checked upstream first — it has nothing like it; the closest thing is the
+toolbox tree's own type-to-select, which only matches a prefix of a visible node. Scope confirmed
+with the user as "全都收": every `Tool`, not only placeable components.
+
+`gui/find/ToolSearch.java` indexes the whole `LogisimFile` recursively (with a visited set, since
+library graphs can revisit). Each `Entry` carries the tool, its library, its display name and its
+English `_ID`, so `and` finds 与门 in a Chinese interface. Scoring is subsequence matching with
+bonuses for word starts, consecutive runs, exact match and prefix, a capped gap penalty, and a mild
+length penalty; a display-name hit outranks an ID hit, which outranks a library-name hit.
+
+`gui/find/FindToolDialog.java` is an undecorated modeless `JDialog` showing up to 12 results with
+their real toolbox icons, painted through a `ComponentDrawContext`. Enter selects the tool ready to
+place, Shift+Enter selects it in continuous-placement mode, Esc or losing focus closes it.
+
+Registered as `AppPreferences.HOTKEY_FIND_TOOL` (Ctrl+F), which `HotkeyOptions` picks up by
+reflection over `AppPreferences`' `HOTKEY_*` fields, so it appears under Preferences > Hotkeys and can
+be rebound with no extra wiring. `MenuProject` carries the menu item and keeps its accelerator in
+sync.
+
+**Gotcha worth remembering**: the result renderer originally used `BoxLayout` and the first row
+rendered as "NAND..." — Swing list renderers are rubber-stamped, never joined to a real hierarchy, so
+`revalidate()` is a no-op and `BoxLayout` reuses cached child widths. `BorderLayout` has nothing to
+cache and renders correctly.
+
+Key files: `gui/find/ToolSearch.java`, `gui/find/FindToolDialog.java` (both new),
+`prefs/AppPreferences.java`, `gui/menu/MenuProject.java`.
+
+## Feature 8 — Settings and identity isolation (2026-08-09)
+
+Changing the language in one edition changed it in the other. `Preferences.userNodeForPackage(X.class)`
+keys off the *package name*, which is identical in both editions, so both were reading and writing the
+same store at `HKCU\SOFTWARE\JavaSoft\Prefs\com\cburch\logisim`.
+
+`prefs/PelerPreferences.java` (new) moves this edition to its own node, `com/cburch/logisim-peler`.
+`AppPreferences.getPrefs()` and `AssemblyWindow` both use it. Because nothing is inherited, a
+first-run prompt offers to copy the official edition's settings across (detected by that node being
+non-empty), and **File > Import Settings from Logisim-evolution...** does the same later. A
+`pelerImportAsked` marker stops the prompt reappearing.
+
+**Ordering constraint**: `AppPreferences` reads every stored value during class initialisation, so the
+import must run before anything touches it — hence `PelerPreferences.offerImportOnFirstRun()` is the
+first statement of `Main.main()`. The prompt therefore cannot use the normal string bundle either; it
+reads the locale straight out of the legacy node and loads its own `ResourceBundle`. Verified live:
+the prompt came up in Chinese, importing copied 51 keys, and the imported locale applied on that same
+run.
+
+Other collisions found and fixed in the same pass: the unnamed-autosave prefix and suffix (both
+editions wrote `.logisim-unnamed-autosave_*`, so each offered to recover the other's crashed session,
+and the naming produced `.foo.pcirc.circ.autosave`); the macOS package identifier, which jpackage
+defaults to the main class name and so was identical in both (now `com.cburch.logisim.peler`); the
+snap package name; and the Flatpak desktop/metainfo IDs, still named
+`com.github.reds.LogisimEvolution`.
+
+Key files: `prefs/PelerPreferences.java` (new), `prefs/AppPreferences.java`, `Main.java`,
+`gui/menu/MenuFile.java`, `file/Loader.java`, `build.gradle.kts`, `snap/snapcraft.yaml`,
+`support/Flatpak/`.
+
+## Known open items
+
+- **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the
+  user's instruction (2026-08-09). FlatLaf supplies UI fonts as composites with a CJK fallback;
+  `new Font(name, style, size)` builds a fallback-less physical font, so `canDisplay('设')` is false,
+  while `deriveFont(...)` preserves the composite. Two layers: `ProjectExplorer`'s renderer builds its
+  bold font with `new Font(plainFont.getFontName(), Font.BOLD, size)`, and it derives that plain font
+  from the reused renderer's *current* font, so the damage then leaks to every row. `Main.updateGlobalFont`'s
+  `new FontUIResource(appFont, ...)` has the same shape but was not separately tested. This is an
+  upstream v4.1.0 defect, reproducible in the official build, and worth reporting upstream.
+- **macOS bundle identifier is unverified.** `--mac-package-identifier` was added to `build.gradle.kts`
+  based on jpackage's documented default; confirming it needs a real macOS build and a look at
+  `Info.plist`.
+- **Finder key handling is unverified by automation.** Enter, Shift+Enter and Esc could not be tested
+  through the automation input layer — a control experiment showed Esc does not reach upstream's own
+  `JFileChooser` either, so the keys never arrive at the JVM. Needs testing by hand.
+- **`FPGAWorkspace` still defaults to a shared `~/logisim_evolution_workspace`.** Not yet separated.
+- **The exported project bundle's inner file is still named `.circ`.**
+- **Roughly 372 upstream commits are in this fork but not in v4.1.0.** Only the red-highlight one has
+  been reverted. A full rebase onto the release tag was raised with the user and not undertaken, since
+  it would drop upstream bug fixes and require re-applying every Peler feature.
+
 ## Workflow for each phase
 
 1. **Product manager** turns the phase scope above into a concrete task list with acceptance criteria.
