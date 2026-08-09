@@ -77,7 +77,40 @@ public class Loader implements LibraryLoader {
     }
   }
 
+  /**
+   * Peler Edition: accepts BOTH formats, because opening is never the lossy direction -- this
+   * edition reads an official {@code .circ} exactly as upstream does. Only saving distinguishes
+   * them (see {@link #PELER_FILTER} / {@link #LOGISIM_COMPAT_FILTER}).
+   */
   private static class LogisimFileFilter extends FileFilter {
+    @Override
+    public boolean accept(File f) {
+      return f.isDirectory()
+          || f.getName().endsWith(LOGISIM_EXTENSION)
+          || f.getName().endsWith(PELER_EXTENSION);
+    }
+
+    @Override
+    public String getDescription() {
+      return S.get("logisimFileFilter");
+    }
+  }
+
+  /** Peler Edition: the native, full-fidelity format -- the default for Save As. */
+  private static class PelerFileFilter extends FileFilter {
+    @Override
+    public boolean accept(File f) {
+      return f.isDirectory() || f.getName().endsWith(PELER_EXTENSION);
+    }
+
+    @Override
+    public String getDescription() {
+      return S.get("pelerFileFilter");
+    }
+  }
+
+  /** Peler Edition: the lossy interchange format that official Logisim-evolution can open. */
+  private static class LogisimCompatFileFilter extends FileFilter {
     @Override
     public boolean accept(File f) {
       return f.isDirectory() || f.getName().endsWith(LOGISIM_EXTENSION);
@@ -85,7 +118,7 @@ public class Loader implements LibraryLoader {
 
     @Override
     public String getDescription() {
-      return S.get("logisimFileFilter");
+      return S.get("logisimCompatFileFilter");
     }
   }
 
@@ -126,6 +159,20 @@ public class Loader implements LibraryLoader {
   }
 
   public static final String LOGISIM_EXTENSION = ".circ";
+
+  /**
+   * Peler Edition's own project format. Same XML dialect, but it may contain things official
+   * Logisim-evolution has no idea about (annotations, the Quick Rotate mouse mapping), so it gets
+   * its own extension instead of masquerading as a {@code .circ} that errors out over there. Saving
+   * to {@link #LOGISIM_EXTENSION} is still offered, and lowers the file to what upstream
+   * understands -- see {@code XmlWriter}'s compatibility mode.
+   *
+   * <p>This also lets both editions coexist at the OS level: the installer now claims {@code
+   * .pcirc} and its own MIME type, leaving {@code .circ} to official Logisim-evolution. Before
+   * this, the fork registered the identical extension, MIME type and description, so whichever
+   * edition was installed last silently took over every {@code .circ} on the machine.
+   */
+  public static final String PELER_EXTENSION = ".pcirc";
   public static final String LOGISIM_PROJECT_BUNDLE_EXTENSION = ".lsebdl";
   public static final String LOGISIM_PROJECT_BUNDLE_INFO_FILE = "LogisimEvolutionBundle.info";
   public static final String LOGISIM_LIBRARY_DIR = "library";
@@ -133,6 +180,8 @@ public class Loader implements LibraryLoader {
   public static final String LOGISIM_UNNAMED_AUTOSAVE_PREFIX = ".logisim-unnamed-autosave_";
   public static final String LOGISIM_UNNAMED_AUTOSAVE_SUFFIX = ".circ.autosave";
   public static final FileFilter LOGISIM_FILTER = new LogisimFileFilter();
+  public static final FileFilter PELER_FILTER = new PelerFileFilter();
+  public static final FileFilter LOGISIM_COMPAT_FILTER = new LogisimCompatFileFilter();
   public static final FileFilter LOGISIM_BUNDLE_FILTER = new LogisimProjectBundleFilter();
   public static final FileFilter LOGISIM_DIRECTORY = new LogisimDirectoryFilter();
   public static final FileFilter JAR_FILTER = new JarFileFilter();

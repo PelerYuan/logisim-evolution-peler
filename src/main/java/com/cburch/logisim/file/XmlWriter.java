@@ -22,6 +22,10 @@ import com.cburch.logisim.fpga.data.MapComponent;
 import com.cburch.logisim.generated.BuildInfo;
 import com.cburch.logisim.instance.StdAttr;
 import com.cburch.logisim.prefs.AppPreferences;
+import com.cburch.logisim.std.annotate.Annotation;
+import com.cburch.logisim.std.annotate.AnnotationAttributes;
+import com.cburch.logisim.std.annotate.AnnotationLibrary;
+import com.cburch.logisim.std.base.BaseLibrary;
 import com.cburch.logisim.std.base.Text;
 import com.cburch.logisim.std.wiring.ProbeAttributes;
 import com.cburch.logisim.tools.Library;
@@ -70,6 +74,21 @@ final class XmlWriter {
   private final LibraryLoader loader;
   private final HashMap<Library, String> libs = new HashMap<>();
   private final boolean isRecursiveCall;
+
+  /**
+   * Peler Edition compatibility mode: on when the destination is an official {@code .circ} rather
+   * than this edition's own {@code .pcirc}. It lowers the project to what official
+   * Logisim-evolution v4.1.0 can actually read -- annotations become plain {@code Text}
+   * components, and the tools upstream has never heard of drop out of the mouse mappings and the
+   * toolbar. Without it, upstream greets the file with "The built-in library Annotation is not
+   * available" plus one error per annotation, then discards them; and since upstream regenerates
+   * the whole XML from its in-memory model when it saves, anything it did not understand is gone
+   * for good the first time someone saves over there.
+   *
+   * <p>Set after construction rather than through the constructors so all three of them, and every
+   * caller, stay as upstream wrote them.
+   */
+  private boolean compatMode;
 
   private XmlWriter(LogisimFile file, Document doc, LibraryLoader loader) {
     this(file, doc, loader, null, null, false);
@@ -192,6 +211,11 @@ final class XmlWriter {
     } else if (mainCircFile != null) {
       context = new XmlWriter(file, doc, loader, null, mainCircFile, recurse);
     } else context = new XmlWriter(file, doc, loader);
+
+    // Peler Edition: the destination's extension picks the dialect. Only the plain save path
+    // supplies destFile; a project bundle keeps full fidelity, since the bundle is ours too.
+    context.compatMode =
+        PelerCompat.isCompatTarget(destFile);
 
     context.fromLogisimFile();
 
@@ -342,8 +366,74 @@ final class XmlWriter {
     return ret;
   }
 
+  /**
+   * Peler Edition compatibility mode: rewrite an annotation as the closest thing upstream owns, a
+   * plain {@code Text} component at the same place, so the note is still legible over there
+   * instead of vanishing. Deliberately one-way -- what upstream cannot model (which component the
+   * note is attached to, and how) is dropped rather than smuggled into attributes it would
+   * silently discard the next time it saved.
+   *
+   * <p>Multiple lines are joined with a space rather than kept: upstream's {@code Text} paints via
+   * a single {@code drawString}, which has no notion of a line break.
+   *
+   * @return the substitute element, or null if it should not be written at all
+   */
+  private Element fromAnnotationAsText(Component comp) {
+    final var baseLib = baseLibraryName();
+    if (baseLib == null) return null;
+
+    final var attrs = comp.getAttributeSet();
+    final var raw = attrs.getValue(AnnotationAttributes.ATTR_TEXT);
+    if (StringUtil.isNullOrEmpty(raw)) return null;
+    // Base Attribute.toStandardString strips the remaining control characters for us.
+    final var text = Text.ATTR_TEXT.toStandardString(raw.replace('\n', ' '));
+    if (text.isEmpty()) return null;
+
+    final var ret = doc.createElement("comp");
+    ret.setAttribute("lib", baseLib);
+    ret.setAttribute("name", Text._ID);
+    ret.setAttribute("loc", comp.getLocation().toString());
+    addPlainAttribute(ret, Text.ATTR_TEXT.getName(), text);
+    addPlainAttribute(
+        ret, Text.ATTR_FONT.getName(), Text.ATTR_FONT.toStandardString(attrs.getValue(Text.ATTR_FONT)));
+    addPlainAttribute(
+        ret,
+        Text.ATTR_COLOR.getName(),
+        Text.ATTR_COLOR.toStandardString(attrs.getValue(Text.ATTR_COLOR)));
+    addPlainAttribute(
+        ret,
+        Text.ATTR_HALIGN.getName(),
+        Text.ATTR_HALIGN.toStandardString(attrs.getValue(Text.ATTR_HALIGN)));
+    addPlainAttribute(
+        ret,
+        Text.ATTR_VALIGN.getName(),
+        Text.ATTR_VALIGN.toStandardString(attrs.getValue(Text.ATTR_VALIGN)));
+    return ret;
+  }
+
+  private void addPlainAttribute(Element parent, String name, String value) {
+    final var elt = doc.createElement("a");
+    elt.setAttribute("name", name);
+    elt.setAttribute("val", value);
+    parent.appendChild(elt);
+  }
+
+  /**
+   * Index of the {@code #Base} library in the file being written, or null if it somehow is not
+   * there. Always written out -- {@code fromLibrary} keeps {@code #Base} even when unused -- and
+   * populated before any circuit is, since {@code fromLogisimFile} emits the libraries first.
+   */
+  private String baseLibraryName() {
+    for (final var lib : file.getLibraries()) {
+      if (lib instanceof BaseLibrary) return libs.get(lib);
+    }
+    return null;
+  }
+
   Element fromComponent(Component comp) {
     final var source = comp.getFactory();
+    if (compatMode && source instanceof Annotation) return fromAnnotationAsText(comp);
+
     final var lib = findLibrary(source);
     String libName;
     if (lib == null) {
@@ -373,6 +463,13 @@ final class XmlWriter {
   }
 
   Element fromLibrary(Library lib) throws IOException, LoadFailedException {
+    // Peler Edition compatibility mode: leave the Annotation library out entirely, and out of the
+    // `libs` map too, so nothing downstream can emit a reference to it. Note this is the reason a
+    // compatible file is clean even when it holds no annotations at all: the library entry comes
+    // from the new-project template and `removeUnusedLibs` is off by default, so every file this
+    // edition saved used to carry it, and upstream complained about every single one.
+    if (compatMode && lib instanceof AnnotationLibrary) return null;
+
     final var ret = doc.createElement("lib");
     if (libs.containsKey(lib)) return null;
     final var name = Integer.toString(libs.size());
@@ -483,6 +580,7 @@ final class XmlWriter {
     for (final var entry : map.getMappings().entrySet()) {
       final var mods = entry.getKey();
       final var tool = entry.getValue();
+      if (compatMode && PelerCompat.isPelerOnly(tool)) continue;
       final var toolElt = fromTool(tool);
       final var mapValue = InputEventUtil.toString(mods);
       toolElt.setAttribute("map", mapValue);
@@ -526,7 +624,7 @@ final class XmlWriter {
     for (final var tool : toolbar.getContents()) {
       if (tool == null) {
         elt.appendChild(doc.createElement("sep"));
-      } else {
+      } else if (!(compatMode && PelerCompat.isPelerOnly(tool))) {
         elt.appendChild(fromTool(tool));
       }
     }

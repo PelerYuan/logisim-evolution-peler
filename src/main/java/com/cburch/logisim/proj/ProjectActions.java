@@ -17,6 +17,7 @@ import com.cburch.logisim.file.LoadedLibrary;
 import com.cburch.logisim.file.Loader;
 import com.cburch.logisim.file.LogisimFile;
 import com.cburch.logisim.file.LogisimFileActions;
+import com.cburch.logisim.file.PelerCompat;
 import com.cburch.logisim.generated.BuildInfo;
 import com.cburch.logisim.gui.generic.OptionPane;
 import com.cburch.logisim.gui.main.Frame;
@@ -35,9 +36,12 @@ import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -385,7 +389,73 @@ public final class ProjectActions {
     final var loader = proj.getLogisimFile().getLoader();
     final var f = loader.getMainFile();
     if (f == null) return doSaveAs(proj);
-    else return doSave(proj, f);
+
+    // Peler Edition: plain Save over an official .circ silently degrades any annotations in it, so
+    // say so -- once per file per session, since this would otherwise fire on every Ctrl+S. Files
+    // written by earlier versions of this edition are all .circ, which is exactly the case worth
+    // catching. Answering "keep .circ" is remembered; switching to .pcirc retargets the project,
+    // so the question does not come back either way.
+    if (PelerCompat.isCompatTarget(f) && compatSaveAccepted.add(proj.getLogisimFile())) {
+      final var dest = resolveCompatSave(proj, f);
+      if (dest == null) {
+        compatSaveAccepted.remove(proj.getLogisimFile());
+        return false;
+      }
+      return doSave(proj, dest);
+    }
+    return doSave(proj, f);
+  }
+
+  /**
+   * Peler Edition: projects whose owner has already been told, this session, that saving them as
+   * {@code .circ} degrades their annotations. Weak keys so a closed project does not pin its file
+   * in memory.
+   */
+  private static final Set<LogisimFile> compatSaveAccepted =
+      Collections.newSetFromMap(new WeakHashMap<>());
+
+  /**
+   * Peler Edition: which of the two formats a Save As should produce. An extension the user typed
+   * themselves wins -- so naming a file "foo.circ" writes the compatible dialect no matter what the
+   * dropdown says, and vice versa -- and the dropdown only decides when neither was given.
+   */
+  private static String chosenExtension(String fileName, javax.swing.filechooser.FileFilter filter) {
+    if (fileName.endsWith(Loader.PELER_EXTENSION)) return Loader.PELER_EXTENSION;
+    if (fileName.endsWith(Loader.LOGISIM_EXTENSION)) return Loader.LOGISIM_EXTENSION;
+    return (filter == Loader.LOGISIM_COMPAT_FILTER)
+        ? Loader.LOGISIM_EXTENSION
+        : Loader.PELER_EXTENSION;
+  }
+
+  /**
+   * Peler Edition: last stop before writing a lossy file. Only interrupts when the project actually
+   * holds annotations -- the mouse mappings and toolbar entries a compatible file also drops are
+   * interface preferences, not the user's work, and are not worth a dialog.
+   *
+   * @return where to save, possibly switched to {@code .pcirc}, or null if the user cancelled
+   */
+  private static File resolveCompatSave(Project proj, File dest) {
+    if (!PelerCompat.isCompatTarget(dest)) return dest;
+    if (!PelerCompat.hasAnnotations(proj.getLogisimFile())) return dest;
+
+    final Object[] options = {
+      S.get("compatSaveSwitchOpt", Loader.PELER_EXTENSION),
+      S.get("compatSaveKeepOpt", Loader.LOGISIM_EXTENSION),
+      S.get("compatSaveCancelOpt")
+    };
+    final var dlog = new JOptionPane(S.get("compatSaveMessage"));
+    dlog.setMessageType(OptionPane.WARNING_MESSAGE);
+    dlog.setOptions(options);
+    dlog.createDialog(proj.getFrame(), S.get("compatSaveTitle")).setVisible(true);
+
+    final var result = dlog.getValue();
+    if (result == options[1]) return dest;
+    if (result == options[0]) {
+      final var name = dest.getName();
+      final var stem = name.substring(0, name.length() - Loader.LOGISIM_EXTENSION.length());
+      return new File(dest.getParentFile(), stem + Loader.PELER_EXTENSION);
+    }
+    return null;
   }
 
   public static boolean doSave(Project proj, File f) {
@@ -530,7 +600,8 @@ public final class ProjectActions {
     final var oldTool = proj.getTool();
     proj.setTool(null);
     var mainFileName = loader.getMainFile() == null ? "Untitled.circ" : loader.getMainFile().getName();
-    var zipFile = mainFileName.replace(Loader.LOGISIM_EXTENSION, Loader.LOGISIM_PROJECT_BUNDLE_EXTENSION);
+    var zipFile =
+        PelerCompat.stripProjectExtension(mainFileName) + Loader.LOGISIM_PROJECT_BUNDLE_EXTENSION;
     final var chooser = loader.createChooser();
     chooser.setFileFilter(Loader.LOGISIM_BUNDLE_FILTER);
     chooser.setAcceptAllFileFilterUsed(false);
@@ -556,7 +627,8 @@ public final class ProjectActions {
           isCorrectFile = true;
         }
         if (isCorrectFile) {
-          final var dialog = new ProjectBundleReadme(proj, mainFileName.replace(Loader.LOGISIM_EXTENSION, ""));
+          final var dialog =
+              new ProjectBundleReadme(proj, PelerCompat.stripProjectExtension(mainFileName));
           final var readmeInfo = dialog.getReadmeInfo();
           if (readmeInfo == null) return false;
           final var projectFile = new FileOutputStream(zipFile);
@@ -592,7 +664,16 @@ public final class ProjectActions {
   public static boolean doSaveAs(Project proj) {
     var loader = proj.getLogisimFile().getLoader();
     var chooser = loader.createChooser();
-    chooser.setFileFilter(Loader.LOGISIM_FILTER);
+    // Peler Edition: two output formats rather than one. .pcirc keeps everything and is the
+    // default; .circ is the interchange format official Logisim-evolution can open, and is lossy.
+    // Whichever the file already is stays preselected, so re-saving never silently changes format.
+    chooser.setAcceptAllFileFilterUsed(false);
+    chooser.addChoosableFileFilter(Loader.PELER_FILTER);
+    chooser.addChoosableFileFilter(Loader.LOGISIM_COMPAT_FILTER);
+    chooser.setFileFilter(
+        PelerCompat.isCompatTarget(loader.getMainFile())
+            ? Loader.LOGISIM_COMPAT_FILTER
+            : Loader.PELER_FILTER);
     if (loader.getMainFile() != null) {
       chooser.setSelectedFile(loader.getMainFile());
     }
@@ -618,18 +699,21 @@ public final class ProjectActions {
     } while (!validFilename);
 
     var selectedFile = chooser.getSelectedFile();
-    if (!selectedFile.getName().endsWith(Loader.LOGISIM_EXTENSION)) {
+    // Peler Edition: an extension the user actually typed wins over the dropdown, so the format
+    // always follows the name on disk. The dropdown only decides when neither is present.
+    final var wantedExtension = chosenExtension(selectedFile.getName(), chooser.getFileFilter());
+    if (!selectedFile.getName().endsWith(wantedExtension)) {
       var old = selectedFile.getName();
       int ext0 = old.lastIndexOf('.');
       if (ext0 < 0 || !Pattern.matches("\\.\\p{L}{2,}\\d?", old.substring(ext0))) {
-        selectedFile = new File(selectedFile.getParentFile(), old + Loader.LOGISIM_EXTENSION);
+        selectedFile = new File(selectedFile.getParentFile(), old + wantedExtension);
       } else {
         var ext = old.substring(ext0);
         var ttl = S.get("replaceExtensionTitle");
-        var msg = S.get("replaceExtensionMessage", ext);
+        var msg = S.get("replaceExtensionMessage", ext, wantedExtension);
         Object[] options = {
           S.get("replaceExtensionReplaceOpt", ext),
-          S.get("replaceExtensionAddOpt", Loader.LOGISIM_EXTENSION),
+          S.get("replaceExtensionAddOpt", wantedExtension),
           S.get("replaceExtensionKeepOpt")
         };
         var dlog = new JOptionPane(msg);
@@ -639,13 +723,16 @@ public final class ProjectActions {
 
         Object result = dlog.getValue();
         if (result == options[0]) {
-          var name = old.substring(0, ext0) + Loader.LOGISIM_EXTENSION;
+          var name = old.substring(0, ext0) + wantedExtension;
           selectedFile = new File(selectedFile.getParentFile(), name);
         } else if (result == options[1]) {
-          selectedFile = new File(selectedFile.getParentFile(), old + Loader.LOGISIM_EXTENSION);
+          selectedFile = new File(selectedFile.getParentFile(), old + wantedExtension);
         }
       }
     }
+
+    selectedFile = resolveCompatSave(proj, selectedFile);
+    if (selectedFile == null) return false;
 
     if (selectedFile.exists()) {
       var confirm =

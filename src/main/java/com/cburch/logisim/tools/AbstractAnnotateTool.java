@@ -181,7 +181,7 @@ public abstract class AbstractAnnotateTool extends Tool {
   }
 
   private void editExisting(Project proj, Circuit circ, Component comp, Frame owner) {
-    final var currentText = comp.getAttributeSet().getValue(Text.ATTR_TEXT);
+    final var currentText = comp.getAttributeSet().getValue(AnnotationAttributes.ATTR_TEXT);
     final var newText = showAnnotationDialog(owner, currentText);
     if (newText == null) return; // cancelled
     final var xn = new CircuitMutation(circ);
@@ -190,7 +190,7 @@ public abstract class AbstractAnnotateTool extends Tool {
       proj.doAction(xn.toAction(S.getter("removeComponentAction", Annotation.FACTORY.getDisplayGetter())));
       AnnotationAnchorTracker.getOrAttach(proj, circ).forget(comp);
     } else if (!newText.equals(currentText)) {
-      xn.set(comp, Text.ATTR_TEXT, newText);
+      xn.set(comp, AnnotationAttributes.ATTR_TEXT, newText);
       proj.doAction(xn.toAction(S.getter("changeComponentAttributesAction")));
     }
   }
@@ -202,7 +202,7 @@ public abstract class AbstractAnnotateTool extends Tool {
     final var placeLoc = placementFor(anchor, anchorLoc);
 
     final var attrs = (AnnotationAttributes) Annotation.FACTORY.createAttributeSet();
-    attrs.setValue(Text.ATTR_TEXT, text);
+    attrs.setValue(AnnotationAttributes.ATTR_TEXT, text);
     attrs.setValue(Text.ATTR_HALIGN, horizontalAlignFor(anchor, anchorLoc));
     attrs.setValue(AnnotationAttributes.ANCHOR_LOC, anchorLoc);
     attrs.setValue(AnnotationAttributes.ANCHOR_KIND, anchorKind());

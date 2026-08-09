@@ -1,4 +1,4 @@
-extension=circ
-mime-type=application/x-logisim-circuit
+extension=pcirc
+mime-type=application/x-logisim-peler-circuit
 icon=support/jpackage/macos/Logisim-evolution-circ.icns
-description=Logisim circuit file
+description=Peler Edition circuit file

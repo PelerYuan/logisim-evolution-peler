@@ -9,6 +9,8 @@
 
 package com.cburch.logisim.std.annotate;
 
+import static com.cburch.logisim.std.Strings.S;
+
 import com.cburch.logisim.data.AbstractAttributeSet;
 import com.cburch.logisim.data.Attribute;
 import com.cburch.logisim.data.AttributeOption;
@@ -38,6 +40,41 @@ import java.util.Objects;
  * docs/peler-edition/ROADMAP.md, Feature 5, "Persistence".
  */
 public class AnnotationAttributes extends AbstractAttributeSet {
+  /**
+   * The annotation's text. Deliberately NOT {@link Text#ATTR_TEXT}, even though everything else
+   * here reuses {@link Text}'s attributes: the base {@code Attribute.toStandardString} strips
+   * every character in the C0 range, newline included, so a multi-line note collapsed into a
+   * single line the moment it was saved. Upstream's Text component is single-line, so that strip
+   * never cost it anything. Found by round-tripping a two-line note through save/reload.
+   *
+   * <p>Keeps the same attribute NAME ("text") -- that is what the file records, so files written
+   * before this fix still load -- and keeps stripping the other control characters, which really
+   * are illegal in XML. Carriage return goes too, so the value is always {@code \n}-separated
+   * regardless of platform.
+   *
+   * <p>The multi-line value survives the round trip because upstream already handles it at both
+   * ends: {@code XmlWriter.addAttributeSetContent} writes a value containing a newline as a child
+   * text node rather than a {@code val="..."} attribute, and {@code XmlReader.initAttributeSet}
+   * falls back to {@code getTextContent()} when {@code val} is absent. That path was simply
+   * unreachable while the newline was being deleted before it ever got there.
+   */
+  public static final Attribute<String> ATTR_TEXT =
+      new Attribute<>("text", S.getter("textTextAttr")) {
+        @Override
+        public String parse(String value) {
+          return value;
+        }
+
+        @Override
+        public String toStandardString(String value) {
+          // Same as the base implementation minus 0x0A, the newline we want to keep. Written with
+          // regex-level hex escapes rather than Java's own backslash-u form: those are expanded by
+          // the compiler's lexer, so they would put raw control characters into this source file
+          // (and are a compile error even inside a comment).
+          return value.replaceAll("[\\x00-\\x09\\x0B-\\x1F]", "").replaceAll("&#.*?;", "");
+        }
+      };
+
   public static final Attribute<Location> ANCHOR_LOC =
       new Attribute<>("annotationAnchorLoc", null, true) {
         @Override
@@ -68,7 +105,7 @@ public class AnnotationAttributes extends AbstractAttributeSet {
 
   private static final List<Attribute<?>> ATTRIBUTES =
       Arrays.asList(
-          Text.ATTR_TEXT, Text.ATTR_FONT, Text.ATTR_COLOR, Text.ATTR_HALIGN, Text.ATTR_VALIGN,
+          ATTR_TEXT, Text.ATTR_FONT, Text.ATTR_COLOR, Text.ATTR_HALIGN, Text.ATTR_VALIGN,
           ANCHOR_LOC, ANCHOR_KIND);
 
   /**
@@ -144,7 +181,7 @@ public class AnnotationAttributes extends AbstractAttributeSet {
   @Override
   @SuppressWarnings("unchecked")
   public <V> V getValue(Attribute<V> attr) {
-    if (attr == Text.ATTR_TEXT) return (V) text;
+    if (attr == ATTR_TEXT) return (V) text;
     if (attr == Text.ATTR_FONT) return (V) font;
     if (attr == Text.ATTR_HALIGN) return (V) halign;
     if (attr == Text.ATTR_VALIGN) return (V) valign;
@@ -167,7 +204,7 @@ public class AnnotationAttributes extends AbstractAttributeSet {
 
   @Override
   public <V> void setValue(Attribute<V> attr, V value) {
-    if (attr == Text.ATTR_TEXT) {
+    if (attr == ATTR_TEXT) {
       text = (String) value;
     } else if (attr == Text.ATTR_FONT) {
       font = (Font) value;

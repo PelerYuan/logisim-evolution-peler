@@ -28,6 +28,18 @@ on:
         options:
           - "dev"
           - "stable"
+      platforms:
+        description: >-
+          Which platforms to build. "windows" builds only the MSI and portable zip, which is the
+          quick way to get a dev build in front of a Windows tester -- the other three jobs take
+          far longer and are pure waiting when the change is not platform-specific. Anything
+          published as a stable release should use "all".
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - "all"
+          - "windows"
       tag_name:
         description: >-
           Stable releases only; ignored for the dev channel and when triggered by pushing a "v*"
@@ -63,6 +75,7 @@ jobs:
       lse_name: ${{ steps.info.outputs.lse_name }}
       is_dev: ${{ steps.info.outputs.is_dev }}
       release_name: ${{ steps.info.outputs.release_name }}
+      windows_only: ${{ steps.info.outputs.windows_only }}
     steps:
       - name: "Checkout sources"
         uses: actions/checkout@v7
@@ -75,6 +88,7 @@ jobs:
         env:
           INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
           INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_PLATFORMS: ${{ github.event.inputs.platforms }}
           RUN_NUMBER: ${{ github.run_number }}
         run: |
           # Have no mercy.
@@ -91,6 +105,14 @@ jobs:
             is_dev="true"
           fi
           echo "is_dev=${is_dev}" >> "$GITHUB_OUTPUT"
+
+          # Windows-only is a manual-dispatch convenience, never something a pushed tag can
+          # ask for: a tag means a stable release, and those ship every platform.
+          windows_only="false"
+          if [[ "${GITHUB_REF_TYPE}" != "tag" && "${INPUT_PLATFORMS}" == "windows" ]]; then
+            windows_only="true"
+          fi
+          echo "windows_only=${windows_only}" >> "$GITHUB_OUTPUT"
 
           if [[ "${is_dev}" == "true" ]]; then
             # One rolling pre-release, always at the same tag, so the releases page holds exactly
@@ -174,6 +196,7 @@ jobs:
     name: "Linux build"
     runs-on: ubuntu-latest
     needs: prep
+    if: needs.prep.outputs.windows_only != 'true'
     steps:
       - name: "Checkout sources"
         uses: actions/checkout@v7
@@ -229,6 +252,7 @@ jobs:
     name: "Linux Arm build"
     runs-on: ubuntu-22.04-arm
     needs: prep
+    if: needs.prep.outputs.windows_only != 'true'
     steps:
       - name: "Checkout sources"
         uses: actions/checkout@v7
@@ -265,6 +289,7 @@ jobs:
     name: "macOS build"
     runs-on: macos-latest
     needs: prep
+    if: needs.prep.outputs.windows_only != 'true'
     steps:
       - name: "Checkout sources"
         uses: actions/checkout@v7
@@ -313,6 +338,14 @@ jobs:
     name: "Publish GitHub Release"
     runs-on: ubuntu-latest
     needs: [prep, build_windows, build_linux, build_linux_arm, build_macos]
+    # A skipped job makes every dependent job skip too, unless the condition is spelled out.
+    # Windows must have succeeded; the other three are allowed to be skipped but not failed.
+    if: >-
+      !cancelled()
+      && needs.build_windows.result == 'success'
+      && needs.build_linux.result != 'failure'
+      && needs.build_linux_arm.result != 'failure'
+      && needs.build_macos.result != 'failure'
     steps:
       - name: "Download all platform artifacts"
         uses: actions/download-artifact@v6
@@ -345,4 +378,6 @@ jobs:
           files: dist/**/*
           prerelease: ${{ needs.prep.outputs.is_dev == 'true' }}
           target_commitish: ${{ github.sha }}
-          body: ${{ needs.prep.outputs.is_dev == 'true' && 'Rolling development build, replaced on every change. Not a release -- expect rough edges, and use the newest normal release for anything that matters.' || '' }}
+          body: >-
+            ${{ needs.prep.outputs.is_dev == 'true' && 'Rolling development build, replaced on every change. Not a release -- expect rough edges, and use the newest normal release for anything that matters.' || '' }}
+            ${{ needs.prep.outputs.windows_only == 'true' && 'Windows only: the Linux and macOS packages were deliberately not built for this one, they are not missing because something failed.' || '' }}

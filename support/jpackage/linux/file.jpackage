@@ -1,4 +1,4 @@
-extension=circ
-mime-type=application/x-logisim-circuit
+extension=pcirc
+mime-type=application/x-logisim-peler-circuit
 icon=support/jpackage/linux/logisim-icon-128.png
-description=Logisim circuit file
+description=Peler Edition circuit file

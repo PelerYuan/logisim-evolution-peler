@@ -60,10 +60,23 @@ it is moved, rotated, or deleted. Double-click an annotate tool to keep annotati
 
 ![Adding a note above a gate with the annotate tool](docs/img/peler-edition/Annotation.gif)
 
-The application is packaged as `logisim-evolution-peler` and its icon carries a red **P**, so it
-installs alongside an official Logisim-evolution install rather than colliding with it. The
-in-application **Help → About** window is left exactly as upstream ships it, crediting upstream;
-this fork's own changes are described under **Help → About Peler's Edition**.
+**Its own file format**
+This fork saves `.pcirc`, and `.circ` is left to official Logisim-evolution. A `.pcirc` file keeps
+everything; **Save As** also offers `.circ` for handing work to someone running the official
+release, which writes what upstream can read — annotations become plain text labels there, and the
+note's link to its component is not preserved. Opening works either way round: this fork reads an
+official `.circ` exactly as upstream does.
+
+The reason for two formats is that annotations are this fork's own idea. Official Logisim-evolution
+rebuilds a file from its own model when it saves, so anything it cannot represent is gone the first
+time it saves — silently. A separate extension means that can only happen to a copy you exported on
+purpose, never to the file you work in.
+
+The application is packaged as `logisim-evolution-peler`, its icon carries a red **P**, and its
+installer registers `.pcirc` and its own MIME type — so it sits alongside an official
+Logisim-evolution install rather than taking over its files. The in-application **Help → About**
+window is left exactly as upstream ships it, crediting upstream; this fork's own changes are
+described under **Help → About Peler's Edition**.
 
 ---
 
