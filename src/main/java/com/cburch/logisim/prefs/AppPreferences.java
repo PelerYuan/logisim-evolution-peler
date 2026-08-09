@@ -516,10 +516,12 @@ public class AppPreferences {
   public static final PrefMonitor<String> LOCALE = create(new LocalePreference());
 
   // FPGA Commander Preferences
+  // Peler Edition: this edition's own workspace directory rather than upstream's shared
+  // ~/logisim_evolution_workspace, which both editions generated into and cleaned out from under
+  // each other. See PelerPreferences.defaultFpgaWorkspace(). Only the default moves: a workspace
+  // the user picked themselves is stored under this key and still wins.
   public static final PrefMonitor<String> FPGA_Workspace =
-      create(
-          new PrefMonitorString(
-              "FPGAWorkspace", System.getProperty("user.home") + "/logisim_evolution_workspace"));
+      create(new PrefMonitorString("FPGAWorkspace", PelerPreferences.defaultFpgaWorkspace()));
   public static final PrefMonitor<String> HdlType =
       create(
           new PrefMonitorStringOpts(

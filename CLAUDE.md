@@ -43,7 +43,8 @@ discarded by its writer, so they buy nothing, and an unknown element directly un
 makes `XmlReader.toLogisimFile` throw so the file will not open at all.
 
 **Keep the two editions apart.** Any packaging change must preserve this edition's own file
-extension, MIME type, preference node, package name and bundle identifiers. The fork previously
+extension, MIME type, preference node, package name, bundle identifiers and FPGA workspace
+directory — and any new on-disk path must get the same treatment. The fork previously
 declared `extension=circ` and `application/x-logisim-circuit`, byte-identical to upstream, so
 whichever edition was installed last owned every `.circ` on the machine. That class of bug must not
 come back.

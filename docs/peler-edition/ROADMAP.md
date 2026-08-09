@@ -525,6 +525,35 @@ Key files: `prefs/PelerPreferences.java` (new), `prefs/AppPreferences.java`, `Ma
 `gui/menu/MenuFile.java`, `file/Loader.java`, `build.gradle.kts`, `snap/snapcraft.yaml`,
 `support/Flatpak/`.
 
+### FPGA workspace (2026-08-10)
+
+The last shared path left after that pass. Upstream defaults `FPGAWorkspace` to
+`~/logisim_evolution_workspace`, and both editions generated into it. That directory is not an inert
+output dump: `DownloadBase.getProjDir` lays it out as `<workspace>/<project file name>/<circuit>/`
+and `writeHDL` calls `cleanDirectory` on the circuit's directory before regenerating it. The same
+project opened in either edition therefore resolves to the same path, and each download deletes
+whatever the other edition put there.
+
+The default is now `~/logisim_evolution_peler_workspace`, kept next to the shared one rather than
+inside it, and defined in `PelerPreferences.defaultFpgaWorkspace()` so the reason sits with the rest
+of the separation logic instead of inline in `AppPreferences`.
+
+Only the *default* moves. `PrefMonitorString` writes to the store on `set()` only, so a workspace
+the user picked themselves is a stored value and still wins; **FPGA > Options** changes nothing. No
+migration of an existing default workspace: the fork has no users yet, and what lives there is
+generated HDL and scripts that the next download rebuilds anyway.
+
+`FPGAWorkspace` is also skipped by the settings import (`copyNode`, root level only, alongside
+`pelerImportAsked`). Importing it would hand both editions the same generating-and-cleaning
+directory again, which contradicts what the import dialog promises. Pointing this edition back at
+the old workspace by hand still works.
+
+`PelerPreferencesTest` (new) pins the default away from upstream's path. It deliberately does not
+touch `AppPreferences`, whose static initialiser reads the real preference store.
+
+Key files: `prefs/PelerPreferences.java`, `prefs/AppPreferences.java`,
+`src/test/java/com/cburch/logisim/prefs/PelerPreferencesTest.java` (new).
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the
@@ -541,7 +570,6 @@ Key files: `prefs/PelerPreferences.java` (new), `prefs/AppPreferences.java`, `Ma
 - **Finder key handling is unverified by automation.** Enter, Shift+Enter and Esc could not be tested
   through the automation input layer — a control experiment showed Esc does not reach upstream's own
   `JFileChooser` either, so the keys never arrive at the JVM. Needs testing by hand.
-- **`FPGAWorkspace` still defaults to a shared `~/logisim_evolution_workspace`.** Not yet separated.
 - **The exported project bundle's inner file is still named `.circ`.**
 - **Roughly 372 upstream commits are in this fork but not in v4.1.0.** Only the red-highlight one has
   been reverted. A full rebase onto the release tag was raised with the user and not undertaken, since
