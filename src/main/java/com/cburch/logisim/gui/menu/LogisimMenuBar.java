@@ -30,6 +30,8 @@ import javax.swing.event.ChangeListener;
 public class LogisimMenuBar extends JMenuBar {
   public static final LogisimMenuItem PRINT = new LogisimMenuItem("Print");
   public static final LogisimMenuItem EXPORT_IMAGE = new LogisimMenuItem("ExportImage");
+  /** Peler Edition, experimental: the circuit as a self-contained page that still simulates. */
+  public static final LogisimMenuItem EXPORT_HTML = new LogisimMenuItem("ExportHtml");
   public static final LogisimMenuItem CUT = new LogisimMenuItem("Cut");
   public static final LogisimMenuItem COPY = new LogisimMenuItem("Copy");
   public static final LogisimMenuItem PASTE = new LogisimMenuItem("Paste");

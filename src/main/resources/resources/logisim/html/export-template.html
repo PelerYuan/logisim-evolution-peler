@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font: 14px system-ui, sans-serif; background: #fff; color: #111; }
+  @media (prefers-color-scheme: dark) { body { background: #14161a; color: #e8e8e8; } }
+  header { padding: 10px 14px; border-bottom: 1px solid #8883; display: flex; gap: 14px;
+           align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header .hint { opacity: .65; font-size: 12px; }
+  #stage { overflow: auto; padding: 12px; }
+  svg { max-width: 100%; height: auto; }
+  .clickable { cursor: pointer; }
+  #warn { display: none; margin: 8px 14px; padding: 8px 10px; border-radius: 6px;
+          background: #b000201a; color: #b00020; font-size: 13px; }
+  @media (prefers-color-scheme: dark) { #warn { color: #ff8a90; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>__TITLE__</h1>
+  <span class="hint">Click an input pin to change it. Nothing here can be moved or edited.</span>
+</header>
+<div id="warn"></div>
+<div id="stage"></div>
+<script>
+"use strict";
+const CIRCUIT = /*__CIRCUIT__*/null;
+
+// Bit states, matching Logisim's four-valued model.
+const ZERO = 0, ONE = 1, UNK = 2, ERR = 3;
+
+function makeValue(width, fill) {
+  return new Uint8Array(width).fill(fill);
+}
+
+function sameValue(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+// Two drivers on one net: a driven bit beats a floating one, and two different driven bits are an
+// error. This is what the editor shows as a red wire.
+function joinBit(a, b) {
+  if (a === UNK) return b;
+  if (b === UNK) return a;
+  if (a === ERR || b === ERR) return ERR;
+  return a === b ? a : ERR;
+}
+
+function joinInto(target, source) {
+  const n = Math.min(target.length, source.length);
+  for (let i = 0; i < n; i++) target[i] = joinBit(target[i], source[i]);
+}
+
+function bitsToNumber(bits) {
+  let out = 0;
+  for (let i = bits.length - 1; i >= 0; i--) {
+    if (bits[i] === UNK || bits[i] === ERR) return null;
+    out = out * 2 + bits[i];
+  }
+  return out;
+}
+
+function numberToBits(value, width) {
+  const bits = makeValue(width, ZERO);
+  for (let i = 0; i < width; i++) bits[i] = (value >> i) & 1;
+  return bits;
+}
+
+function formatValue(bits) {
+  if (bits.some((b) => b === ERR)) return "E";
+  if (bits.some((b) => b === UNK)) return "x";
+  const n = bitsToNumber(bits);
+  return bits.length <= 4 ? String(n) : n.toString(16).toUpperCase();
+}
+
+// ---------------------------------------------------------------- component behaviour
+
+function reduceGate(inputs, kind, negateMask, width) {
+  const out = makeValue(width, UNK);
+  for (let bit = 0; bit < width; bit++) {
+    let sawError = false, sawUnknown = false, ones = 0, zeros = 0, parity = 0;
+    for (let i = 0; i < inputs.length; i++) {
+      let v = inputs[i][bit % inputs[i].length];
+      if ((negateMask >> i) & 1) v = v === ZERO ? ONE : v === ONE ? ZERO : v;
+      if (v === ERR) sawError = true;
+      else if (v === UNK) sawUnknown = true;
+      else if (v === ONE) { ones++; parity ^= 1; }
+      else zeros++;
+    }
+    let result;
+    switch (kind) {
+      case "and": result = zeros > 0 ? ZERO : sawError ? ERR : sawUnknown ? UNK : ONE; break;
+      case "or": result = ones > 0 ? ONE : sawError ? ERR : sawUnknown ? UNK : ZERO; break;
+      case "xor": result = sawError ? ERR : sawUnknown ? UNK : (parity ? ONE : ZERO); break;
+      default: result = UNK;
+    }
+    out[bit] = result;
+  }
+  return out;
+}
+
+function invert(bits) {
+  const out = makeValue(bits.length, UNK);
+  for (let i = 0; i < bits.length; i++) {
+    out[i] = bits[i] === ZERO ? ONE : bits[i] === ONE ? ZERO : bits[i];
+  }
+  return out;
+}
+
+const GATES = {
+  "AND Gate": ["and", false], "NAND Gate": ["and", true],
+  "OR Gate": ["or", false], "NOR Gate": ["or", true],
+  "XOR Gate": ["xor", false], "XNOR Gate": ["xor", true],
+};
+
+// ---------------------------------------------------------------- simulation
+
+class Simulation {
+  constructor(circuit) {
+    this.circuit = circuit;
+    this.netValues = circuit.nets.map((net) => makeValue(net.width, UNK));
+    this.inputs = new Map();
+    for (const comp of circuit.components) {
+      if (comp.kind === "Pin" && comp.a_isInput) {
+        this.inputs.set(comp.id, makeValue(comp.portWidths[0] || 1, ZERO));
+      }
+    }
+    this.oscillating = false;
+  }
+
+  valueOfPort(comp, portIndex) {
+    const net = comp.ports[portIndex];
+    if (net < 0) return makeValue(comp.portWidths[portIndex] || 1, UNK);
+    return this.netValues[net];
+  }
+
+  // Iterate to a fixed point. Phase 1 is combinational, so there is nothing to schedule in time --
+  // but a cycle still has to be caught, or a ring of inverters would spin the browser forever.
+  run() {
+    const limit = 200;
+    this.oscillating = false;
+    for (let round = 0; round < limit; round++) {
+      const next = this.circuit.nets.map((net) => makeValue(net.width, UNK));
+      for (const comp of this.circuit.components) {
+        const driven = this.outputsOf(comp);
+        for (const [portIndex, bits] of driven) {
+          const net = comp.ports[portIndex];
+          if (net >= 0) joinInto(next[net], bits);
+        }
+      }
+      let changed = false;
+      for (let i = 0; i < next.length; i++) {
+        if (!sameValue(next[i], this.netValues[i])) { changed = true; this.netValues[i] = next[i]; }
+      }
+      if (!changed) return;
+    }
+    this.oscillating = true;
+  }
+
+  outputsOf(comp) {
+    const width = comp.portWidths[comp.portWidths.length - 1] || 1;
+    switch (comp.kind) {
+      case "Pin":
+        return comp.a_isInput ? [[0, this.inputs.get(comp.id)]] : [];
+      case "Constant": {
+        const w = comp.portWidths[0] || 1;
+        return [[0, numberToBits(comp.a_value === undefined ? 1 : comp.a_value, w)]];
+      }
+      case "NOT Gate":
+        return [[0, invert(this.valueOfPort(comp, 1))]];
+      case "Buffer":
+        return [[0, this.valueOfPort(comp, 1)]];
+      case "LED": case "Probe": case "Tunnel":
+        return [];
+      default: {
+        const gate = GATES[comp.kind];
+        if (!gate) return [];
+        const inputs = [];
+        for (let i = 1; i < comp.ports.length; i++) inputs.push(this.valueOfPort(comp, i));
+        if (inputs.length === 0) return [];
+        const negate = comp.a_negate || 0;
+        let out = reduceGate(inputs, gate[0], negate, width);
+        if (gate[1]) out = invert(out);
+        return [[0, out]];
+      }
+    }
+  }
+
+  toggleInput(comp) {
+    const bits = this.inputs.get(comp.id);
+    if (!bits) return;
+    const width = bits.length;
+    if (width === 1) {
+      bits[0] = bits[0] === ONE ? ZERO : ONE;
+    } else {
+      const current = bitsToNumber(bits) || 0;
+      const next = (current + 1) % Math.pow(2, width);
+      this.inputs.set(comp.id, numberToBits(next, width));
+    }
+    this.run();
+  }
+}
+
+// ---------------------------------------------------------------- drawing
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function el(name, attrs) {
+  const node = document.createElementNS(SVG_NS, name);
+  for (const key in attrs) node.setAttribute(key, attrs[key]);
+  return node;
+}
+
+class View {
+  constructor(circuit, sim) {
+    this.circuit = circuit;
+    this.sim = sim;
+    this.ox = circuit.originX;
+    this.oy = circuit.originY;
+
+    this.root = el("svg", {
+      viewBox: `0 0 ${circuit.width} ${circuit.height}`,
+      width: circuit.width, height: circuit.height,
+      xmlns: SVG_NS,
+    });
+    this.wireLayer = el("g", { "stroke-linecap": "round" });
+    this.bodyLayer = el("g", {});
+    this.dynamicLayer = el("g", {});
+    this.root.append(this.wireLayer, this.bodyLayer, this.dynamicLayer);
+
+    // Bodies are Logisim's own drawing, already in page coordinates.
+    const holder = document.createElementNS(SVG_NS, "g");
+    holder.innerHTML = circuit.components.map((c) => c.svg || "").join("");
+    this.bodyLayer.append(holder);
+
+    this.wireNodes = [];
+    for (const net of circuit.nets) {
+      for (const seg of net.segments) {
+        const line = el("line", {
+          x1: seg[0] - this.ox, y1: seg[1] - this.oy,
+          x2: seg[2] - this.ox, y2: seg[3] - this.oy,
+          "stroke-width": net.width > 1 ? 3 : 2,
+        });
+        this.wireLayer.append(line);
+        this.wireNodes.push([line, net]);
+      }
+    }
+    this.buildInteractive();
+  }
+
+  colorFor(net) {
+    const colors = this.circuit.colors;
+    const bits = this.sim.netValues[net.id];
+    if (bits.some((b) => b === ERR)) return colors.error;
+    if (net.width > 1) return bits.some((b) => b === UNK) ? colors.unknown : colors.multi;
+    if (bits[0] === UNK) return colors.unknown;
+    return bits[0] === ONE ? colors["true"] : colors["false"];
+  }
+
+  buildInteractive() {
+    this.dynamic = [];
+    for (const comp of this.circuit.components) {
+      if (!["Pin", "LED", "Probe"].includes(comp.kind)) continue;
+      const [bx, by, bw, bh] = comp.bounds;
+      const x = bx - this.ox, y = by - this.oy;
+      const group = el("g", {});
+      const isInput = comp.kind === "Pin" && comp.a_isInput;
+
+      let shape;
+      if (comp.kind === "LED") {
+        shape = el("circle", { cx: x + bw / 2, cy: y + bh / 2, r: Math.min(bw, bh) / 2,
+                               stroke: "#444", "stroke-width": 1 });
+      } else {
+        shape = el("rect", { x, y, width: bw, height: bh, stroke: "#444", "stroke-width": 1,
+                             fill: "#fff", rx: isInput ? 0 : 4 });
+      }
+      const text = el("text", {
+        x: x + bw / 2, y: y + bh / 2 + 4, "text-anchor": "middle",
+        "font-size": 11, "font-family": "monospace", fill: "#111",
+      });
+      group.append(shape, text);
+      if (isInput) {
+        group.setAttribute("class", "clickable");
+        group.addEventListener("click", () => { this.sim.toggleInput(comp); this.refresh(); });
+      }
+      this.dynamicLayer.append(group);
+      this.dynamic.push({ comp, shape, text });
+    }
+  }
+
+  refresh() {
+    for (const [line, net] of this.wireNodes) line.setAttribute("stroke", this.colorFor(net));
+    const colors = this.circuit.colors;
+    for (const item of this.dynamic) {
+      const comp = item.comp;
+      const bits = comp.kind === "Pin" && comp.a_isInput
+        ? this.sim.inputs.get(comp.id)
+        : this.sim.valueOfPort(comp, 0);
+      if (comp.kind === "LED") {
+        item.shape.setAttribute("fill", bits[0] === ONE ? colors["true"]
+          : bits[0] === ERR ? colors.error : "#d8d8d8");
+        item.text.textContent = "";
+      } else {
+        item.text.textContent = formatValue(bits);
+      }
+    }
+    const warn = document.getElementById("warn");
+    warn.style.display = this.sim.oscillating ? "block" : "none";
+    warn.textContent = this.sim.oscillating
+      ? "The circuit did not settle: it oscillates, or contains a feedback loop this export cannot resolve."
+      : "";
+  }
+}
+
+const sim = new Simulation(CIRCUIT);
+sim.run();
+const view = new View(CIRCUIT, sim);
+document.getElementById("stage").append(view.root);
+view.refresh();
+</script>
+</body>
+</html>

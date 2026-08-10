@@ -600,6 +600,70 @@ touch `AppPreferences`, whose static initialiser reads the real preference store
 Key files: `prefs/PelerPreferences.java`, `prefs/AppPreferences.java`,
 `src/test/java/com/cburch/logisim/prefs/PelerPreferencesTest.java` (new).
 
+## Feature 9 — Interactive HTML export (experimental, phase 1 2026-08-10)
+
+Export a circuit as one self-contained HTML page that cannot be edited but still simulates: click an
+input pin and the values propagate. Branch `peler/html-export`.
+
+### Why not the obvious approaches
+
+**Precomputing every state at export time** and shipping a lookup table needs no simulator in the
+page and is perfectly faithful — for combinational circuits with few input bits. One 8-bit pin is
+already 256 entries, two are 65536, and a single flip-flop turns the state space into (inputs x
+internal state) with no bound. A digital logic course is mostly sequential circuits, so this dies on
+the second circuit anyone tries.
+
+**Compiling the Java to WebAssembly** (CheerpJ, TeaVM) would be the highest-fidelity route, but
+Logisim's model classes are entangled with AWT down to component painting, so what compiles is the
+whole Swing application: tens of megabytes, slow to start, and an editor — the opposite of the
+requirement, which would then have to be locked back down.
+
+### The split that makes this tractable
+
+Geometry comes from Logisim, dynamics from the page.
+
+Component bodies are drawn by the editor's own paint code through `TikZWriter`, which already backs
+File > Export Image's SVG option, so gates and everything else look exactly as they do in the editor
+with no drawing code in JavaScript. Each component is rendered through a writer of its own and its
+fragment wrapped separately; grouping one shared writer's output by index into `TikZInfo.contents`
+would not survive `optimize()`, which merges and reorders. `TikZInfo.buildSvgDocument` (new) returns
+the document instead of writing a file.
+
+Only what the simulation changes is drawn by the page: wires and their colours, and the three
+components that show or accept a value (`Pin`, `LED`, `Probe`), which also need hit areas. The
+editor's own wire colours are exported with the netlist, since they are preferences — an export from
+someone who retuned them should not come out looking like a different program.
+
+### Connectivity
+
+`HtmlCircuitModel` derives nets itself rather than borrowing `CircuitWires`' bundle map, which is
+package-private and carries much more than this needs. It reproduces the editor's rules: ports and
+wire ends sharing a `Location` are one node, a wire end landing anywhere along another wire joins
+it, and same-label tunnels are one node. Splitters are deliberately *not* connectivity — a splitter
+maps bit ranges, which is component behaviour, so it will be exported as a component and sliced by
+the runtime.
+
+### Phase 1 scope
+
+Combinational only: pins, constants, tunnels, probes, LEDs and the gate family. The runtime iterates
+to a fixed point with a 200-round cap rather than reproducing `Propagator`'s event queue, and says
+so on screen if it fails to settle. Anything outside `HtmlExporter.supportedKinds()` stops the export
+and is named in a dialog — an export that silently computes the wrong answer would be worse than no
+export.
+
+Verified end to end: a two-input AND circuit exported from the running application, the netlist
+checked to have the gate output and the output pin on one net, all four rows of the truth table
+evaluated by running the page's own simulation code under Node, and the page itself clicked through
+in Chrome — inputs toggle, wires change colour, the output follows.
+
+### Still to do
+
+Phase 2 is the sequential half: a real event-driven propagator with component delays, D flip-flops,
+registers, counters, and a clock the page can tick or run. Phase 3 is arithmetic, memory and the
+display components, which need per-state pre-rendered fragments rather than page-drawn shapes. The
+differential test that runs the same circuit through the Java and JavaScript engines and compares is
+not written yet, and should exist before the component list grows.
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the

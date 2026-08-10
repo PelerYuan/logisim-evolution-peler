@@ -169,6 +169,7 @@ The fork's own package version is `pelerAppVersion`, resolved in `.github/workfl
 | Component finder | `gui/find/ToolSearch.java`, `gui/find/FindToolDialog.java` |
 | Settings isolation | `prefs/PelerPreferences.java`, `prefs/AppPreferences.java`, `Main.java` |
 | Fork's About window | `gui/start/AboutPelerEdition.java` |
+| Interactive HTML export (experimental) | `gui/htmlexport/`, `gui/generic/TikZInfo.java`, `resources/logisim/html/` |
 
 New user-visible strings need all 12 locales, in `src/main/resources/resources/logisim/strings/`.
 

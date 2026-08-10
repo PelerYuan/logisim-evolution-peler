@@ -40,6 +40,7 @@ class MenuFile extends Menu implements ActionListener {
   private final JMenuItem extractRunProj = new JMenuItem();
   private final MenuItemImpl print = new MenuItemImpl(this, LogisimMenuBar.PRINT);
   private final MenuItemImpl exportImage = new MenuItemImpl(this, LogisimMenuBar.EXPORT_IMAGE);
+  private final MenuItemImpl exportHtml = new MenuItemImpl(this, LogisimMenuBar.EXPORT_HTML);
   private final JMenuItem prefs = new JMenuItem();
   /**
    * Peler Edition. Brings the settings across from the store both editions used to share. Offered
@@ -86,6 +87,7 @@ class MenuFile extends Menu implements ActionListener {
     add(exportProj);
     addSeparator();
     add(exportImage);
+    add(exportHtml);
     add(print);
     addSeparator();
     add(importPrefs);
@@ -116,6 +118,7 @@ class MenuFile extends Menu implements ActionListener {
       extractRunProj.addActionListener(this);
     }
     menubar.registerItem(LogisimMenuBar.EXPORT_IMAGE, exportImage);
+    menubar.registerItem(LogisimMenuBar.EXPORT_HTML, exportHtml);
     menubar.registerItem(LogisimMenuBar.PRINT, print);
     prefs.addActionListener(this);
     importPrefs.addActionListener(this);
@@ -223,6 +226,7 @@ class MenuFile extends Menu implements ActionListener {
     exportProj.setText(S.get("fileExportProject"));
     extractRunProj.setText(S.get("fileExtractRunProject"));
     exportImage.setText(S.get("fileExportImageItem"));
+    exportHtml.setText(S.get("pelerExportHtmlItem"));
     print.setText(S.get("filePrintItem"));
     prefs.setText(S.get("filePreferencesItem"));
     importPrefs.setText(S.get("pelerImportSettingsItem"));

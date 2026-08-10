@@ -400,7 +400,29 @@ public class TikZInfo implements Cloneable {
     writer.close();
   }
 
+  /**
+   * The SVG document this writer has recorded, instead of a file.
+   *
+   * <p>Peler Edition: the HTML export renders each component through its own writer so it can wrap
+   * the result in a group of its own and address it from JavaScript later. Grouping by index into
+   * {@link #contents} would not survive {@link #optimize()}, which merges and reorders.
+   */
+  public Document buildSvgDocument(int width, int height) throws ParserConfigurationException {
+    return buildSvg(width, height);
+  }
+
   public void writeSvg(int width, int height, File outfile) throws ParserConfigurationException, TransformerException {
+    final var svgInfo = buildSvg(width, height);
+    final var tranFactory = TransformerFactory.newInstance();
+    tranFactory.setAttribute("indent-number", 3);
+    final var transformer = tranFactory.newTransformer();
+    transformer.setOutputProperty(OutputKeys.INDENT, "yes");
+    final var src = new DOMSource(svgInfo);
+    final var dest = new StreamResult(outfile);
+    transformer.transform(src, dest);
+  }
+
+  private Document buildSvg(int width, int height) throws ParserConfigurationException {
     optimize();
     final var factory = XmlUtil.getHardenedBuilderFactory();
     final var parser = factory.newDocumentBuilder();
@@ -416,13 +438,7 @@ public class TikZInfo implements Cloneable {
     svg.setAttribute("height", Integer.toString(height));
     svgInfo.appendChild(svg);
     for (final var obj : contents) obj.getSvgCommand(svgInfo, svg);
-    final var tranFactory = TransformerFactory.newInstance();
-    tranFactory.setAttribute("indent-number", 3);
-    final var transformer = tranFactory.newTransformer();
-    transformer.setOutputProperty(OutputKeys.INDENT, "yes");
-    final var src = new DOMSource(svgInfo);
-    final var dest = new StreamResult(outfile);
-    transformer.transform(src, dest);
+    return svgInfo;
   }
 
   public interface DrawObject {

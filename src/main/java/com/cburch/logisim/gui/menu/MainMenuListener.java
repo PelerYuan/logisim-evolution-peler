@@ -57,6 +57,8 @@ public class MainMenuListener extends MenuListener {
       Project proj = frame.getProject();
       if (src == LogisimMenuBar.EXPORT_IMAGE) {
         ExportImage.doExport(proj);
+      } else if (src == LogisimMenuBar.EXPORT_HTML) {
+        com.cburch.logisim.gui.htmlexport.ExportHtml.doExport(proj);
       } else if (src == LogisimMenuBar.PRINT) {
         Print.doPrint(proj);
       }
@@ -64,6 +66,7 @@ public class MainMenuListener extends MenuListener {
 
     public void register() {
       menubar.addActionListener(LogisimMenuBar.EXPORT_IMAGE, this);
+      menubar.addActionListener(LogisimMenuBar.EXPORT_HTML, this);
       menubar.addActionListener(LogisimMenuBar.PRINT, this);
     }
   }
