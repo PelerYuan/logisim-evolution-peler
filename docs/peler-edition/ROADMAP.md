@@ -600,7 +600,7 @@ touch `AppPreferences`, whose static initialiser reads the real preference store
 Key files: `prefs/PelerPreferences.java`, `prefs/AppPreferences.java`,
 `src/test/java/com/cburch/logisim/prefs/PelerPreferencesTest.java` (new).
 
-## Feature 9 — Interactive HTML export (experimental, phases 1-6 2026-08-10)
+## Feature 9 — Interactive HTML export (experimental, phases 1-7 2026-08-10)
 
 Export a circuit as one self-contained HTML page that cannot be edited but still simulates: click an
 input pin and the values propagate. Branch `peler/html-export`.
@@ -820,10 +820,40 @@ RAM and random. The shift register's parallel ports depend on its appearance att
 memory arrays need their contents exported and a poke interface, so both are more than a
 transcription.
 
+### Phase 7 — subcircuits (2026-08-10)
+
+Flattened at export. The box keeps being drawn by Logisim's painter, and everything behind it is
+pulled into the one netlist as components nobody draws.
+
+**Nodes are named by scope as well as by location.** Two circuits are free to use the same
+coordinates and the same tunnel names, and inside a subcircuit those mean different wires. The
+union-find was keyed on `Location` alone until this phase, which was correct only because there was
+nothing else to collide with. The fixture is built so that it does collide: every level uses tunnels
+called a, b and c, and the instances sit on the inner circuit's own coordinates. Making the scope
+constant turns row 2 of its truth table into an error on both outputs.
+
+**A pin inside a subcircuit is not a component of the flattened design.** It is the point where a
+wire crosses the boundary, so it is dropped and the two nodes are merged instead. Keeping it would
+have been worse than redundant: an input pin left in place would drive its own zero onto a net the
+parent is already driving.
+
+**The port-to-pin mapping is the editor's own.** `CircuitAttributes.getPinInstances()` is the array
+the editor built when it worked out where the ports go, so the two orders agree by construction
+rather than by both sorting the pin list the same way.
+
+Connectivity for the whole design, subcircuits included, is now settled before any node becomes a
+net: two nodes that a later merge would have joined would otherwise already be two nets with no way
+back. That is why the model has two passes.
+
+The menu's refusal walks into subcircuits too, since their contents end up in the page just the
+same.
+
+The fixture is a full adder made of two half adders, wrapped again in main, so the nesting is two
+levels and one circuit is used twice at each level.
+
 ### Still to do
 
-Subcircuits, then the page itself. Every new component needs a fixture in the differential test as
-it lands.
+The page itself: radix, probe readouts, theming, size, and the twelve locales.
 
 ## Known open items
 

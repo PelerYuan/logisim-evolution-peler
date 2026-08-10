@@ -585,6 +585,10 @@ class Simulation {
   }
 
   outputsOf(comp) {
+    // A subcircuit box drives nothing: it was flattened at export, and its ports are already the
+    // same nodes as the pins behind them. Naming it here rather than relying on its kind being
+    // unrecognised matters, because that kind is whatever the circuit was called.
+    if (comp.passive) return [];
     const width = comp.portWidths[0] || 1;
     switch (comp.kind) {
       case "Pin":
@@ -894,6 +898,7 @@ class View {
     // freeze them at whatever the editor happened to be showing when the export was made.
     this.portDots = [];
     for (const comp of circuit.components) {
+      if (comp.hidden) continue;
       for (let port = 0; port < comp.portLocs.length; port++) {
         const dot = el("circle", {
           cx: comp.portLocs[port][0] - this.ox,
@@ -980,6 +985,7 @@ class View {
   buildInteractive() {
     this.dynamic = [];
     for (const comp of this.circuit.components) {
+      if (comp.hidden) continue;
       if (comp.kind !== "Pin" && comp.kind !== "Probe") continue;
       const [bx, by, bw, bh] = comp.bounds;
       const x = bx - this.ox, y = by - this.oy;

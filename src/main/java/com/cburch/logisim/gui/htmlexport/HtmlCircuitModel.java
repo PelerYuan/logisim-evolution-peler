@@ -9,8 +9,9 @@
 package com.cburch.logisim.gui.htmlexport;
 
 import com.cburch.logisim.circuit.Circuit;
+import com.cburch.logisim.circuit.CircuitAttributes;
 import com.cburch.logisim.circuit.SplitterFactory;
-import com.cburch.logisim.circuit.Wire;
+import com.cburch.logisim.circuit.SubcircuitFactory;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.instance.StdAttr;
@@ -39,6 +40,12 @@ import java.util.TreeMap;
  * {@link Net#threads}. Treating a splitter as a component that drives its ports does not work: it is
  * passive and bidirectional, so such a component has to re-drive whatever it read on the previous
  * round, and a driver that then changes value collides with that stale echo.
+ *
+ * <p>Subcircuits are flattened. The box keeps being drawn, but its contents are pulled into this one
+ * netlist as components nobody draws, and each of the box's ports is made the same node as the pin
+ * behind it. That is why nodes are named by scope as well as by location: two circuits are free to
+ * use the same coordinates and the same tunnel names, and inside a subcircuit they mean different
+ * wires.
  */
 public final class HtmlCircuitModel {
 
@@ -72,6 +79,10 @@ public final class HtmlCircuitModel {
     public final List<int[]> portLocs = new ArrayList<>();
     public int[] loc = new int[] {0, 0};
     public String label = "";
+    /** Inside a subcircuit: it simulates, but the page shows the box instead of its contents. */
+    public boolean hidden;
+    /** The subcircuit box itself. It carries values through and drives nothing of its own. */
+    public boolean passive;
 
     Comp(int id, String kind) {
       this.id = id;
@@ -79,12 +90,18 @@ public final class HtmlCircuitModel {
     }
   }
 
+  /** A node is a location in one particular circuit instance, not just a location. */
+  private record Node(int scope, Location loc) {}
+
+  /** One instance of one circuit. The root is drawn; everything reached through a box is not. */
+  private record Scope(Circuit circuit, int id, boolean drawn) {}
+
   private final List<Net> nets = new ArrayList<>();
   private final List<Comp> comps = new ArrayList<>();
   private final List<Component> sources = new ArrayList<>();
-  private final Map<Location, Integer> netOfLocation = new HashMap<>();
-
-  private final Map<Location, Location> parent = new HashMap<>();
+  private final List<Scope> scopes = new ArrayList<>();
+  private final Map<Node, Integer> netOfNode = new HashMap<>();
+  private final Map<Node, Node> parent = new HashMap<>();
   private int threadCount;
 
   /** How many distinct bits the circuit has, once splitters have merged what they merge. */
@@ -111,12 +128,29 @@ public final class HtmlCircuitModel {
     return model;
   }
 
-  private void build(Circuit circuit) {
-    final var wires = new ArrayList<>(circuit.getWires());
-    final var parts = new ArrayList<>(circuit.getNonWires());
+  /**
+   * Connectivity has to be settled for the whole design, subcircuits included, before any node is
+   * turned into a net: two nodes that a later merge would have joined would otherwise already be
+   * two separate nets with no way back.
+   */
+  private void build(Circuit root) {
+    connect(addScope(root, true));
+    for (final var scope : scopes) materialise(scope);
+    assignThreads();
+  }
+
+  private Scope addScope(Circuit circuit, boolean drawn) {
+    final var scope = new Scope(circuit, scopes.size(), drawn);
+    scopes.add(scope);
+    return scope;
+  }
+
+  private void connect(Scope scope) {
+    final var wires = new ArrayList<>(scope.circuit().getWires());
+    final var parts = new ArrayList<>(scope.circuit().getNonWires());
 
     for (final var wire : wires) {
-      union(wire.getEnd0(), wire.getEnd1());
+      union(node(scope, wire.getEnd0()), node(scope, wire.getEnd1()));
     }
     // A wire end, or a port, sitting anywhere along another wire joins it -- the editor draws a
     // junction dot there, and it conducts.
@@ -130,22 +164,47 @@ public final class HtmlCircuitModel {
     }
     for (final var wire : wires) {
       for (final var point : touchPoints) {
-        if (wire.contains(point)) union(point, wire.getEnd0());
+        if (wire.contains(point)) union(node(scope, point), node(scope, wire.getEnd0()));
       }
     }
-    joinTunnels(parts);
+    joinTunnels(scope, parts);
 
     for (final var part : parts) {
+      if (!(part.getFactory() instanceof SubcircuitFactory factory)) continue;
+      final var child = addScope(factory.getSubcircuit(), false);
+      connect(child);
+      // The box's ports and the pins behind them are the same wire. getPinInstances is the mapping
+      // the editor itself built when it worked out where the ports go, so the two orders agree by
+      // construction rather than by both sorting the pins the same way.
+      final var pins = ((CircuitAttributes) part.getAttributeSet()).getPinInstances();
+      final var ends = part.getEnds();
+      if (pins == null) continue;
+      for (var i = 0; i < ends.size() && i < pins.length; i++) {
+        if (pins[i] == null) continue;
+        union(node(scope, ends.get(i).getLocation()), node(child, pins[i].getLocation()));
+      }
+    }
+  }
+
+  private void materialise(Scope scope) {
+    for (final var part : scope.circuit().getNonWires()) {
+      // A pin inside a subcircuit is not a component of the flattened design: it is the point where
+      // the wire crosses the boundary, and that crossing is already a single node.
+      if (!scope.drawn() && part.getFactory() instanceof Pin) continue;
+
       final var comp = new Comp(comps.size(), part.getFactory().getName());
-      final var labelAttr = part.getAttributeSet().containsAttribute(StdAttr.LABEL)
-          ? part.getAttributeSet().getValue(StdAttr.LABEL) : null;
+      final var attrs = part.getAttributeSet();
+      final var labelAttr =
+          attrs.containsAttribute(StdAttr.LABEL) ? attrs.getValue(StdAttr.LABEL) : null;
       comp.label = labelAttr == null ? "" : labelAttr;
       comp.loc = new int[] {part.getLocation().getX(), part.getLocation().getY()};
+      comp.hidden = !scope.drawn();
+      comp.passive = part.getFactory() instanceof SubcircuitFactory;
       readAttributes(part, comp);
 
       for (final var end : part.getEnds()) {
         final var loc = end.getLocation();
-        final var net = netFor(loc);
+        final var net = netFor(node(scope, loc));
         net.width = Math.max(net.width, end.getWidth().getWidth());
         net.pins.add(new int[] {comp.id, comp.ports.size()});
         comp.ports.add(net.id);
@@ -157,17 +216,17 @@ public final class HtmlCircuitModel {
       sources.add(part);
     }
 
-    for (final var wire : wires) {
-      final var net = netFor(wire.getEnd0());
+    for (final var wire : scope.circuit().getWires()) {
+      final var net = netFor(node(scope, wire.getEnd0()));
+      net.width = Math.max(net.width, 1);
+      // Wires inside a subcircuit conduct but are never seen, so they contribute no segment.
+      if (!scope.drawn()) continue;
       net.segments.add(
           new int[] {
             wire.getEnd0().getX(), wire.getEnd0().getY(),
             wire.getEnd1().getX(), wire.getEnd1().getY()
           });
-      net.width = Math.max(net.width, 1);
     }
-
-    assignThreads(parts);
   }
 
   /**
@@ -179,7 +238,7 @@ public final class HtmlCircuitModel {
    * the wire turns red for a round. Merging bits instead makes the two sides literally the same
    * wire, which is what they are.
    */
-  private void assignThreads(List<Component> parts) {
+  private void assignThreads() {
     var next = 0;
     for (final var net : nets) {
       net.threads = new int[net.width];
@@ -188,26 +247,10 @@ public final class HtmlCircuitModel {
     final var threadUnion = new int[next];
     for (var i = 0; i < next; i++) threadUnion[i] = i;
 
-    for (final var part : parts) {
-      if (!(part.getFactory() instanceof SplitterFactory)) continue;
-      final var attrs = part.getAttributeSet();
-      final var ends = part.getEnds();
-      if (ends.isEmpty()) continue;
-      final var combined = netFor(ends.get(0).getLocation());
-      final var incoming = ends.get(0).getWidth().getWidth();
-
-      // bitN says which end bit N leaves by: 0 is "nowhere", otherwise it is the end's own index,
-      // ends 1..fanout being the split side. Bits reaching the same end keep their relative order.
-      final var usedPerEnd = new HashMap<Integer, Integer>();
-      for (var bit = 0; bit < incoming; bit++) {
-        final var attribute = attrs.getAttribute("bit" + bit);
-        if (attribute == null) continue;
-        final var raw = attrs.getValue(attribute);
-        if (!(raw instanceof Integer endIndex) || endIndex <= 0 || endIndex >= ends.size()) continue;
-        final var splitNet = netFor(ends.get(endIndex).getLocation());
-        final var position = usedPerEnd.merge(endIndex, 1, Integer::sum) - 1;
-        if (bit >= combined.threads.length || position >= splitNet.threads.length) continue;
-        unionThread(threadUnion, combined.threads[bit], splitNet.threads[position]);
+    for (final var scope : scopes) {
+      for (final var part : scope.circuit().getNonWires()) {
+        if (!(part.getFactory() instanceof SplitterFactory)) continue;
+        mergeSplitterBits(scope, part, threadUnion);
       }
     }
 
@@ -220,6 +263,28 @@ public final class HtmlCircuitModel {
       }
     }
     threadCount = renumbered.size();
+  }
+
+  private void mergeSplitterBits(Scope scope, Component part, int[] threadUnion) {
+    final var attrs = part.getAttributeSet();
+    final var ends = part.getEnds();
+    if (ends.isEmpty()) return;
+    final var combined = netFor(node(scope, ends.get(0).getLocation()));
+    final var incoming = ends.get(0).getWidth().getWidth();
+
+    // bitN says which end bit N leaves by: 0 is "nowhere", otherwise it is the end's own index,
+    // ends 1..fanout being the split side. Bits reaching the same end keep their relative order.
+    final var usedPerEnd = new HashMap<Integer, Integer>();
+    for (var bit = 0; bit < incoming; bit++) {
+      final var attribute = attrs.getAttribute("bit" + bit);
+      if (attribute == null) continue;
+      final var raw = attrs.getValue(attribute);
+      if (!(raw instanceof Integer endIndex) || endIndex <= 0 || endIndex >= ends.size()) continue;
+      final var splitNet = netFor(node(scope, ends.get(endIndex).getLocation()));
+      final var position = usedPerEnd.merge(endIndex, 1, Integer::sum) - 1;
+      if (bit >= combined.threads.length || position >= splitNet.threads.length) continue;
+      unionThread(threadUnion, combined.threads[bit], splitNet.threads[position]);
+    }
   }
 
   private static int findThread(int[] union, int value) {
@@ -241,11 +306,12 @@ public final class HtmlCircuitModel {
   }
 
   /**
-   * Tunnels with the same label are one node. Labels are compared exactly, as the editor does --
-   * a leading space makes a different tunnel there too, so trimming here would connect nodes the
-   * editor keeps apart.
+   * Tunnels with the same label are one node, within one circuit. Labels are compared exactly, as
+   * the editor does -- a leading space makes a different tunnel there too, so trimming here would
+   * connect nodes the editor keeps apart. A tunnel inside a subcircuit reaches only that circuit,
+   * which is why this runs per scope.
    */
-  private void joinTunnels(List<Component> parts) {
+  private void joinTunnels(Scope scope, List<Component> parts) {
     final var byLabel = new TreeMap<String, Location>();
     for (final var part : parts) {
       if (!(part.getFactory() instanceof Tunnel)) continue;
@@ -255,7 +321,7 @@ public final class HtmlCircuitModel {
       if (part.getEnds().isEmpty()) continue;
       final var here = part.getEnds().get(0).getLocation();
       final var first = byLabel.putIfAbsent(label, here);
-      if (first != null) union(first, here);
+      if (first != null) union(node(scope, first), node(scope, here));
     }
   }
 
@@ -298,25 +364,29 @@ public final class HtmlCircuitModel {
     return value.toString();
   }
 
-  private Net netFor(Location loc) {
-    final var root = find(loc);
-    final var existing = netOfLocation.get(root);
+  private static Node node(Scope scope, Location loc) {
+    return new Node(scope.id(), loc);
+  }
+
+  private Net netFor(Node at) {
+    final var root = find(at);
+    final var existing = netOfNode.get(root);
     if (existing != null) return nets.get(existing);
     final var net = new Net(nets.size());
     nets.add(net);
-    netOfLocation.put(root, net.id);
+    netOfNode.put(root, net.id);
     return net;
   }
 
-  private Location find(Location loc) {
-    var root = loc;
+  private Node find(Node at) {
+    var root = at;
     var step = parent.get(root);
     while (step != null && !step.equals(root)) {
       root = step;
       step = parent.get(root);
     }
     // Path compression, so a long wire run does not turn lookups into a walk.
-    var walk = loc;
+    var walk = at;
     while (!walk.equals(root)) {
       final var next = parent.getOrDefault(walk, root);
       parent.put(walk, root);
@@ -325,7 +395,7 @@ public final class HtmlCircuitModel {
     return root;
   }
 
-  private void union(Location a, Location b) {
+  private void union(Node a, Node b) {
     parent.putIfAbsent(a, a);
     parent.putIfAbsent(b, b);
     final var rootA = find(a);

@@ -56,7 +56,7 @@ public class HtmlExportDifferentialTest {
   @TempDir Path workDir;
 
   @ParameterizedTest
-  @ValueSource(strings = {"and2", "mixed", "splitter", "arith", "plexer", "ffedge"})
+  @ValueSource(strings = {"and2", "mixed", "splitter", "arith", "plexer", "ffedge", "subcircuit"})
   public void testEngineAgreesWithLogisim(String fixture) throws Exception {
     assumeTrue(node() != null, "node is not on PATH; skipping the JavaScript half");
 

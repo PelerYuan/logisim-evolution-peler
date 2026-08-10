@@ -10,10 +10,14 @@ package com.cburch.logisim.gui.htmlexport;
 
 import static com.cburch.logisim.gui.Strings.S;
 
+import com.cburch.logisim.circuit.Circuit;
+import com.cburch.logisim.circuit.SubcircuitFactory;
 import com.cburch.logisim.gui.generic.OptionPane;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.util.JFileChoosers;
 import java.io.File;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.TreeSet;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
@@ -27,16 +31,29 @@ public final class ExportHtml {
 
   private ExportHtml() {}
 
+  /**
+   * Names every component the page could not simulate, looking inside subcircuits too, since a
+   * subcircuit is flattened on export and its contents end up in the page just the same.
+   */
+  private static void collectUnsupported(Circuit circuit, Set<String> into, Set<Circuit> seen) {
+    if (!seen.add(circuit)) return;
+    final var supported = HtmlExporter.supportedKinds();
+    for (final var component : circuit.getNonWires()) {
+      if (component.getFactory() instanceof SubcircuitFactory factory) {
+        collectUnsupported(factory.getSubcircuit(), into, seen);
+        continue;
+      }
+      final var kind = component.getFactory().getName();
+      if (!supported.contains(kind)) into.add(kind);
+    }
+  }
+
   public static void doExport(Project project) {
     final var circuit = project.getCurrentCircuit();
     if (circuit == null) return;
 
     final var unsupported = new TreeSet<String>();
-    final var supported = HtmlExporter.supportedKinds();
-    for (final var component : circuit.getNonWires()) {
-      final var kind = component.getFactory().getName();
-      if (!supported.contains(kind)) unsupported.add(kind);
-    }
+    collectUnsupported(circuit, unsupported, new HashSet<>());
     if (!unsupported.isEmpty()) {
       OptionPane.showMessageDialog(
           project.getFrame(),

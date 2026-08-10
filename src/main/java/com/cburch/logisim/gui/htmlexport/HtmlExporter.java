@@ -153,6 +153,8 @@ public final class HtmlExporter {
           .put("svg", prepared.get(comp.id).svg());
       final var appearance = prepared.get(comp.id).appearance();
       if (appearance != null) entry.put("dyn", appearance.toJson());
+      if (comp.hidden) entry.put("hidden", true);
+      if (comp.passive) entry.put("passive", true);
       final var pokeBits = HtmlPoke.bits(source);
       if (pokeBits > 0) {
         entry.put("poke", pokeBits);
@@ -208,11 +210,13 @@ public final class HtmlExporter {
    */
   private List<Prepared> prepare(HtmlCircuitModel model, int originX, int originY) {
     final var out = new ArrayList<Prepared>();
-    for (final var component : model.getSourceComponents()) {
+    for (final var entry : model.getComponents()) {
+      final var component = model.getSourceComponents().get(entry.id);
       final var stateBits = stateBitsOf(component);
       final HtmlAppearance.Renderer renderer =
           state -> renderState(component, stateBits, state, originX, originY, null);
-      if (RUNTIME_DRAWN.contains(component.getFactory().getName())) {
+      // Inside a subcircuit nothing is drawn: the page shows the box, not its contents.
+      if (entry.hidden || RUNTIME_DRAWN.contains(component.getFactory().getName())) {
         out.add(new Prepared(component, stateBits, renderer, "", null));
         continue;
       }
@@ -309,13 +313,13 @@ public final class HtmlExporter {
     try {
       if (HtmlPoke.bits(component) > 0 && !HtmlPoke.apply(component, offline, state)) return null;
       if (component.getFactory() instanceof InstanceFactory factory) factory.propagate(offline);
-      if (carried != null) carried[0] = offline.data();
-      scratch.setData(component, offline.data());
     } catch (RuntimeException e) {
-      // A component that will not run without a live simulation keeps its default picture. The
-      // netlist entry survives either way, so it still simulates.
-      return null;
+      // A component that will not run without a live simulation still gets drawn, just with
+      // nothing behind it: a subcircuit box asks for a substate and there is none here, and the
+      // box is the same picture either way.
     }
+    if (carried != null) carried[0] = offline.data();
+    scratch.setData(component, offline.data());
     return render(component, originX, originY);
   }
 
