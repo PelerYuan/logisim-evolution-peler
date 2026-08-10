@@ -81,7 +81,7 @@ public class HtmlExportDifferentialTest {
     new HtmlExporter(project, circuit).writeTo(page);
 
     final var fromJava = simulateInJava(project, circuit, inputs, outputs);
-    final var fromPage = simulateInJavaScript(page, inputs, outputs);
+    final var fromPage = simulateInJavaScript(page);
 
     assertEquals(fromJava.size(), fromPage.size(), "row count");
     for (var row = 0; row < fromJava.size(); row++) {
@@ -90,6 +90,83 @@ public class HtmlExportDifferentialTest {
           fromPage.get(row),
           "row " + row + " of " + fixture + ": Logisim and the exported page disagree");
     }
+  }
+
+  /**
+   * Sequential fixtures cannot be compared by sweeping inputs: the answer depends on how many clock
+   * edges have gone by. This drives a fixed number of ticks with the inputs held, and compares the
+   * outputs after every one, so a flip-flop that shifts twice per edge or misses an edge shows up.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"shift"})
+  public void testSequentialEngineAgreesWithLogisim(String fixture) throws Exception {
+    assumeTrue(node() != null, "node is not on PATH; skipping the JavaScript half");
+
+    final var project = openProject(copyFixture(fixture));
+    final var circuit = project.getLogisimFile().getMainCircuit();
+    final var outputs = new ArrayList<Instance>();
+    for (final var component : circuit.getNonWires()) {
+      if (!(component.getFactory() instanceof Pin)) continue;
+      final var instance = Instance.getInstanceFor(component);
+      if (!Pin.FACTORY.isInputPin(instance)) outputs.add(instance);
+    }
+    assertFalse(outputs.isEmpty(), fixture + " has no output pins to compare");
+    outputs.sort(HtmlExportDifferentialTest::compareLocations);
+
+    final var page = workDir.resolve(fixture + ".html").toFile();
+    new HtmlExporter(project, circuit).writeTo(page);
+
+    final var fromJava = tickInJava(project, circuit, outputs, TICKS);
+    final var fromPage = tickInJavaScript(page, TICKS);
+
+    assertEquals(fromJava.size(), fromPage.size(), "tick count");
+    for (var tick = 0; tick < fromJava.size(); tick++) {
+      assertEquals(
+          fromJava.get(tick),
+          fromPage.get(tick),
+          "tick " + tick + " of " + fixture + ": Logisim and the exported page disagree");
+    }
+  }
+
+  private static final int TICKS = 12;
+
+  private List<String> tickInJava(
+      Project project, com.cburch.logisim.circuit.Circuit circuit,
+      List<Instance> outputs, int ticks) {
+    final var state = CircuitState.createRootState(project, circuit, Thread.currentThread());
+    final var propagator = state.getPropagator();
+    propagator.propagate();
+    final var rows = new ArrayList<String>();
+    for (var tick = 0; tick < ticks; tick++) {
+      // Same pair TtyInterface's run loop uses to advance simulated time.
+      propagator.toggleClocks();
+      propagator.propagate();
+      final var row = new ArrayList<String>();
+      for (final var pin : outputs) {
+        row.add(propagator.isOscillating()
+            ? "E" : render(Pin.FACTORY.getValue(state.getInstanceState(pin))));
+      }
+      rows.add(String.join(",", row));
+    }
+    return rows;
+  }
+
+  private List<String> tickInJavaScript(File page, int ticks)
+      throws IOException, InterruptedException {
+    return runHarness(page, """
+        const outputs = CIRCUIT.components
+          .filter((c) => c.kind === "Pin" && !c.a_isInput)
+          .sort((a, b) => a.portLocs[0][1] - b.portLocs[0][1] || a.portLocs[0][0] - b.portLocs[0][0]);
+        const sim = new Simulation(CIRCUIT);
+        sim.run();
+        const rows = [];
+        for (let tick = 0; tick < %d; tick++) {
+          sim.tick();
+          rows.push(outputs.map((pin) =>
+            sim.oscillating ? "E" : formatValue(sim.valueOfPort(pin, 0))).join(","));
+        }
+        console.log(rows.join("\\n"));
+        """.formatted(ticks));
   }
 
   // ------------------------------------------------------------------ Logisim's own simulator
@@ -151,19 +228,9 @@ public class HtmlExportDifferentialTest {
 
   // ------------------------------------------------------------------ the exported page's engine
 
-  private List<String> simulateInJavaScript(File page, List<Instance> inputs, List<Instance> outputs)
+  private List<String> simulateInJavaScript(File page)
       throws IOException, InterruptedException {
-    final var html = Files.readString(page.toPath(), StandardCharsets.UTF_8);
-    final var script = html.substring(html.indexOf("<script>") + 8, html.indexOf("</script>"));
-    // The template marks where its DOM-free half ends. Anchoring on a sentinel rather than on a
-    // section heading means the page can be re-commented without silently truncating the engine.
-    final var end = script.indexOf("// __SIMULATION_END__");
-    assertTrue(end > 0, "the exported page has lost its __SIMULATION_END__ marker");
-    final var simulationOnly = script.substring(0, end);
-
-    final var harness = """
-        %s
-
+    return runHarness(page, """
         const inputs = CIRCUIT.components
           .filter((c) => c.kind === "Pin" && c.a_isInput)
           .sort((a, b) => a.portLocs[0][1] - b.portLocs[0][1] || a.portLocs[0][0] - b.portLocs[0][0]);
@@ -188,10 +255,24 @@ public class HtmlExportDifferentialTest {
             sim.oscillating ? "E" : formatValue(sim.valueOfPort(pin, 0))).join(","));
         }
         console.log(rows.join("\\n"));
-        """.formatted(simulationOnly);
+        """);
+  }
 
-    final var harnessFile = workDir.resolve("harness.cjs");
-    Files.writeString(harnessFile, harness, StandardCharsets.UTF_8);
+  /**
+   * Runs a snippet against the engine lifted out of an exported page and returns its lines.
+   *
+   * <p>The engine half is taken verbatim rather than reimplemented, which is the whole point: what
+   * is compared is the code that actually ships inside the page.
+   */
+  private List<String> runHarness(File page, String snippet)
+      throws IOException, InterruptedException {
+    final var html = Files.readString(page.toPath(), StandardCharsets.UTF_8);
+    final var script = html.substring(html.indexOf("<script>") + 8, html.indexOf("</script>"));
+    final var end = script.indexOf("// __SIMULATION_END__");
+    assertTrue(end > 0, "the exported page has lost its __SIMULATION_END__ marker");
+
+    final var harnessFile = workDir.resolve("harness-" + Math.abs(snippet.hashCode()) + ".cjs");
+    Files.writeString(harnessFile, script.substring(0, end) + "\n" + snippet, StandardCharsets.UTF_8);
 
     final var process = new ProcessBuilder(node(), harnessFile.toString())
         .redirectErrorStream(true)

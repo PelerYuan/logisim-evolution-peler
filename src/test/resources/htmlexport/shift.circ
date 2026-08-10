@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Peler Edition sequential test fixture for HtmlExportDifferentialTest.
+
+  A clock drives two D flip-flops. The first has its inverted output fed back to its own input, so
+  it toggles on every rising edge and halves the clock. The second follows the first, one edge
+  later. That shape catches both ways an engine gets edges wrong: missing an edge freezes Q1, and
+  latching more than once per edge lets a value race through both stages in a single tick.
+
+  Ports, appearance logisim_evolution, for a flip-flop at (x,y):
+  D (x-10,y+10)  CK (x-10,y+50)  Q (x+50,y+10)  notQ (x+50,y+50)
+  Read them off a real component before editing. A doubled hyphen here would break the file.
+-->
+<project version="1.0">
+ <lib name="0" desc="#Wiring" />
+ <lib name="4" desc="#Memory" />
+ <lib name="8" desc="#Base" />
+ <main name="main" />
+ <options>
+  <a name="showgrid" val="true" />
+  <a name="simulate" val="true" />
+ </options>
+ <circuit name="main">
+  <a name="circuit" val="main" />
+
+  <comp lib="0" loc="(200,100)" name="Clock" />
+
+  <comp lib="4" loc="(400,200)" name="D Flip-Flop" />
+  <comp lib="4" loc="(400,400)" name="D Flip-Flop" />
+
+  <comp lib="0" loc="(700,210)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="Q1" />
+  </comp>
+  <comp lib="0" loc="(700,410)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="Q2" />
+  </comp>
+
+  <wire from="(200,100)" to="(250,100)" />
+  <wire from="(250,100)" to="(250,250)" />
+  <wire from="(250,250)" to="(390,250)" />
+  <wire from="(250,250)" to="(250,450)" />
+  <wire from="(250,450)" to="(390,450)" />
+
+  <wire from="(450,250)" to="(500,250)" />
+  <wire from="(500,170)" to="(500,250)" />
+  <wire from="(340,170)" to="(500,170)" />
+  <wire from="(340,170)" to="(340,210)" />
+  <wire from="(340,210)" to="(390,210)" />
+
+  <wire from="(450,210)" to="(560,210)" />
+  <wire from="(560,210)" to="(700,210)" />
+  <wire from="(560,210)" to="(560,300)" />
+  <wire from="(300,300)" to="(560,300)" />
+  <wire from="(300,300)" to="(300,410)" />
+  <wire from="(300,410)" to="(390,410)" />
+
+  <wire from="(450,410)" to="(700,410)" />
+ </circuit>
+</project>

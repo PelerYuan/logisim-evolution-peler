@@ -707,12 +707,38 @@ circuit's own truth table shows S counting 0..3 and E holding its forced high bi
 Not covered here: a pin's tristate and pull attributes, and drawing the width-mismatch error the
 editor shows when two different widths meet.
 
+### Phase 4 — sequential logic (2026-08-10)
+
+Clock, D flip-flop and register, plus tick, run and reset controls that appear on the page only when
+there is something for them to drive.
+
+**Settling happens in two alternating phases.** Combinational logic iterates to a fixed point while
+every state element holds its output still; only then do state elements look at their inputs and
+decide whether an edge arrived. Latching inside the settling loop would let one clock edge be seen
+several times, and a chain of flip-flops would shift more than one stage per tick. The fixture is
+built to fail if that regresses: the first flip-flop feeds its own inverted output back, so it halves
+the clock, and the second follows it one edge later.
+
+**This is a delta-cycle model, not a timed one.** Logisim gives components real propagation delays.
+A circuit whose behaviour depends on gate delay -- a pulse generator built from a chain of inverters
+is the usual example -- will not agree with the editor, and the differential test is the thing that
+will say so.
+
+The clock phase was taken from `Clock.ClockState.updateTick` rather than reasoned out. The first
+attempt used the high duration where Logisim uses the low one, which starts the clock in the
+opposite phase; the differential test caught it on tick 0 of the very first sequential fixture.
+
+`HtmlExportDifferentialTest` grew a second comparison for this: sequential fixtures cannot be swept
+over their inputs, so it drives a fixed number of ticks with `toggleClocks` on the Java side and
+`tick()` on the page's, and compares after every one.
+
+Not covered: counters, T/JK/SR flip-flops, shift registers, and RAM.
+
 ### Still to do
 
-The sequential half: a real event-driven propagator with component delays, D flip-flops, registers,
-counters, and a clock the page can tick or run. Then arithmetic, memory and the display components,
-which want per-state pre-rendered fragments rather than page-drawn shapes. Every new component needs
-a fixture in the differential test as it lands.
+Arithmetic, memory and the display components, which want per-state pre-rendered fragments rather
+than page-drawn shapes. Then subcircuits. Every new component needs a fixture in the differential
+test as it lands.
 
 ## Known open items
 

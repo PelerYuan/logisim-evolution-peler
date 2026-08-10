@@ -15,6 +15,9 @@
   #stage { overflow: auto; padding: 12px; }
   svg { max-width: 100%; height: auto; }
   .clickable { cursor: pointer; }
+  header button { font: inherit; padding: 2px 10px; margin-right: 4px; cursor: pointer;
+                  border: 1px solid #8886; border-radius: 5px; background: #8881; color: inherit; }
+  header button:hover { background: #8883; }
   #warn { display: none; margin: 8px 14px; padding: 8px 10px; border-radius: 6px;
           background: #b000201a; color: #b00020; font-size: 13px; }
   @media (prefers-color-scheme: dark) { #warn { color: #ff8a90; } }
@@ -24,6 +27,12 @@
 <header>
   <h1>__TITLE__</h1>
   <span class="hint">Click an input pin to change it. Nothing here can be moved or edited.</span>
+  <span id="clockbar" hidden>
+    <button id="tick" type="button">Tick</button>
+    <button id="run" type="button">Run</button>
+    <button id="reset" type="button">Reset</button>
+    <span class="hint" id="tickcount">0 ticks</span>
+  </span>
 </header>
 <div id="warn"></div>
 <div id="stage"></div>
@@ -114,6 +123,13 @@ function invert(bits) {
   return out;
 }
 
+// Components that hold a value between clock edges. Ports are named by index so the runtime does
+// not have to re-derive Logisim's port order every time it looks one up.
+const STATEFUL = {
+  "D Flip-Flop": { d: 0, ck: 1, q: 2, nq: 3, clr: 4, pre: 5, width: 1 },
+  "Register":    { d: 1, ck: 2, q: 0, clr: 3, en: 4 },
+};
+
 const GATES = {
   "AND Gate": ["and", false], "NAND Gate": ["and", true],
   "OR Gate": ["or", false], "NOR Gate": ["or", true],
@@ -129,12 +145,45 @@ class Simulation {
     // a net is not the unit that carries a value. This mirrors WireBundle's threads in the editor.
     this.threads = new Uint8Array(circuit.threadCount).fill(UNK);
     this.inputs = new Map();
+    this.state = new Map();
+    this.ticks = 0;
     for (const comp of circuit.components) {
       if (comp.kind === "Pin" && comp.a_isInput) {
         this.inputs.set(comp.id, makeValue(comp.portWidths[0] || 1, ZERO));
       }
+      if (STATEFUL[comp.kind]) {
+        const width = comp.portWidths[STATEFUL[comp.kind].q] || 1;
+        this.state.set(comp.id, { value: makeValue(width, ZERO), lastClock: UNK });
+      }
     }
     this.oscillating = false;
+  }
+
+  /** Whether a clock component is in its high phase right now, honouring its duty attributes. */
+  clockHigh(comp) {
+    const high = comp.a_highDuration === undefined ? 1 : comp.a_highDuration;
+    const low = comp.a_lowDuration === undefined ? 1 : comp.a_lowDuration;
+    const phase = comp.a_phaseOffset === undefined ? 0 : comp.a_phaseOffset;
+    const cycle = high + low;
+    // Copied from Clock.ClockState.updateTick rather than reasoned out: the phase convention is
+    // that the low part of the cycle comes first, so a fresh clock reads 0 before the first tick.
+    const isLow = (((this.ticks + phase) % cycle) + cycle) % cycle < low;
+    return isLow ? ZERO : ONE;
+  }
+
+  reset() {
+    this.ticks = 0;
+    for (const [, entry] of this.state) {
+      entry.value.fill(ZERO);
+      entry.lastClock = UNK;
+    }
+    this.run();
+  }
+
+  /** One clock tick: advance time, then let the circuit settle around the new clock level. */
+  tick() {
+    this.ticks++;
+    this.run();
   }
 
   netOf(id) {
@@ -155,11 +204,29 @@ class Simulation {
     return this.readThreads(netId, width);
   }
 
-  // Iterate to a fixed point. Phase 1 is combinational, so there is nothing to schedule in time --
-  // but a cycle still has to be caught, or a ring of inverters would spin the browser forever.
+  /**
+   * Settle the circuit, in two alternating phases.
+   *
+   * <p>Combinational logic is iterated to a fixed point while every state element holds its output
+   * still; only then do state elements look at their inputs and decide whether an edge arrived.
+   * Latching inside the settling loop instead would let one clock edge be seen several times, and a
+   * chain of flip-flops would shift more than one stage per tick.
+   *
+   * <p>This is a delta-cycle model, not a timed one. Logisim gives components real propagation
+   * delays, so a circuit whose behaviour depends on gate delay -- a pulse generator built from a
+   * chain of inverters, say -- will not agree with the editor here.
+   */
   run() {
-    const limit = 200;
+    const rounds = 200;
     this.oscillating = false;
+    for (let pass = 0; pass < rounds; pass++) {
+      this.settleCombinational(rounds);
+      if (!this.updateStateElements()) return;
+    }
+    this.oscillating = true;
+  }
+
+  settleCombinational(limit) {
     for (let round = 0; round < limit; round++) {
       const next = new Uint8Array(this.circuit.threadCount).fill(UNK);
       for (const comp of this.circuit.components) {
@@ -182,11 +249,49 @@ class Simulation {
     this.oscillating = true;
   }
 
+  /** @return true when some stored value moved, so the combinational half needs settling again. */
+  updateStateElements() {
+    let moved = false;
+    for (const comp of this.circuit.components) {
+      const spec = STATEFUL[comp.kind];
+      if (!spec) continue;
+      const entry = this.state.get(comp.id);
+      const clock = this.valueOfPort(comp, spec.ck)[0];
+      const previous = entry.lastClock;
+      entry.lastClock = clock;
+
+      // Asynchronous clear wins over the clock, as it does in the editor.
+      if (spec.clr !== undefined && this.valueOfPort(comp, spec.clr)[0] === ONE) {
+        if (entry.value.some((b) => b !== ZERO)) { entry.value.fill(ZERO); moved = true; }
+        continue;
+      }
+      if (spec.pre !== undefined && this.valueOfPort(comp, spec.pre)[0] === ONE) {
+        if (entry.value.some((b) => b !== ONE)) { entry.value.fill(ONE); moved = true; }
+        continue;
+      }
+      if (spec.en !== undefined && this.valueOfPort(comp, spec.en)[0] === ZERO) continue;
+
+      const rising = comp.a_trigger === "falling"
+        ? (previous === ONE && clock === ZERO)
+        : (previous === ZERO && clock === ONE);
+      if (!rising) continue;
+
+      const d = this.valueOfPort(comp, spec.d);
+      for (let i = 0; i < entry.value.length; i++) {
+        const bit = i < d.length ? d[i] : ZERO;
+        if (entry.value[i] !== bit) { entry.value[i] = bit; moved = true; }
+      }
+    }
+    return moved;
+  }
+
   outputsOf(comp) {
     const width = comp.portWidths[0] || 1;
     switch (comp.kind) {
       case "Pin":
         return comp.a_isInput ? [[0, this.inputs.get(comp.id)]] : [];
+      case "Clock":
+        return [[0, Uint8Array.from([this.clockHigh(comp)])]];
       case "Constant":
         return [[0, numberToBits(comp.a_value === undefined ? 1 : comp.a_value, width)]];
       case "Power":
@@ -203,6 +308,13 @@ class Simulation {
       case "Splitter": case "LED": case "Probe": case "Tunnel":
         return [];
       default: {
+        const spec = STATEFUL[comp.kind];
+        if (spec) {
+          const stored = this.state.get(comp.id).value;
+          const driven = [[spec.q, stored]];
+          if (spec.nq !== undefined) driven.push([spec.nq, invert(stored)]);
+          return driven;
+        }
         const gate = GATES[comp.kind];
         if (!gate) return [];
         const inputs = [];
@@ -365,6 +477,29 @@ sim.run();
 const view = new View(CIRCUIT, sim);
 document.getElementById("stage").append(view.root);
 view.refresh();
+
+// The clock controls only appear when there is something for them to drive.
+const hasClock = CIRCUIT.components.some((c) => c.kind === "Clock");
+if (hasClock || CIRCUIT.components.some((c) => STATEFUL[c.kind])) {
+  const bar = document.getElementById("clockbar");
+  const counter = document.getElementById("tickcount");
+  bar.hidden = false;
+  let timer = null;
+
+  const redraw = () => { view.refresh(); counter.textContent = sim.ticks + " ticks"; };
+  document.getElementById("tick").addEventListener("click", () => { sim.tick(); redraw(); });
+  document.getElementById("reset").addEventListener("click", () => { sim.reset(); redraw(); });
+  document.getElementById("run").addEventListener("click", (e) => {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+      e.target.textContent = "Run";
+    } else {
+      timer = setInterval(() => { sim.tick(); redraw(); }, 250);
+      e.target.textContent = "Stop";
+    }
+  });
+}
 </script>
 </body>
 </html>

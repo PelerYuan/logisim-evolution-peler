@@ -267,7 +267,7 @@ public final class HtmlCircuitModel {
       switch (name) {
         case "width", "inputs", "size", "negate", "value", "facing", "radix", "tristate",
             "pull", "output", "incoming", "fanout", "in_width", "out_width", "type",
-            "appearance", "labelloc" ->
+            "appearance", "labelloc", "trigger", "highDuration", "lowDuration", "phaseOffset" ->
             comp.attrs.put(name, describe(value));
         default -> {
           // A splitter carries one bitN per incoming bit, up to 64 of them, so they are matched
