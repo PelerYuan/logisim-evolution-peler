@@ -134,7 +134,7 @@ public final class FindToolDialog extends JDialog {
             results.setSelectedIndex(index);
             // Double-click means "keep placing", the same gesture with the same meaning as
             // double-clicking in the toolbox tree or on a toolbar button.
-            if (e.getClickCount() >= 2) accept(true);
+            if (e.getClickCount() >= 2) chooseSelected(true);
           }
         });
 
@@ -213,9 +213,16 @@ public final class FindToolDialog extends JDialog {
   /**
    * Selects the chosen tool and gets out of the way.
    *
+   * <p>Not called {@code accept}. {@link javax.swing.Action} has carried a
+   * {@code default boolean accept(Object)} since JDK 9, so inside {@link AcceptAction} -- which
+   * inherits it -- an unqualified {@code accept(sticky)} resolves to that default method, boxing
+   * the flag and returning true without ever reaching this class. It compiles without a warning and
+   * silently does nothing, which is exactly what Enter and Shift+Enter used to do. Any name that no
+   * nested {@code Action} can inherit is safe; this one is not up for tidying back.
+   *
    * @param sticky arm continuous placement, as double-clicking the tool elsewhere does
    */
-  private void accept(boolean sticky) {
+  private void chooseSelected(boolean sticky) {
     final var entry = results.getSelectedValue();
     if (entry == null) return;
     final var tool = entry.tool();
@@ -269,7 +276,7 @@ public final class FindToolDialog extends JDialog {
 
     @Override
     public void actionPerformed(ActionEvent e) {
-      accept(sticky);
+      chooseSelected(sticky);
     }
   }
 

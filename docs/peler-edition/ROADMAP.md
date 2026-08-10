@@ -495,6 +495,33 @@ cache and renders correctly.
 Key files: `gui/find/ToolSearch.java`, `gui/find/FindToolDialog.java` (both new),
 `prefs/AppPreferences.java`, `gui/menu/MenuProject.java`.
 
+### Enter and Shift+Enter did nothing (found and fixed 2026-08-10)
+
+The feature shipped with its two headline keys dead. Pressing Enter left the dialog open and armed
+no tool; only the mouse double-click worked. It had been recorded as "unverified by automation",
+on the theory that synthetic key events never reach the JVM — the wrong conclusion, and it kept the
+bug alive. Real XTEST events do reach Swing; only `xdotool key --window <id>` is ignored.
+
+The cause is a method-resolution trap with no compiler warning. `javax.swing.Action` has carried a
+`default boolean accept(Object)` since JDK 9. `AcceptAction extends AbstractAction` inherits it, and
+Java resolves an unqualified call against the *inner* class's own hierarchy first, so
+`accept(sticky)` inside that action bound to `Action.accept(Object)` — boxing the flag, returning
+true and never reaching `FindToolDialog.accept(boolean)`. Confirmed from the bytecode rather than by
+reading: `invokestatic Boolean.valueOf` followed by `invokevirtual accept:(Ljava/lang/Object;)Z`
+and a `pop`.
+
+The same call written in the `MouseAdapter` compiled correctly, because `MouseAdapter` has no
+`accept` member to shadow the enclosing one — which is exactly why double-click worked and the keys
+did not, and why the difference looked like an input-layer problem.
+
+Fixed by renaming the enclosing method to `chooseSelected(boolean)`, a name no nested `Action` can
+inherit; qualifying the call would have worked too but leaves the trap for whoever adds the next
+action. `FindToolDialogTest` (new) fails if a method named `accept` reappears on the class.
+
+Verified live on the Linux VM: Enter arms the selected tool and closes; Shift+Enter arms it in
+continuous mode, and three clicks placed three gates; Esc closes with the current tool untouched;
+double-clicking the third result selects that row rather than the default first one.
+
 ## Feature 8 — Settings and identity isolation (2026-08-09)
 
 Changing the language in one edition changed it in the other. `Preferences.userNodeForPackage(X.class)`
@@ -567,9 +594,6 @@ Key files: `prefs/PelerPreferences.java`, `prefs/AppPreferences.java`,
 - **macOS bundle identifier is unverified.** `--mac-package-identifier` was added to `build.gradle.kts`
   based on jpackage's documented default; confirming it needs a real macOS build and a look at
   `Info.plist`.
-- **Finder key handling is unverified by automation.** Enter, Shift+Enter and Esc could not be tested
-  through the automation input layer — a control experiment showed Esc does not reach upstream's own
-  `JFileChooser` either, so the keys never arrive at the JVM. Needs testing by hand.
 - **The exported project bundle's inner file is still named `.circ`.**
 - **Roughly 372 upstream commits are in this fork but not in v4.1.0.** Only the red-highlight one has
   been reverted. A full rebase onto the release tag was raised with the user and not undertaken, since
