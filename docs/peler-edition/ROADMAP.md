@@ -656,13 +656,41 @@ checked to have the gate output and the output pin on one net, all four rows of 
 evaluated by running the page's own simulation code under Node, and the page itself clicked through
 in Chrome — inputs toggle, wires change colour, the output follows.
 
+### Phase 2 — the differential test (2026-08-10)
+
+The export states the semantics of every supported component twice, in two languages, and nothing
+makes the second copy follow the first. A divergence surfaces as a page that quietly computes the
+wrong answer, so this was built before the component list grew rather than after.
+
+`HtmlExportDifferentialTest` loads a fixture circuit, drives every combination of its input pins
+through Logisim's own `Propagator`, exports the page, lifts the engine out of it at the
+`__SIMULATION_END__` marker, runs the same sweep under Node, and compares row by row. It follows
+`TtyInterface`'s headless pattern: a fresh `CircuitState.createRootState` per row, `driveInputPin`
+in, `Pin.FACTORY.getValue` out. It skips itself when `node` is not on the PATH.
+
+**Tests now run with their own preferences store.** Touching almost anything in the simulator pulls
+in `AppPreferences` -- `Value`'s colours are preferences -- and a headless run resolves
+`hotkeyMenuMask` to `ALT_DOWN_MASK` and persists it, which would rewrite the developer's real
+shortcuts from a test run. `build.gradle.kts` now points `java.util.prefs.userRoot` at a directory
+under `build/`. Only the Unix backend honours that; on Windows the registry store ignores it.
+
+The harness was mutation-checked rather than trusted: inverting the JavaScript XOR to behave like OR
+made it fail on the expected row, so it has teeth.
+
+It caught two real faults immediately, both in hand-written fixtures rather than in the exporter,
+which is itself informative -- port coordinates are not guessable. Gates whose outline carries a
+curve or an inversion bubble (XOR, NOR, NAND) sit ten units wider on the input side than AND, so
+wires drawn to the obvious coordinate miss and leave the circuit silently unconnected. And a doubled
+hyphen inside an XML comment makes a `.circ` unparseable, the same trap `default.templ` carries a
+warning about; the loader then tries to report it through a dialog and throws `HeadlessException`
+instead.
+
 ### Still to do
 
-Phase 2 is the sequential half: a real event-driven propagator with component delays, D flip-flops,
-registers, counters, and a clock the page can tick or run. Phase 3 is arithmetic, memory and the
-display components, which need per-state pre-rendered fragments rather than page-drawn shapes. The
-differential test that runs the same circuit through the Java and JavaScript engines and compares is
-not written yet, and should exist before the component list grows.
+The sequential half: a real event-driven propagator with component delays, D flip-flops, registers,
+counters, and a clock the page can tick or run. Then arithmetic, memory and the display components,
+which want per-state pre-rendered fragments rather than page-drawn shapes. Every new component needs
+a fixture in the differential test as it lands.
 
 ## Known open items
 

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="1.0">
+ <lib name="0" desc="#Wiring" />
+ <lib name="1" desc="#Gates" />
+ <lib name="5" desc="#I/O" />
+ <lib name="8" desc="#Base" />
+ <main name="main" />
+ <options>
+  <a name="showgrid" val="true" />
+  <a name="simulate" val="true" />
+ </options>
+ <circuit name="main">
+  <a name="circuit" val="main" />
+
+  <comp lib="0" loc="(100,100)" name="Pin">
+   <a name="label" val="A" />
+  </comp>
+  <comp lib="0" loc="(100,160)" name="Pin">
+   <a name="label" val="B" />
+  </comp>
+
+  <comp lib="1" loc="(260,130)" name="AND Gate">
+   <a name="size" val="30" />
+  </comp>
+
+  <comp lib="0" loc="(360,130)" name="Pin">
+   <a name="facing" val="west" />
+   <a name="output" val="true" />
+   <a name="label" val="Y" />
+  </comp>
+
+  <wire from="(100,100)" to="(230,100)" />
+  <wire from="(230,100)" to="(230,120)" />
+
+  <wire from="(100,160)" to="(230,160)" />
+  <wire from="(230,140)" to="(230,160)" />
+
+  <wire from="(260,130)" to="(360,130)" />
+ </circuit>
+</project>

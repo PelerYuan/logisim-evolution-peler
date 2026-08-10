@@ -208,6 +208,10 @@ class Simulation {
   }
 }
 
+// __SIMULATION_END__ -- everything above is engine and is lifted out verbatim by
+// HtmlExportDifferentialTest to run under Node against Logisim's own simulator. Keep it free of
+// anything that needs a DOM, and keep this marker where it is.
+
 // ---------------------------------------------------------------- drawing
 
 const SVG_NS = "http://www.w3.org/2000/svg";
