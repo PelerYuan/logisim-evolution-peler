@@ -20,9 +20,8 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 /**
  * Peler Edition, experimental. Menu entry point for the interactive HTML export.
  *
- * <p>Refuses rather than exports a page that would quietly compute the wrong answer: this phase
- * models combinational logic only, so anything outside {@link HtmlExporter#supportedKinds()} stops
- * the export and is named in the dialog.
+ * <p>Refuses rather than exports a page that would quietly compute the wrong answer: anything
+ * outside {@link HtmlExporter#supportedKinds()} stops the export and is named in the dialog.
  */
 public final class ExportHtml {
 

@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Peler Edition test fixture for HtmlExportDifferentialTest.
+
+  The two components whose value comes from being clicked rather than from a wire. Neither can be
+  swept by driving input pins, so the differential test sets their state through the component's own
+  poker on the Logisim side and through the page's own click handling on the other, which is the
+  point: a button whose polarity or a switch whose bit order came out reversed would look perfectly
+  reasonable in isolation.
+
+  Port coordinates, relative to the component location:
+    Button      out (0,0), body reaches left
+    DipSwitch   switch i at (10*(i+1), 0) facing north, body reaches down and right
+
+  Read these off a real component before editing; a doubled hyphen here would break the file.
+-->
+<project version="1.0">
+ <lib name="0" desc="#Wiring" />
+ <lib name="6" desc="#I/O" />
+ <lib name="8" desc="#Base" />
+ <main name="main" />
+ <options>
+  <a name="showgrid" val="true" />
+  <a name="simulate" val="true" />
+ </options>
+ <circuit name="main">
+  <a name="circuit" val="main" />
+
+  <comp lib="6" loc="(200,100)" name="Button" />
+  <comp lib="0" loc="(400,100)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="B" />
+  </comp>
+
+  <comp lib="6" loc="(200,300)" name="DipSwitch">
+   <a name="facing" val="north" /><a name="number" val="2" />
+  </comp>
+  <comp lib="0" loc="(400,250)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="S1" />
+  </comp>
+  <comp lib="0" loc="(400,270)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="S2" />
+  </comp>
+
+  <wire from="(200,100)" to="(400,100)" />
+
+  <wire from="(210,250)" to="(210,300)" />
+  <wire from="(210,250)" to="(400,250)" />
+  <wire from="(220,270)" to="(220,300)" />
+  <wire from="(220,270)" to="(400,270)" />
+ </circuit>
+</project>

@@ -26,7 +26,7 @@
 <body>
 <header>
   <h1>__TITLE__</h1>
-  <span class="hint">Click an input pin to change it. Nothing here can be moved or edited.</span>
+  <span class="hint">Click an input pin, button or switch to change it. Nothing here can be moved or edited.</span>
   <span id="clockbar" hidden>
     <button id="tick" type="button">Tick</button>
     <button id="run" type="button">Run</button>
@@ -146,11 +146,15 @@ class Simulation {
     this.threads = new Uint8Array(circuit.threadCount).fill(UNK);
     this.inputs = new Map();
     this.state = new Map();
+    // Buttons and switches carry their value themselves: nothing on any wire says where they are,
+    // so the page is the only thing that knows.
+    this.self = new Map();
     this.ticks = 0;
     for (const comp of circuit.components) {
       if (comp.kind === "Pin" && comp.a_isInput) {
         this.inputs.set(comp.id, makeValue(comp.portWidths[0] || 1, ZERO));
       }
+      if (comp.poke) this.self.set(comp.id, 0);
       if (STATEFUL[comp.kind]) {
         const width = comp.portWidths[STATEFUL[comp.kind].q] || 1;
         this.state.set(comp.id, { value: makeValue(width, ZERO), lastClock: UNK });
@@ -304,8 +308,25 @@ class Simulation {
         return [[0, this.valueOfPort(comp, 1)]];
       case "Bit Extender":
         return [[0, this.extend(comp)]];
+      case "Button": {
+        // Which way round the press reads is the component's own attribute, not a fixed polarity.
+        const pressed = (this.self.get(comp.id) & 1) !== 0;
+        const passive = comp.a_press === "passive";
+        return [[0, Uint8Array.from([pressed === passive ? ZERO : ONE])]];
+      }
+      case "DipSwitch": {
+        const bits = this.self.get(comp.id) | 0;
+        const driven = [];
+        for (let i = 0; i < comp.ports.length; i++) {
+          driven.push([i, Uint8Array.from([(bits >> i) & 1])]);
+        }
+        return driven;
+      }
       // A splitter is wiring, merged bit by bit when the netlist was built, so it drives nothing.
-      case "Splitter": case "LED": case "Probe": case "Tunnel":
+      // The rest are sinks: they show a value without producing one.
+      case "Splitter": case "Tunnel":
+      case "LED": case "Probe": case "RGBLED":
+      case "7-Segment Display": case "Hex Digit Display":
         return [];
       default: {
         const spec = STATEFUL[comp.kind];
@@ -343,6 +364,38 @@ class Simulation {
     return out;
   }
 
+  /**
+   * Which of a component's pre-rendered pictures applies right now.
+   *
+   * <p>The bit order is not a convention the page reproduces: the exporter lists the (port, bit)
+   * pairs it swept, in the order it swept them, and this reads exactly those. A bit that is not
+   * TRUE counts as zero, which is what Logisim's own displays do with a floating input.
+   */
+  stateIndexOf(comp) {
+    const dyn = comp.dyn;
+    if (!dyn) return 0;
+    if (!dyn.src) return this.self.get(comp.id) | 0;
+    let index = 0;
+    for (let i = 0; i < dyn.src.length; i++) {
+      const bits = this.valueOfPort(comp, dyn.src[i][0]);
+      if (bits[dyn.src[i][1]] === ONE) index |= 1 << i;
+    }
+    return index;
+  }
+
+  setSelf(comp, value) {
+    if (!comp.poke) return;
+    const masked = comp.poke >= 32 ? value | 0 : value & ((1 << comp.poke) - 1);
+    if (this.self.get(comp.id) === masked) return;
+    this.self.set(comp.id, masked);
+    this.run();
+  }
+
+  toggleSelfBit(comp, bit) {
+    if (bit < 0 || bit >= comp.poke) return;
+    this.setSelf(comp, (this.self.get(comp.id) | 0) ^ (1 << bit));
+  }
+
   toggleInput(comp) {
     const bits = this.inputs.get(comp.id);
     if (!bits) return;
@@ -371,6 +424,42 @@ function el(name, attrs) {
   return node;
 }
 
+/** One entry of a pre-rendered appearance patch. A null value means the attribute goes away. */
+function setPart(node, attribute, value) {
+  if (!node) return;
+  if (attribute === "#text") {
+    node.textContent = value === null ? "" : value;
+  } else if (value === null) {
+    node.removeAttribute(attribute);
+  } else {
+    node.setAttribute(attribute, value);
+  }
+}
+
+/** Circuit coordinates of a pointer event, whatever the page has scaled the drawing to. */
+function circuitPointOf(view, event) {
+  const local = new DOMPoint(event.clientX, event.clientY)
+    .matrixTransform(view.root.getScreenCTM().inverse());
+  return [local.x + view.ox, local.y + view.oy];
+}
+
+/**
+ * Which switch of a DIP switch a click landed on.
+ *
+ * <p>This is the mapping the component's own poker applies, kept identical so that a click here
+ * and a click in the editor pick the same switch. The exporter drove the same mapping backwards
+ * when it rendered the pictures, so all three agree by construction rather than by inspection.
+ */
+function dipSwitchAt(comp, px, py) {
+  const [lx, ly] = comp.loc;
+  const n = comp.poke;
+  const facing = comp.hit.facing;
+  if (facing === "south") return n + Math.trunc((px - lx - 5) / 10);
+  if (facing === "east") return Math.trunc((py - ly - 5) / 10);
+  if (facing === "west") return Math.trunc((ly - py - 5) / 10);
+  return Math.trunc((px - lx - 5) / 10);
+}
+
 class View {
   constructor(circuit, sim) {
     this.circuit = circuit;
@@ -385,13 +474,21 @@ class View {
     });
     this.wireLayer = el("g", { "stroke-linecap": "round" });
     this.bodyLayer = el("g", {});
+    this.dotLayer = el("g", {});
     this.dynamicLayer = el("g", {});
-    this.root.append(this.wireLayer, this.bodyLayer, this.dynamicLayer);
+    this.hitLayer = el("g", {});
+    this.root.append(this.wireLayer, this.bodyLayer, this.dotLayer,
+                     this.dynamicLayer, this.hitLayer);
 
-    // Bodies are Logisim's own drawing, already in page coordinates.
-    const holder = document.createElementNS(SVG_NS, "g");
-    holder.innerHTML = circuit.components.map((c) => c.svg || "").join("");
-    this.bodyLayer.append(holder);
+    // Bodies are Logisim's own drawing, already in page coordinates. Each component gets a group
+    // of its own so an appearance patch can address its elements by position.
+    this.bodyNodes = [];
+    for (const comp of circuit.components) {
+      const group = el("g", {});
+      group.innerHTML = comp.svg || "";
+      this.bodyLayer.append(group);
+      this.bodyNodes.push(group);
+    }
 
     this.wireNodes = [];
     for (const net of circuit.nets) {
@@ -405,7 +502,25 @@ class View {
         this.wireNodes.push([line, net]);
       }
     }
+
+    // Port dots carry a value, so the page owns them. Leaving them baked into the bodies would
+    // freeze them at whatever the editor happened to be showing when the export was made.
+    this.portDots = [];
+    for (const comp of circuit.components) {
+      for (let port = 0; port < comp.portLocs.length; port++) {
+        const dot = el("circle", {
+          cx: comp.portLocs[port][0] - this.ox,
+          cy: comp.portLocs[port][1] - this.oy,
+          r: circuit.pinDot,
+        });
+        this.dotLayer.append(dot);
+        this.portDots.push([dot, comp, port]);
+      }
+    }
+
+    this.buildAnimated();
     this.buildInteractive();
+    this.buildPokeTargets();
   }
 
   colorFor(net) {
@@ -417,23 +532,75 @@ class View {
     return bits[0] === ONE ? colors["true"] : colors["false"];
   }
 
+  /**
+   * Components that were rendered once per state. Everything a patch can touch is read back out of
+   * the base picture first, so a state can be undone by restoring rather than by re-rendering.
+   */
+  buildAnimated() {
+    this.animated = [];
+    for (const comp of this.circuit.components) {
+      if (!comp.dyn) continue;
+      const node = this.bodyNodes[comp.id];
+      const entry = { comp, node, elements: node.querySelectorAll("*"), reset: [], shown: -1 };
+      if (comp.dyn.mode !== "full") {
+        const seen = new Set();
+        for (const patch of comp.dyn.patch) {
+          for (const [index, attribute] of patch) {
+            const key = index + " " + attribute;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const target = entry.elements[index];
+            let was = null;
+            if (!target) was = null;
+            else if (attribute === "#text") was = target.textContent;
+            else if (target.hasAttribute(attribute)) was = target.getAttribute(attribute);
+            entry.reset.push([index, attribute, was]);
+          }
+        }
+      }
+      this.animated.push(entry);
+    }
+  }
+
+  refreshAnimated() {
+    for (const entry of this.animated) {
+      const index = this.sim.stateIndexOf(entry.comp);
+      if (index === entry.shown) continue;
+      entry.shown = index;
+      const dyn = entry.comp.dyn;
+      if (dyn.mode === "full") {
+        entry.node.innerHTML = dyn.frags[index] || dyn.frags[0];
+        continue;
+      }
+      for (const [at, attribute, value] of entry.reset) {
+        setPart(entry.elements[at], attribute, value);
+      }
+      if (dyn.mode === "table") {
+        const patch = dyn.patch[index] || [];
+        for (const [at, attribute, value] of patch) setPart(entry.elements[at], attribute, value);
+      } else {
+        for (let bit = 0; bit < dyn.patch.length; bit++) {
+          if (((index >> bit) & 1) === 0) continue;
+          for (const [at, attribute, value] of dyn.patch[bit]) {
+            setPart(entry.elements[at], attribute, value);
+          }
+        }
+      }
+    }
+  }
+
+  /** Pins and probes show a bare number, which is drawn here rather than pre-rendered. */
   buildInteractive() {
     this.dynamic = [];
     for (const comp of this.circuit.components) {
-      if (!["Pin", "LED", "Probe"].includes(comp.kind)) continue;
+      if (comp.kind !== "Pin" && comp.kind !== "Probe") continue;
       const [bx, by, bw, bh] = comp.bounds;
       const x = bx - this.ox, y = by - this.oy;
       const group = el("g", {});
       const isInput = comp.kind === "Pin" && comp.a_isInput;
 
-      let shape;
-      if (comp.kind === "LED") {
-        shape = el("circle", { cx: x + bw / 2, cy: y + bh / 2, r: Math.min(bw, bh) / 2,
-                               stroke: "#444", "stroke-width": 1 });
-      } else {
-        shape = el("rect", { x, y, width: bw, height: bh, stroke: "#444", "stroke-width": 1,
-                             fill: "#fff", rx: isInput ? 0 : 4 });
-      }
+      const shape = el("rect", { x, y, width: bw, height: bh, stroke: "#444", "stroke-width": 1,
+                                 fill: "#fff", rx: isInput ? 0 : 4 });
       const text = el("text", {
         x: x + bw / 2, y: y + bh / 2 + 4, "text-anchor": "middle",
         "font-size": 11, "font-family": "monospace", fill: "#111",
@@ -448,21 +615,59 @@ class View {
     }
   }
 
+  /**
+   * Buttons and switches. The target is the component's own bounds, which is the area the editor
+   * hands to the poker, so nothing is clickable here that would not be clickable there.
+   */
+  buildPokeTargets() {
+    for (const comp of this.circuit.components) {
+      if (!comp.poke) continue;
+      const [bx, by, bw, bh] = comp.bounds;
+      const target = el("rect", {
+        x: bx - this.ox, y: by - this.oy, width: bw, height: bh,
+        fill: "transparent", class: "clickable",
+      });
+      if (comp.kind === "Button") {
+        // Held down while the pointer is down, exactly as the real one behaves.
+        const press = (down) => { this.sim.setSelf(comp, down ? 1 : 0); this.refresh(); };
+        target.addEventListener("pointerdown", (e) => {
+          // Capture so releasing away from the button still releases it. Not every pointer can be
+          // captured, and a button that cannot be released would be worse than one that drags off.
+          try {
+            target.setPointerCapture(e.pointerId);
+          } catch (ignored) {
+            // no capture available; the pointerup below still covers the ordinary case
+          }
+          press(true);
+        });
+        target.addEventListener("pointerup", () => press(false));
+        target.addEventListener("pointercancel", () => press(false));
+      } else {
+        target.addEventListener("click", (e) => {
+          const [px, py] = circuitPointOf(this, e);
+          const which = comp.hit && comp.hit.kind === "dip" ? dipSwitchAt(comp, px, py) : 0;
+          this.sim.toggleSelfBit(comp, which);
+          this.refresh();
+        });
+      }
+      this.hitLayer.append(target);
+    }
+  }
+
   refresh() {
     for (const [line, net] of this.wireNodes) line.setAttribute("stroke", this.colorFor(net));
     const colors = this.circuit.colors;
+    for (const [dot, comp, port] of this.portDots) {
+      const netId = comp.ports[port];
+      dot.setAttribute("fill", netId < 0 ? colors.nil : this.colorFor(this.circuit.nets[netId]));
+    }
+    this.refreshAnimated();
     for (const item of this.dynamic) {
       const comp = item.comp;
       const bits = comp.kind === "Pin" && comp.a_isInput
         ? this.sim.inputs.get(comp.id)
         : this.sim.valueOfPort(comp, 0);
-      if (comp.kind === "LED") {
-        item.shape.setAttribute("fill", bits[0] === ONE ? colors["true"]
-          : bits[0] === ERR ? colors.error : "#d8d8d8");
-        item.text.textContent = "";
-      } else {
-        item.text.textContent = formatValue(bits);
-      }
+      item.text.textContent = formatValue(bits);
     }
     const warn = document.getElementById("warn");
     warn.style.display = this.sim.oscillating ? "block" : "none";

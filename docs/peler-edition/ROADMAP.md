@@ -600,7 +600,7 @@ touch `AppPreferences`, whose static initialiser reads the real preference store
 Key files: `prefs/PelerPreferences.java`, `prefs/AppPreferences.java`,
 `src/test/java/com/cburch/logisim/prefs/PelerPreferencesTest.java` (new).
 
-## Feature 9 — Interactive HTML export (experimental, phase 1 2026-08-10)
+## Feature 9 — Interactive HTML export (experimental, phases 1-5 2026-08-10)
 
 Export a circuit as one self-contained HTML page that cannot be edited but still simulates: click an
 input pin and the values propagate. Branch `peler/html-export`.
@@ -734,11 +734,60 @@ over their inputs, so it drives a fixed number of ticks with `toggleClocks` on t
 
 Not covered: counters, T/JK/SR flip-flops, shift registers, and RAM.
 
+### Phase 5 — display and clickable components (2026-08-10)
+
+Seven-segment display, hex digit display, LED, RGB LED, button and DIP switch. None of these could
+be drawn by hand in the page without a second, worse copy of Logisim's artwork, so none of them is:
+each is rendered by Logisim's own painter once per state at export time.
+
+**A component is driven offline to get those pictures.** `HtmlOfflineState` is an `InstanceState`
+with no simulation behind it, so `propagate` can be run against port values the exporter picks. The
+seven-segment display's segment map is therefore never restated anywhere; it comes out of the
+component. Buttons and DIP switches, whose value is not on any port, are set through their own
+`InstancePoker` at the coordinate the poker maps to that switch, so a click in the page and a click
+in the editor pick the same one by construction.
+
+**Shipping 256 pictures per display would be absurd, so states travel as differences** against the
+all-zero render, in the cheapest encoding that is exact for the component: one patch per state bit
+where the bits are independent (seven-segment, DIP switch), one patch per state where the shapes
+stay put but recolour (hex digit, whose four bits jointly choose a glyph), and whole fragments only
+where the shapes genuinely differ (a released button is a raised polygon, a pressed one a flat
+rectangle). Per-bit independence is checked against real renders rather than assumed, exhaustively
+where that is affordable. A seven-segment display costs about 400 bytes instead of 50 kB.
+
+**A component that remembers anything is refused an appearance.** The encoding is looked up by the
+value on the ports, which can only be right for a component that has nothing else to go on; a
+flip-flop's indicator shows what it latched. The exporter renders a state cold and again after
+another state has gone by, carrying the component's data across, and drops the encoding if the two
+differ. Flip-flops and registers therefore keep a frozen picture rather than a confidently wrong
+one, which is a phase 6 gap, not a bug.
+
+`HtmlExportAppearanceTest` unpacks every state of every animated component and compares it against a
+fresh render, and asserts the chosen encoding so a silent fall back to whole pictures is visible.
+The poke components join the differential test, since a button whose polarity or a switch whose bit
+order came out reversed looks perfectly reasonable on its own.
+
+**Two real defects came out of this phase, both older than it.**
+
+`ComponentDrawContext`'s six-argument constructor takes `printView`, not `showState`. Every export
+since phase 1 passed `true`, so every component was drawn in print mode with state and colour
+suppressed — which is why an LED had to be drawn by hand at all. Fixing it turned the whole page
+colour-accurate, including the flip-flop indicators.
+
+`Value.create(Value[])` indexes its array **least significant bit first**. The exporter and the
+differential test both filled it the other way round. On a one-bit port that is invisible, which is
+why every fixture passed; the hex digit display showed `A` for an input of `5`. Caught by reading
+the page, not by a test. `splitter.circ` now takes a two-bit input pin apart, which is the only
+fixture with a wide input pin, and reverting the fix makes it fail.
+
+Also in this phase: port dots are drawn by the page and coloured live rather than baked in, and
+bodies are rendered against a scratch circuit state, so an export no longer depends on what the
+editor happened to be showing.
+
 ### Still to do
 
-Arithmetic, memory and the display components, which want per-state pre-rendered fragments rather
-than page-drawn shapes. Then subcircuits. Every new component needs a fixture in the differential
-test as it lands.
+Arithmetic, memory and subcircuits. Every new component needs a fixture in the differential test as
+it lands.
 
 ## Known open items
 

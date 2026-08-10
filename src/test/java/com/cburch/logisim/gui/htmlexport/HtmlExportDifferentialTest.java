@@ -14,11 +14,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import com.cburch.logisim.circuit.CircuitState;
+import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.data.BitWidth;
 import com.cburch.logisim.data.Value;
 import com.cburch.logisim.file.LoadFailedException;
 import com.cburch.logisim.file.Loader;
 import com.cburch.logisim.instance.Instance;
+import com.cburch.logisim.instance.InstanceFactory;
 import com.cburch.logisim.instance.StdAttr;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.std.wiring.Pin;
@@ -130,6 +132,108 @@ public class HtmlExportDifferentialTest {
 
   private static final int TICKS = 12;
 
+  /**
+   * Buttons and switches hold their own value, so neither engine can be driven through a pin. Each
+   * is set the way a click would set it -- through the component's own poker on Logisim's side, and
+   * through the state the page keeps on the other -- and every combination is compared.
+   *
+   * <p>This is the only thing checking that the two agree on what a press means. A button whose
+   * polarity came out inverted, or a switch whose bits landed on the wrong ports, produces a page
+   * that looks entirely reasonable and answers the opposite of the circuit it came from.
+   */
+  @ParameterizedTest
+  @ValueSource(strings = {"poke"})
+  public void testPokeEngineAgreesWithLogisim(String fixture) throws Exception {
+    assumeTrue(node() != null, "node is not on PATH; skipping the JavaScript half");
+
+    final var project = openProject(copyFixture(fixture));
+    final var circuit = project.getLogisimFile().getMainCircuit();
+    final var outputs = new ArrayList<Instance>();
+    final var pokes = new ArrayList<Component>();
+    for (final var component : circuit.getNonWires()) {
+      if (HtmlPoke.bits(component) > 0) pokes.add(component);
+      if (!(component.getFactory() instanceof Pin)) continue;
+      final var instance = Instance.getInstanceFor(component);
+      if (!Pin.FACTORY.isInputPin(instance)) outputs.add(instance);
+    }
+    assertFalse(pokes.isEmpty(), fixture + " has nothing clickable to drive");
+    assertFalse(outputs.isEmpty(), fixture + " has no output pins to compare");
+    outputs.sort(HtmlExportDifferentialTest::compareLocations);
+    pokes.sort(HtmlExportDifferentialTest::compareComponents);
+
+    var total = 0;
+    for (final var poke : pokes) total += HtmlPoke.bits(poke);
+
+    final var page = workDir.resolve(fixture + ".html").toFile();
+    new HtmlExporter(project, circuit).writeTo(page);
+
+    final var fromJava = pokeInJava(project, circuit, pokes, outputs, total);
+    final var fromPage = pokeInJavaScript(page, total);
+
+    assertEquals(fromJava.size(), fromPage.size(), "row count");
+    for (var row = 0; row < fromJava.size(); row++) {
+      assertEquals(
+          fromJava.get(row),
+          fromPage.get(row),
+          "row " + row + " of " + fixture + ": Logisim and the exported page disagree");
+    }
+  }
+
+  private List<String> pokeInJava(
+      Project project, com.cburch.logisim.circuit.Circuit circuit,
+      List<Component> pokes, List<Instance> outputs, int total) {
+    final var rows = new ArrayList<String>();
+    for (var combination = 0; combination < (1 << total); combination++) {
+      final var state = CircuitState.createRootState(project, circuit, Thread.currentThread());
+      final var propagator = state.getPropagator();
+      // The first pass is what creates the components' data; a poker needs it to exist already.
+      propagator.propagate();
+      var at = 0;
+      for (final var poke : pokes) {
+        final var width = HtmlPoke.bits(poke);
+        final var value = (combination >> at) & ((1 << width) - 1);
+        at += width;
+        assertTrue(HtmlPoke.apply(poke, state.getInstanceState(poke), value),
+            "could not set the state of a " + poke.getFactory().getName());
+        // Setting the data does not by itself put anything on a wire.
+        ((InstanceFactory) poke.getFactory()).propagate(state.getInstanceState(poke));
+      }
+      propagator.propagate();
+
+      final var row = new ArrayList<String>();
+      for (final var pin : outputs) {
+        row.add(propagator.isOscillating()
+            ? "E" : render(Pin.FACTORY.getValue(state.getInstanceState(pin))));
+      }
+      rows.add(String.join(",", row));
+    }
+    return rows;
+  }
+
+  private List<String> pokeInJavaScript(File page, int total)
+      throws IOException, InterruptedException {
+    return runHarness(page, """
+        const pokes = CIRCUIT.components.filter((c) => c.poke)
+          .sort((a, b) => a.loc[1] - b.loc[1] || a.loc[0] - b.loc[0]);
+        const outputs = CIRCUIT.components
+          .filter((c) => c.kind === "Pin" && !c.a_isInput)
+          .sort((a, b) => a.portLocs[0][1] - b.portLocs[0][1] || a.portLocs[0][0] - b.portLocs[0][0]);
+        const sim = new Simulation(CIRCUIT);
+        const rows = [];
+        for (let combination = 0; combination < (1 << %d); combination++) {
+          let at = 0;
+          for (const comp of pokes) {
+            sim.self.set(comp.id, (combination >> at) & ((1 << comp.poke) - 1));
+            at += comp.poke;
+          }
+          sim.run();
+          rows.push(outputs.map((pin) =>
+            sim.oscillating ? "E" : formatValue(sim.valueOfPort(pin, 0))).join(","));
+        }
+        console.log(rows.join("\\n"));
+        """.formatted(total));
+  }
+
   private List<String> tickInJava(
       Project project, com.cburch.logisim.circuit.Circuit circuit,
       List<Instance> outputs, int ticks) {
@@ -184,8 +288,9 @@ public class HtmlExportDifferentialTest {
       for (final var pin : inputs) {
         final var width = pin.getAttributeValue(StdAttr.WIDTH).getWidth();
         final var bits = new Value[width];
+        // Least significant bit first, which is the order Value.create reads.
         for (var b = 0; b < width; b++) {
-          bits[width - 1 - b] = ((combination >> (bit + b)) & 1) == 1 ? Value.TRUE : Value.FALSE;
+          bits[b] = ((combination >> (bit + b)) & 1) == 1 ? Value.TRUE : Value.FALSE;
         }
         bit += width;
         Pin.FACTORY.driveInputPin(state.getInstanceState(pin), Value.create(bits));
@@ -218,6 +323,12 @@ public class HtmlExportDifferentialTest {
     var total = 0;
     for (final var pin : inputs) total += pin.getAttributeValue(StdAttr.WIDTH).getWidth();
     return total;
+  }
+
+  private static int compareComponents(Component a, Component b) {
+    final var la = a.getLocation();
+    final var lb = b.getLocation();
+    return la.getY() != lb.getY() ? la.getY() - lb.getY() : la.getX() - lb.getX();
   }
 
   private static int compareLocations(Instance a, Instance b) {

@@ -70,6 +70,7 @@ public final class HtmlCircuitModel {
     public final List<String> portDirs = new ArrayList<>();
     public final List<Integer> portWidths = new ArrayList<>();
     public final List<int[]> portLocs = new ArrayList<>();
+    public int[] loc = new int[] {0, 0};
     public String label = "";
 
     Comp(int id, String kind) {
@@ -139,6 +140,7 @@ public final class HtmlCircuitModel {
       final var labelAttr = part.getAttributeSet().containsAttribute(StdAttr.LABEL)
           ? part.getAttributeSet().getValue(StdAttr.LABEL) : null;
       comp.label = labelAttr == null ? "" : labelAttr;
+      comp.loc = new int[] {part.getLocation().getX(), part.getLocation().getY()};
       readAttributes(part, comp);
 
       for (final var end : part.getEnds()) {
@@ -267,7 +269,8 @@ public final class HtmlCircuitModel {
       switch (name) {
         case "width", "inputs", "size", "negate", "value", "facing", "radix", "tristate",
             "pull", "output", "incoming", "fanout", "in_width", "out_width", "type",
-            "appearance", "labelloc", "trigger", "highDuration", "lowDuration", "phaseOffset" ->
+            "appearance", "labelloc", "trigger", "highDuration", "lowDuration", "phaseOffset",
+            "press", "number" ->
             comp.attrs.put(name, describe(value));
         default -> {
           // A splitter carries one bitN per incoming bit, up to 64 of them, so they are matched

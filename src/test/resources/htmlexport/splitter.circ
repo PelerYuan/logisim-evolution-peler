@@ -5,6 +5,10 @@
   S is a 2 bit bus assembled from two 1 bit inputs through a splitter, which is the case that forces
   values to live on bits rather than on nets. E exercises the bit extender in "one" mode.
 
+  D runs the other way: a 2 bit input pin taken apart into D0 and D1. It is the only fixture with a
+  wide input pin, and so the only one that notices if the two engines disagree about which end of a
+  Value array holds bit zero. Logisim's Value.create indexes least significant bit first.
+
   Splitter geometry, facing east: the combined end sits at the component location and the split ends
   at (x+20, y-20) and (x+20, y-10). Read coordinates off a real component before editing; a wire
   that misses by ten leaves the circuit unconnected without complaining.
@@ -47,6 +51,27 @@
   <wire from="(380,190)" to="(380,240)" />
   <wire from="(380,240)" to="(420,240)" />
   <wire from="(200,200)" to="(300,200)" />
+
+  <comp lib="0" loc="(200,400)" name="Pin">
+   <a name="width" val="2" /><a name="label" val="D" />
+  </comp>
+  <comp lib="0" loc="(300,400)" name="Splitter">
+   <a name="fanout" val="2" /><a name="incoming" val="2" />
+  </comp>
+  <comp lib="0" loc="(420,360)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="D0" />
+  </comp>
+  <comp lib="0" loc="(420,440)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="D1" />
+  </comp>
+
+  <wire from="(200,400)" to="(300,400)" />
+  <wire from="(320,380)" to="(360,380)" />
+  <wire from="(360,360)" to="(360,380)" />
+  <wire from="(360,360)" to="(420,360)" />
+  <wire from="(320,390)" to="(340,390)" />
+  <wire from="(340,390)" to="(340,440)" />
+  <wire from="(340,440)" to="(420,440)" />
 
   <wire from="(500,400)" to="(560,400)" />
   <wire from="(600,400)" to="(700,400)" />
