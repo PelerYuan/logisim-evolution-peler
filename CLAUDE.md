@@ -118,14 +118,32 @@ Two channels, deliberately kept apart.
 **Dev** — the normal one while iterating. `channel=dev` republishes a single rolling `dev`
 pre-release, so the releases page holds exactly one dev entry however many builds happen and the
 download URL never changes. The publish job deletes the previous dev release and its tag first.
-Package version is `1.0.<github.run_number>`.
 
 **Stable** — pushing a `v*` tag (or dispatching with `channel=stable`) publishes a permanent
 release; then set its notes with `gh release edit --notes-file` and `--latest --prerelease=false`.
 
-Numbering: stable starts at **v1.1.0** and goes up. `1.0.x` is permanently reserved by the dev
-channel's `1.0.<run_number>` scheme. `v1.0.0-peler.1` through `v1.0.20` were dev builds, kept as tags
-only.
+### Numbering
+
+**Stable is `vX.Y.0` — always bump the major or the minor, never the patch.** The workflow fails the
+run if a stable tag has a non-zero patch, on purpose.
+
+**Dev is `X.Y.<github.run_number>`, where `X.Y` comes from the stable release GitHub marks latest.**
+So with stable at v1.1.0, dev builds are `1.1.<run>`; cut v1.2.0 and they become `1.2.<run>` on
+their own, with nothing to edit.
+
+The reason is not tidiness. All channels share one `--win-upgrade-uuid`, so Windows Installer
+compares these numbers *across* channels. The original scheme pinned dev at `1.0.<run>`, which made
+every dev build sort below stable v1.1.0 and refuse to install over it — while being, by definition,
+the newer code. Reserving the patch field for dev keeps dev ahead of the stable it was cut from, and
+the next stable's minor bump keeps stable ahead of every dev build before it. A stable `1.1.1` would
+land underneath dev `1.1.32`, which is what the tag check prevents.
+
+The base is read from `repos/{owner}/{repo}/releases/latest`, **not** from git tags: this repository
+still carries upstream's tags and the highest of those is `v4.1.0`. The dev release is a prerelease,
+so that endpoint already ignores it.
+
+`v1.0.0-peler.1` through `v1.0.20` were dev builds under the old scheme, kept as tags only. Nothing
+publishes into `1.0.x` any more.
 
 jpackage constraints learned the hard way: macOS rejects an app version whose first number is zero,
 and the Windows MSI ProductVersion field caps parts at `255.255.65535`, so date-derived versions like

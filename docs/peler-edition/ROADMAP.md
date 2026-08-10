@@ -24,6 +24,25 @@ Release tags going forward: `v<peler major>.<peler minor>.<peler build number>` 
 independent of upstream's own version. The historical `v1.0.0-peler.1` through `v1.0.0-peler.4` tags
 predate this and are not being renamed/rebuilt.
 
+### Dev builds must outrank the current stable (2026-08-10)
+
+The scheme above put dev at a fixed `1.0.<run_number>` and started stable at `v1.1.0`, on the
+reasoning that keeping the two in separate number ranges keeps them from colliding. They do not
+collide — but they are ordered, and the order came out backwards.
+
+Every channel shares one `--win-upgrade-uuid`, so Windows Installer compares the numbers *across*
+channels. Once stable v1.1.0 existed, every dev build — `1.0.32` and counting — looked older than
+it, so installing a dev build over stable is a downgrade, which the MSI refuses. The dev channel is
+by definition the newer code, so this made it uninstallable for anyone already on stable.
+
+Fixed by giving dev the patch field of the *current* stable: `X.Y.<run_number>` where `X.Y` comes
+from whichever release GitHub marks latest. Stable then owns the major and the minor, and the
+workflow rejects a stable tag whose patch is not zero — `1.1.1` would sort below the dev builds of
+`1.1.x` and could never be installed over them. The base is read from the releases API rather than
+from git tags, because this repository still carries upstream's tags and `v4.1.0` is the highest.
+
+Nothing publishes into `1.0.x` any more; `v1.0.5` through `v1.0.20` stay as historical tags.
+
 **Multi-platform (added 2026-08-07)**: `release.yml` now mirrors `nightly.yml`'s full platform
 coverage instead of Windows only -- Linux deb/rpm/snap, Linux ARM deb/rpm, macOS dmg (x86_64 +
 aarch64), Windows MSI/zip, all built from a shared `prep` job (resolves the tag/version once) and
