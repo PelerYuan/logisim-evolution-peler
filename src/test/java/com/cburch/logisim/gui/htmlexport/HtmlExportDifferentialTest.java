@@ -228,7 +228,7 @@ public class HtmlExportDifferentialTest {
           }
           sim.run();
           rows.push(outputs.map((pin) =>
-            sim.oscillating ? "E" : formatValue(sim.valueOfPort(pin, 0))).join(","));
+            sim.oscillating ? "E" : formatValue(sim.valueOfPort(pin, 0), "16")).join(","));
         }
         console.log(rows.join("\\n"));
         """.formatted(total));
@@ -267,7 +267,7 @@ public class HtmlExportDifferentialTest {
         for (let tick = 0; tick < %d; tick++) {
           sim.tick();
           rows.push(outputs.map((pin) =>
-            sim.oscillating ? "E" : formatValue(sim.valueOfPort(pin, 0))).join(","));
+            sim.oscillating ? "E" : formatValue(sim.valueOfPort(pin, 0), "16")).join(","));
         }
         console.log(rows.join("\\n"));
         """.formatted(ticks));
@@ -310,13 +310,15 @@ public class HtmlExportDifferentialTest {
     return rows;
   }
 
-  /** Same shape the page's {@code formatValue} produces, so the two are comparable as text. */
+  /**
+   * Logisim's own rendering of a value, which the page's {@code formatValue} has to reproduce.
+   *
+   * <p>Using the real formatter rather than a hand-written mirror of it means the comparison covers
+   * how a value is written as well as what it is, including the characters a floating or
+   * conflicting bit is shown as.
+   */
   private static String render(Value value) {
-    if (value.isErrorValue()) return "E";
-    if (!value.isFullyDefined()) return "x";
-    final var width = value.getWidth();
-    final var number = value.toLongValue();
-    return width <= 4 ? Long.toString(number) : Long.toHexString(number).toUpperCase();
+    return value.toDisplayString(16);
   }
 
   private static int totalBits(List<Instance> inputs) {
@@ -365,7 +367,7 @@ public class HtmlExportDifferentialTest {
           });
           sim.run();
           rows.push(outputs.map((pin) =>
-            sim.oscillating ? "E" : formatValue(sim.valueOfPort(pin, 0))).join(","));
+            sim.oscillating ? "E" : formatValue(sim.valueOfPort(pin, 0), "16")).join(","));
         }
         console.log(rows.join("\\n"));
         """);

@@ -600,7 +600,7 @@ touch `AppPreferences`, whose static initialiser reads the real preference store
 Key files: `prefs/PelerPreferences.java`, `prefs/AppPreferences.java`,
 `src/test/java/com/cburch/logisim/prefs/PelerPreferencesTest.java` (new).
 
-## Feature 9 — Interactive HTML export (experimental, phases 1-7 2026-08-10)
+## Feature 9 — Interactive HTML export (experimental, 2026-08-10)
 
 Export a circuit as one self-contained HTML page that cannot be edited but still simulates: click an
 input pin and the values propagate. Branch `peler/html-export`.
@@ -851,9 +851,41 @@ same.
 The fixture is a full adder made of two half adders, wrapped again in main, so the nesting is two
 levels and one circuit is used twice at each level.
 
-### Still to do
+### Phase 8 — the page itself (2026-08-10)
 
-The page itself: radix, probe readouts, theming, size, and the twelve locales.
+**Pins and probes are drawn by Logisim too**, wherever their value has few enough states to render
+one picture each, which covers every pin narrow enough to read at a glance. An input pin is set
+through `Pin.FACTORY.driveInputPin` for the same reason a switch is set through its poker: its value
+is its own, not something arriving on a wire. A pin too wide for that keeps the page's own value
+box, which is legible rather than faithful, and the encoder now refuses a per-state table over four
+thousand changes so one wide component cannot cost a hundred kilobytes.
+
+**Values are written the way the editor writes them**, in the component's own radix, with a whole
+hex or octal digit reported as unknown when any bit in it is. The characters standing for a floating
+or conflicting bit are preferences in Logisim, so they travel with the netlist alongside the
+colours. The differential test now compares against `Value.toDisplayString` rather than a
+hand-written mirror of it, so the comparison covers how a value is written as well as what it is.
+
+**The drawing keeps a white sheet in a dark theme.** It is Logisim's artwork in Logisim's colours
+and those assume paper; the page chrome follows the reader's theme, the schematic does not. A
+circuit wider than the window opens fitted, with a button to put it back to the size the editor
+drew it.
+
+Verified end to end through the application itself: File > Export as interactive HTML on a
+two-level nested full adder, saved through the file dialog, opened in a browser, and swept through
+all eight rows of its truth table.
+
+The twelve locales already carried this feature's strings from phase 1.
+
+### Known limits
+
+- **Delta-cycle, not timed.** Components have no propagation delay, so a circuit that depends on
+  gate delay does not behave as it does in the editor.
+- **Not yet supported**, and refused by name rather than exported wrongly: RAM, ROM, shift
+  register, divider, bit adder, bit finder, bit selector, priority encoder, random.
+- **A pin wider than about nine bits** falls back to a value box drawn by the page rather than by
+  Logisim.
+- **No README recording yet.** Every other feature has a GIF; this one has prose.
 
 ## Known open items
 

@@ -13,7 +13,10 @@
   header h1 { font-size: 15px; margin: 0; font-weight: 600; }
   header .hint { opacity: .65; font-size: 12px; }
   #stage { overflow: auto; padding: 12px; }
-  svg { max-width: 100%; height: auto; }
+  /* The drawing is Logisim's own artwork, in Logisim's own colours, and those assume paper. It
+     keeps its white sheet in a dark theme rather than becoming black lines on a black page. */
+  svg { display: block; background: #fff; border: 1px solid #8883; border-radius: 6px; }
+  svg.fit { max-width: 100%; height: auto; }
   .clickable { cursor: pointer; }
   header button { font: inherit; padding: 2px 10px; margin-right: 4px; cursor: pointer;
                   border: 1px solid #8886; border-radius: 5px; background: #8881; color: inherit; }
@@ -27,6 +30,7 @@
 <header>
   <h1>__TITLE__</h1>
   <span class="hint">Click an input pin, button or switch to change it. Nothing here can be moved or edited.</span>
+  <button id="fit" type="button">Fit to width</button>
   <span id="clockbar" hidden>
     <button id="tick" type="button">Tick</button>
     <button id="run" type="button">Run</button>
@@ -97,11 +101,67 @@ function bigToBits(value, width) {
   return bits;
 }
 
-function formatValue(bits) {
-  if (anyError(bits)) return "E";
-  if (!isDefined(bits)) return "x";
-  const value = bitsToBig(bits, false);
-  return bits.length <= 4 ? value.toString() : value.toString(16).toUpperCase();
+/**
+ * A value as the editor writes it, in the radix the component was set to.
+ *
+ * <p>The characters standing for a floating or conflicting bit are preferences in Logisim, not
+ * constants, so they travel with the netlist alongside the colours. A grouped radix reports a whole
+ * digit as unknown when any bit in it is, rather than guessing at the rest, which is what makes a
+ * partly driven bus visibly partly driven instead of merely wrong.
+ */
+function formatValue(bits, radix) {
+  const chars = CIRCUIT.chars;
+  const width = bits.length;
+  if (width === 0) return chars.dontcare;
+  if (width === 1) return charOf(bits[0]);
+  switch (radix) {
+    case "2": {
+      let out = "";
+      for (let i = width - 1; i >= 0; i--) {
+        out += charOf(bits[i]);
+        if (i % 4 === 0 && i !== 0) out += " ";
+      }
+      return out;
+    }
+    case "8": return groupedDigits(bits, 3, 8);
+    case "10signed": return decimalString(bits, true);
+    case "10unsigned": return decimalString(bits, false);
+    default: return groupedDigits(bits, 4, 16);
+  }
+}
+
+function charOf(bit) {
+  const chars = CIRCUIT.chars;
+  return bit === ERR ? chars.error
+    : bit === UNK ? chars.unknown
+    : bit === ONE ? chars["true"] : chars["false"];
+}
+
+function groupedDigits(bits, size, base) {
+  const chars = CIRCUIT.chars;
+  const digits = Math.ceil(bits.length / size);
+  let out = "";
+  for (let i = 0; i < digits; i++) {
+    const k = digits - 1 - i;
+    const first = size * k;
+    const last = Math.min(bits.length, size * (k + 1));
+    let value = 0;
+    let digit = "";
+    for (let j = last - 1; j >= first; j--) {
+      if (bits[j] === ERR) { digit = chars.error; break; }
+      if (bits[j] === UNK) { digit = chars.unknown; break; }
+      value = 2 * value + (bits[j] === ONE ? 1 : 0);
+    }
+    out += digit === "" ? value.toString(base) : digit;
+  }
+  return out;
+}
+
+function decimalString(bits, signed) {
+  const chars = CIRCUIT.chars;
+  if (anyError(bits)) return chars.error;
+  if (!isDefined(bits)) return chars.unknown;
+  return bitsToBig(bits, signed).toString();
 }
 
 // ---------------------------------------------------------------- component behaviour
@@ -357,7 +417,8 @@ class Simulation {
       if (comp.kind === "Pin" && comp.a_isInput) {
         this.inputs.set(comp.id, makeValue(comp.portWidths[0] || 1, ZERO));
       }
-      if (comp.poke) this.self.set(comp.id, 0);
+      // A pin keeps its value in inputs, not here, even though it is clickable the same way.
+      if (comp.poke && comp.kind !== "Pin") this.self.set(comp.id, 0);
       const stored = storedWidth(comp);
       if (stored > 0) {
         // The remembered clock starts unknown, not low. ClockState's constructor says low, but a
@@ -765,7 +826,13 @@ class Simulation {
   stateIndexOf(comp) {
     const dyn = comp.dyn;
     if (!dyn) return 0;
-    if (!dyn.src) return this.self.get(comp.id) | 0;
+    if (!dyn.src) {
+      const own = this.inputs.get(comp.id);
+      if (!own) return this.self.get(comp.id) | 0;
+      let index = 0;
+      for (let bit = 0; bit < own.length; bit++) if (own[bit] === ONE) index |= 1 << bit;
+      return index;
+    }
     let index = 0;
     for (let i = 0; i < dyn.src.length; i++) {
       const bits = this.valueOfPort(comp, dyn.src[i][0]);
@@ -981,28 +1048,29 @@ class View {
     }
   }
 
-  /** Pins and probes show a bare number, which is drawn here rather than pre-rendered. */
+  /**
+   * The fallback for a pin or probe too wide to have been drawn once per value.
+   *
+   * <p>Anything narrow enough came out of Logisim's own painter and is already in place; this is
+   * for the rest, where a legible number beats a frozen picture of the wrong one.
+   */
   buildInteractive() {
     this.dynamic = [];
     for (const comp of this.circuit.components) {
-      if (comp.hidden) continue;
+      if (comp.hidden || comp.dyn) continue;
       if (comp.kind !== "Pin" && comp.kind !== "Probe") continue;
       const [bx, by, bw, bh] = comp.bounds;
       const x = bx - this.ox, y = by - this.oy;
       const group = el("g", {});
-      const isInput = comp.kind === "Pin" && comp.a_isInput;
-
-      const shape = el("rect", { x, y, width: bw, height: bh, stroke: "#444", "stroke-width": 1,
-                                 fill: "#fff", rx: isInput ? 0 : 4 });
+      const shape = el("rect", {
+        x, y, width: bw, height: bh, stroke: "#444", "stroke-width": 1,
+        fill: "#fff", rx: comp.a_isInput ? 0 : 4,
+      });
       const text = el("text", {
         x: x + bw / 2, y: y + bh / 2 + 4, "text-anchor": "middle",
         "font-size": 11, "font-family": "monospace", fill: "#111",
       });
       group.append(shape, text);
-      if (isInput) {
-        group.setAttribute("class", "clickable");
-        group.addEventListener("click", () => { this.sim.toggleInput(comp); this.refresh(); });
-      }
       this.dynamicLayer.append(group);
       this.dynamic.push({ comp, shape, text });
     }
@@ -1020,7 +1088,10 @@ class View {
         x: bx - this.ox, y: by - this.oy, width: bw, height: bh,
         fill: "transparent", class: "clickable",
       });
-      if (comp.kind === "Button") {
+      if (comp.kind === "Pin") {
+        // Clicking a pin steps it, which for one bit is a toggle and for a bus is a count.
+        target.addEventListener("click", () => { this.sim.toggleInput(comp); this.refresh(); });
+      } else if (comp.kind === "Button") {
         // Held down while the pointer is down, exactly as the real one behaves.
         const press = (down) => { this.sim.setSelf(comp, down ? 1 : 0); this.refresh(); };
         target.addEventListener("pointerdown", (e) => {
@@ -1060,7 +1131,7 @@ class View {
       const bits = comp.kind === "Pin" && comp.a_isInput
         ? this.sim.inputs.get(comp.id)
         : this.sim.valueOfPort(comp, 0);
-      item.text.textContent = formatValue(bits);
+      item.text.textContent = formatValue(bits, comp.a_radix);
     }
     const warn = document.getElementById("warn");
     warn.style.display = this.sim.oscillating ? "block" : "none";
@@ -1073,8 +1144,19 @@ class View {
 const sim = new Simulation(CIRCUIT);
 sim.run();
 const view = new View(CIRCUIT, sim);
-document.getElementById("stage").append(view.root);
+const stage = document.getElementById("stage");
+stage.append(view.root);
 view.refresh();
+
+// A circuit is drawn at the size the editor drew it. Wider than the window it would only be
+// scrolled, which is no way to meet a page, so it starts fitted and can be put back.
+const fitButton = document.getElementById("fit");
+const setFit = (on) => {
+  view.root.classList.toggle("fit", on);
+  fitButton.textContent = on ? "Actual size" : "Fit to width";
+};
+setFit(CIRCUIT.width > stage.clientWidth - 24);
+fitButton.addEventListener("click", () => setFit(!view.root.classList.contains("fit")));
 
 // The clock controls only appear when there is something for them to drive.
 const hasClock = CIRCUIT.components.some((c) => c.kind === "Clock");

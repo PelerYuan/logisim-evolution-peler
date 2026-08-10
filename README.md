@@ -89,6 +89,24 @@ FPGA workspace is separate for the same reason — each edition regenerates and 
 project directories, so this one defaults to `~/logisim_evolution_peler_workspace`; **FPGA →
 Options** still points it anywhere you like.
 
+**Interactive HTML export (experimental)**
+**File → Export as interactive HTML…** writes the current circuit as a single HTML file that still
+simulates. Open it in any browser, with no plugin and nothing to install: click an input pin to
+change it, press a button, flip a DIP switch, and values propagate through the circuit exactly as
+they do here. Clock circuits get tick, run and reset controls. Nothing can be moved, rewired or
+edited, which is the point — it is a circuit to hand to someone, not a copy of the editor.
+
+The picture is Logisim's own. Every component is drawn by the same paint code the editor uses, so
+gates, displays and buses look the same in the page as on screen, down to the colours you have set.
+Subcircuits are flattened into the page, so a design built out of your own blocks exports as one
+working whole.
+
+Two limits worth knowing. The page models propagation as a settling process rather than with per
+component delays, so a circuit that depends on gate delay — a pulse made from a chain of inverters,
+say — will not behave as it does here. And the export refuses, naming what it found, rather than
+writing a page for a circuit containing a component it cannot simulate: RAM, ROM, shift registers
+and the divider are not supported yet.
+
 The in-application **Help → About** window is left exactly as upstream ships it, crediting
 upstream; this fork's own changes are described under **Help → About Peler's Edition**.
 

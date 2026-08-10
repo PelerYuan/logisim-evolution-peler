@@ -17,6 +17,7 @@ import com.cburch.logisim.instance.InstanceState;
 import com.cburch.logisim.instance.StdAttr;
 import com.cburch.logisim.std.io.Button;
 import com.cburch.logisim.std.io.DipSwitch;
+import com.cburch.logisim.std.wiring.Pin;
 import java.awt.event.MouseEvent;
 import javax.swing.JPanel;
 
@@ -31,6 +32,10 @@ import javax.swing.JPanel;
  *
  * <p>The page recomputes that same mapping when it is clicked, so a click there and a click in the
  * editor land on the same switch by construction.
+ *
+ * <p>Input pins belong here for the same reason, even though the page shows them differently: their
+ * value is theirs, not something arriving on a wire, so the exporter has to set it to find out what
+ * the pin looks like holding it.
  */
 final class HtmlPoke {
 
@@ -45,6 +50,9 @@ final class HtmlPoke {
     return switch (component.getFactory().getName()) {
       case "Button" -> 1;
       case "DipSwitch" -> attrs.getValue(DipSwitch.ATTR_SIZE).getWidth();
+      // An input pin holds its own value too, and clicking it is the whole point of the export.
+      case "Pin" -> Pin.OUTPUT.equals(attrs.getValue(Pin.ATTR_TYPE))
+          ? 0 : attrs.getValue(StdAttr.WIDTH).getWidth();
       default -> 0;
     };
   }
@@ -66,6 +74,15 @@ final class HtmlPoke {
         final var pressed = (value & 1) != 0;
         final var level = pressed == passive ? Value.FALSE : Value.TRUE;
         state.setData(new InstanceDataSingleton(level));
+        return true;
+      }
+      case "Pin" -> {
+        final var width = component.getAttributeSet().getValue(StdAttr.WIDTH).getWidth();
+        final var bits = new Value[width];
+        for (var i = 0; i < width; i++) {
+          bits[i] = ((value >> i) & 1) != 0 ? Value.TRUE : Value.FALSE;
+        }
+        Pin.FACTORY.driveInputPin(state, Value.create(bits));
         return true;
       }
       case "DipSwitch" -> {

@@ -58,9 +58,6 @@ import org.w3c.dom.Node;
  */
 public final class HtmlExporter {
 
-  /** Drawn by the page, not by Logisim: they show a value as text and accept clicks. */
-  private static final Set<String> RUNTIME_DRAWN = Set.of("Pin", "Probe");
-
   private static final int BORDER = 10;
 
   private final Project project;
@@ -100,6 +97,7 @@ public final class HtmlExporter {
         .put("nets", netsJson(model))
         .put("components", componentsJson(model, prepared))
         .put("colors", colorsJson())
+        .put("chars", charsJson())
         .toString();
 
     final var page = template()
@@ -194,6 +192,16 @@ public final class HtmlExporter {
     };
   }
 
+  /** The characters standing for each bit state are preferences too, so they travel as well. */
+  private static HtmlJson charsJson() {
+    return new HtmlJson()
+        .put("true", String.valueOf(Value.TRUECHAR))
+        .put("false", String.valueOf(Value.FALSECHAR))
+        .put("unknown", String.valueOf(Value.UNKNOWNCHAR))
+        .put("error", String.valueOf(Value.ERRORCHAR))
+        .put("dontcare", String.valueOf(Value.DONTCARECHAR));
+  }
+
   private static String css(java.awt.Color color) {
     return String.format("#%02x%02x%02x", color.getRed(), color.getGreen(), color.getBlue());
   }
@@ -216,7 +224,7 @@ public final class HtmlExporter {
       final HtmlAppearance.Renderer renderer =
           state -> renderState(component, stateBits, state, originX, originY, null);
       // Inside a subcircuit nothing is drawn: the page shows the box, not its contents.
-      if (entry.hidden || RUNTIME_DRAWN.contains(component.getFactory().getName())) {
+      if (entry.hidden) {
         out.add(new Prepared(component, stateBits, renderer, "", null));
         continue;
       }
@@ -383,7 +391,13 @@ public final class HtmlExporter {
     }
   }
 
-  /** Kinds the page can simulate, kept next to the exporter that depends on it. */
+  /**
+   * Kinds the page can simulate, kept next to the exporter that depends on it.
+   *
+   * <p>Pins and probes are on this list and are also drawn by Logisim wherever their value has few
+   * enough states to render one picture each. A wide one falls back to a value drawn by the page,
+   * which is legible rather than faithful; see {@link HtmlAppearance} for where that line sits.
+   */
   public static Set<String> supportedKinds() {
     return new LinkedHashSet<>(List.of(
         "Pin", "LED", "Probe", "Constant", "Tunnel",
