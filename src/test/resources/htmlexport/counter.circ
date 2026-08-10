@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Peler Edition sequential test fixture for HtmlExportDifferentialTest.
+
+  A clock drives a T flip-flop wired to toggle, a J-K flip-flop wired to toggle, an S-R flip-flop
+  fed the T flip-flop's own two outputs, a two-bit counter, and a register following the counter. Every one of them halves or divides
+  the clock in its own way, so an engine that misses an edge, takes one twice, or reads a port index
+  wrong falls out of step within a few ticks rather than looking plausible.
+
+  The S-R flip-flop deliberately depends on another flip-flop's output, which is what catches an
+  engine that lets a value race through two stages in a single tick.
+
+  Port coordinates were read off real components. A doubled hyphen here would break the file.
+-->
+<project version="1.0">
+ <lib name="0" desc="#Wiring" />
+ <lib name="4" desc="#Memory" />
+ <lib name="8" desc="#Base" />
+ <main name="main" />
+ <options>
+  <a name="showgrid" val="true" />
+  <a name="simulate" val="true" />
+ </options>
+ <circuit name="main">
+  <a name="circuit" val="main" />
+
+  <comp lib="0" loc="(200,100)" name="Clock" />
+  <comp lib="0" loc="(200,100)" name="Tunnel"><a name="label" val="CLK" /></comp>
+  <comp lib="0" loc="(200,200)" name="Constant" />
+  <comp lib="0" loc="(200,200)" name="Tunnel"><a name="label" val="ONE" /></comp>
+
+  <comp lib="4" loc="(900,100)" name="T Flip-Flop" />
+  <comp lib="0" loc="(890,110)" name="Tunnel"><a name="label" val="ONE" /></comp>
+  <comp lib="0" loc="(890,150)" name="Tunnel"><a name="label" val="CLK" /></comp>
+  <comp lib="0" loc="(950,110)" name="Tunnel"><a name="label" val="TQ" /></comp>
+  <comp lib="0" loc="(950,150)" name="Tunnel"><a name="label" val="TN" /></comp>
+  <comp lib="4" loc="(900,200)" name="J-K Flip-Flop" />
+  <comp lib="0" loc="(890,210)" name="Tunnel"><a name="label" val="ONE" /></comp>
+  <comp lib="0" loc="(890,230)" name="Tunnel"><a name="label" val="ONE" /></comp>
+  <comp lib="0" loc="(890,250)" name="Tunnel"><a name="label" val="CLK" /></comp>
+  <comp lib="0" loc="(950,210)" name="Tunnel"><a name="label" val="JQ" /></comp>
+  <comp lib="4" loc="(900,300)" name="S-R Flip-Flop" />
+  <comp lib="0" loc="(890,310)" name="Tunnel"><a name="label" val="TQ" /></comp>
+  <comp lib="0" loc="(890,330)" name="Tunnel"><a name="label" val="TN" /></comp>
+  <comp lib="0" loc="(890,350)" name="Tunnel"><a name="label" val="CLK" /></comp>
+  <comp lib="0" loc="(950,310)" name="Tunnel"><a name="label" val="SQ" /></comp>
+  <comp lib="4" loc="(900,400)" name="Counter"><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,480)" name="Tunnel"><a name="label" val="CLK" /></comp>
+  <comp lib="0" loc="(1080,510)" name="Tunnel"><a name="label" val="CNT" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(1080,450)" name="Tunnel"><a name="label" val="CRY" /></comp>
+  <comp lib="4" loc="(900,600)" name="Register"><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,630)" name="Tunnel"><a name="label" val="CNT" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,670)" name="Tunnel"><a name="label" val="CLK" /></comp>
+  <comp lib="0" loc="(960,630)" name="Tunnel"><a name="label" val="REG" /><a name="width" val="2" /></comp>
+
+  <comp lib="0" loc="(1400,100)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="TQ" /></comp>
+  <comp lib="0" loc="(1400,100)" name="Tunnel"><a name="label" val="TQ" /></comp>
+  <comp lib="0" loc="(1400,140)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="JQ" /></comp>
+  <comp lib="0" loc="(1400,140)" name="Tunnel"><a name="label" val="JQ" /></comp>
+  <comp lib="0" loc="(1400,180)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="SQ" /></comp>
+  <comp lib="0" loc="(1400,180)" name="Tunnel"><a name="label" val="SQ" /></comp>
+  <comp lib="0" loc="(1400,220)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="CNT" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(1400,220)" name="Tunnel"><a name="label" val="CNT" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(1400,260)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="CRY" /></comp>
+  <comp lib="0" loc="(1400,260)" name="Tunnel"><a name="label" val="CRY" /></comp>
+  <comp lib="0" loc="(1400,300)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="REG" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(1400,300)" name="Tunnel"><a name="label" val="REG" /><a name="width" val="2" /></comp>
+ </circuit>
+</project>

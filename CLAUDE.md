@@ -43,7 +43,8 @@ discarded by its writer, so they buy nothing, and an unknown element directly un
 makes `XmlReader.toLogisimFile` throw so the file will not open at all.
 
 **Keep the two editions apart.** Any packaging change must preserve this edition's own file
-extension, MIME type, preference node, package name and bundle identifiers. The fork previously
+extension, MIME type, preference node, package name, bundle identifiers and FPGA workspace
+directory — and any new on-disk path must get the same treatment. The fork previously
 declared `extension=circ` and `application/x-logisim-circuit`, byte-identical to upstream, so
 whichever edition was installed last owned every `.circ` on the machine. That class of bug must not
 come back.
@@ -60,18 +61,18 @@ loads what `default.templ`'s `<lib>` list names.
 
 ## Environment
 
-There is no system JDK on the original development machine. Local builds use Android Studio's
-bundled JBR 21, set per-command and never committed:
+Development happens on the Linux VM (Ubuntu 22.04). Temurin 21 is on the PATH via SDKMAN, so the
+Gradle tasks need no `JAVA_HOME` juggling:
 
 ```bash
-JAVA_HOME="C:/Users/peler/AppData/Local/Programs/Android Studio/jbr" ./gradlew shadowJar
+./gradlew check shadowJar
 ```
 
-Do not run the application headless for probing. `AppPreferences.hotkeyMenuMask` degrades to
-`ALT_DOWN_MASK` when headless, and any new hotkey preference then persists that wrong default into
-the real registry.
+`~/DEV_ENV.md` is the environment cheat sheet and `devenv-verify` smoke-tests the toolchain.
 
-`gh` needs the repo spelled out here, or it resolves the working copy to upstream and 404s:
+Everything except publishing a release is local. `gh` is installed but the account login is the
+maintainer's to do (`gh auth login`) — and `gh` needs the repo spelled out here, or it resolves the
+working copy to upstream and 404s:
 
 ```bash
 gh workflow run release.yml --repo PelerYuan/logisim-evolution-peler --ref main -f channel=dev -f platforms=windows
@@ -80,6 +81,36 @@ gh workflow run release.yml --repo PelerYuan/logisim-evolution-peler --ref main 
 `platforms=windows` builds only the MSI and portable zip; a full dev build is mostly waiting. Stable
 releases always build everything, and a pushed tag ignores the input.
 
+Historical note: the fork was started on a Windows machine with no system JDK, where builds needed
+`JAVA_HOME="C:/Users/peler/AppData/Local/Programs/Android Studio/jbr"` per command. That is where
+"cannot be tested here" claims in older notes come from. Re-check such a claim before believing it —
+most of them were about that machine, not about the code.
+
+### Running and driving the application
+
+There is a real Xorg session on `DISPLAY=:0`, so the application can be launched, clicked through
+and screenshotted:
+
+```bash
+DISPLAY=:0 java -jar build/libs/logisim-evolution-peler-4.1.0-all.jar
+```
+
+Three things to know before automating it:
+
+- **Send real pointer and key events.** `xdotool mousemove X Y click 1` and plain `xdotool key`
+  go through XTEST and reach Swing — including `ctrl+f`, `Return`, `shift+Return` and `Escape`.
+  Events addressed at a window — `xdotool key --window <id> alt+f` — are silently ignored. An
+  earlier note concluded from that silence that "the keys never arrive at the JVM"; they do, and
+  believing otherwise hid a real bug in the finder for weeks.
+- **Screenshots need no extra package.** A five-line `java.awt.Robot` program run as
+  `java Screenshot.java out.png` captures the screen; JDK 21 runs single-file sources directly.
+- **A real X display is not headless**, so the `hotkeyMenuMask` hazard below does not apply to it.
+
+Do not run the application headless for probing. `AppPreferences.hotkeyMenuMask` degrades to
+`ALT_DOWN_MASK` when headless, and any new hotkey preference then persists that wrong default into
+the real store. Verified that a GUI run on this VM is safe by decoding `hotkeyEditUndo` afterwards:
+it held `CTRL_DOWN_MASK`, not the degraded `ALT`.
+
 ## Releases
 
 Two channels, deliberately kept apart.
@@ -87,14 +118,32 @@ Two channels, deliberately kept apart.
 **Dev** — the normal one while iterating. `channel=dev` republishes a single rolling `dev`
 pre-release, so the releases page holds exactly one dev entry however many builds happen and the
 download URL never changes. The publish job deletes the previous dev release and its tag first.
-Package version is `1.0.<github.run_number>`.
 
 **Stable** — pushing a `v*` tag (or dispatching with `channel=stable`) publishes a permanent
 release; then set its notes with `gh release edit --notes-file` and `--latest --prerelease=false`.
 
-Numbering: stable starts at **v1.1.0** and goes up. `1.0.x` is permanently reserved by the dev
-channel's `1.0.<run_number>` scheme. `v1.0.0-peler.1` through `v1.0.20` were dev builds, kept as tags
-only.
+### Numbering
+
+**Stable is `vX.Y.0` — always bump the major or the minor, never the patch.** The workflow fails the
+run if a stable tag has a non-zero patch, on purpose.
+
+**Dev is `X.Y.<github.run_number>`, where `X.Y` comes from the stable release GitHub marks latest.**
+So with stable at v1.1.0, dev builds are `1.1.<run>`; cut v1.2.0 and they become `1.2.<run>` on
+their own, with nothing to edit.
+
+The reason is not tidiness. All channels share one `--win-upgrade-uuid`, so Windows Installer
+compares these numbers *across* channels. The original scheme pinned dev at `1.0.<run>`, which made
+every dev build sort below stable v1.1.0 and refuse to install over it — while being, by definition,
+the newer code. Reserving the patch field for dev keeps dev ahead of the stable it was cut from, and
+the next stable's minor bump keeps stable ahead of every dev build before it. A stable `1.1.1` would
+land underneath dev `1.1.32`, which is what the tag check prevents.
+
+The base is read from `repos/{owner}/{repo}/releases/latest`, **not** from git tags: this repository
+still carries upstream's tags and the highest of those is `v4.1.0`. The dev release is a prerelease,
+so that endpoint already ignores it.
+
+`v1.0.0-peler.1` through `v1.0.20` were dev builds under the old scheme, kept as tags only. Nothing
+publishes into `1.0.x` any more.
 
 jpackage constraints learned the hard way: macOS rejects an app version whose first number is zero,
 and the Windows MSI ProductVersion field caps parts at `255.255.65535`, so date-derived versions like
@@ -120,6 +169,7 @@ The fork's own package version is `pelerAppVersion`, resolved in `.github/workfl
 | Component finder | `gui/find/ToolSearch.java`, `gui/find/FindToolDialog.java` |
 | Settings isolation | `prefs/PelerPreferences.java`, `prefs/AppPreferences.java`, `Main.java` |
 | Fork's About window | `gui/start/AboutPelerEdition.java` |
+| Interactive HTML export (experimental) | `gui/htmlexport/`, `gui/generic/TikZInfo.java`, `resources/logisim/html/` |
 
 New user-visible strings need all 12 locales, in `src/main/resources/resources/logisim/strings/`.
 

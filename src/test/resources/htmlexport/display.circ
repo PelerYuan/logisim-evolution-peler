@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Peler Edition test fixture for HtmlExportAppearanceTest.
+
+  One of each display component, driven by input pins, so the exported page can be checked against
+  Logisim's own rendering in every state each component has. The three of them exercise all three
+  encodings: an LED is one bit, a seven segment display has eight independent ones, and a hex digit
+  has four that jointly choose a glyph and so cannot be encoded per bit.
+
+  Port coordinates, relative to the component location:
+    LED            in (0,0), body reaches right and down from there
+    Hex Digit      hex (0,0), body reaches up and left
+    7-Segment      G (0,0)  F (10,0)  A (20,0)  B (30,0), body reaches down
+
+  Read these off a real component before editing. A wire that misses by ten leaves the circuit
+  silently unconnected, and a doubled hyphen in this comment would make the file unparseable.
+-->
+<project version="1.0">
+ <lib name="0" desc="#Wiring" />
+ <lib name="6" desc="#I/O" />
+ <lib name="8" desc="#Base" />
+ <main name="main" />
+ <options>
+  <a name="showgrid" val="true" />
+  <a name="simulate" val="true" />
+ </options>
+ <circuit name="main">
+  <a name="circuit" val="main" />
+
+  <comp lib="0" loc="(100,100)" name="Pin"><a name="label" val="A" /></comp>
+  <comp lib="6" loc="(200,100)" name="LED" />
+  <comp lib="0" loc="(400,100)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="OUT" />
+  </comp>
+
+  <comp lib="0" loc="(100,300)" name="Pin">
+   <a name="width" val="4" /><a name="label" val="H" />
+  </comp>
+  <comp lib="6" loc="(250,300)" name="Hex Digit Display" />
+
+  <comp lib="0" loc="(100,400)" name="Pin"><a name="label" val="S2" /></comp>
+  <comp lib="0" loc="(100,420)" name="Pin"><a name="label" val="S1" /></comp>
+  <comp lib="0" loc="(100,440)" name="Pin"><a name="label" val="S0" /></comp>
+  <comp lib="6" loc="(250,500)" name="7-Segment Display" />
+
+  <wire from="(100,100)" to="(200,100)" />
+  <wire from="(200,100)" to="(400,100)" />
+
+  <wire from="(100,300)" to="(250,300)" />
+
+  <wire from="(100,400)" to="(280,400)" />
+  <wire from="(280,400)" to="(280,500)" />
+  <wire from="(100,420)" to="(270,420)" />
+  <wire from="(270,420)" to="(270,500)" />
+  <wire from="(100,440)" to="(260,440)" />
+  <wire from="(260,440)" to="(260,500)" />
+ </circuit>
+</project>

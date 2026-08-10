@@ -918,6 +918,20 @@ tasks {
 
   test {
     useJUnitPlatform()
+
+    // Peler Edition: point java.util.prefs at a throwaway directory. Touching almost anything in
+    // the simulator drags in AppPreferences (Value's colours are preferences), and a headless run
+    // resolves hotkeyMenuMask to ALT_DOWN_MASK and then persists it -- into the developer's real
+    // settings, silently rebinding every menu shortcut. See the headless warning in CLAUDE.md.
+    // Only the Unix preferences backend honours these; on Windows the registry store ignores them,
+    // so tests that simulate should not be run there without checking first.
+    systemProperty(
+        "java.util.prefs.userRoot",
+        layout.buildDirectory.dir("test-prefs/user").get().asFile.absolutePath)
+    systemProperty(
+        "java.util.prefs.systemRoot",
+        layout.buildDirectory.dir("test-prefs/system").get().asFile.absolutePath)
+    systemProperty("java.awt.headless", "true")
 //    testLogging {
 //      events("passed", "skipped", "failed")
 //    }

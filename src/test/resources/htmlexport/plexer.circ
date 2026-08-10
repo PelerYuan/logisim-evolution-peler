@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Peler Edition test fixture for HtmlExportDifferentialTest.
+
+  Multiplexer, demultiplexer and decoder. Their port order is positional and depends on their own
+  attributes (lanes, then select, then enable if it exists, then the one data port), so an off by
+  one reads the select line as data and gives a page that is wrong only for some selections. The
+  decoder is left at its default, which unlike the other two has the enable port switched on, which
+  is why E is here at all.
+
+  Connections are tunnels sitting on the ports. A doubled hyphen here would break the file.
+-->
+<project version="1.0">
+ <lib name="0" desc="#Wiring" />
+ <lib name="2" desc="#Plexers" />
+ <lib name="3" desc="#Arithmetic" />
+ <lib name="4" desc="#Memory" />
+ <lib name="8" desc="#Base" />
+ <main name="main" />
+ <options>
+  <a name="showgrid" val="true" />
+  <a name="simulate" val="true" />
+ </options>
+ <circuit name="main">
+  <a name="circuit" val="main" />
+
+  <comp lib="0" loc="(100,100)" name="Pin"><a name="label" val="A" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(100,100)" name="Tunnel"><a name="label" val="A" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(100,160)" name="Pin"><a name="label" val="B" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(100,160)" name="Tunnel"><a name="label" val="B" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(100,220)" name="Pin"><a name="label" val="S" /></comp>
+  <comp lib="0" loc="(100,220)" name="Tunnel"><a name="label" val="S" /></comp>
+  <comp lib="0" loc="(100,280)" name="Pin"><a name="label" val="E" /></comp>
+  <comp lib="0" loc="(100,280)" name="Tunnel"><a name="label" val="E" /></comp>
+
+  <comp lib="2" loc="(600,100)" name="Multiplexer"><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(570,90)" name="Tunnel"><a name="label" val="A" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(570,110)" name="Tunnel"><a name="label" val="B" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(580,120)" name="Tunnel"><a name="label" val="S" /></comp>
+  <comp lib="0" loc="(600,100)" name="Tunnel"><a name="label" val="MUX" /><a name="width" val="2" /></comp>
+  <comp lib="2" loc="(600,200)" name="Demultiplexer"><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(630,190)" name="Tunnel"><a name="label" val="D0" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(630,210)" name="Tunnel"><a name="label" val="D1" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(620,220)" name="Tunnel"><a name="label" val="S" /></comp>
+  <comp lib="0" loc="(600,200)" name="Tunnel"><a name="label" val="A" /><a name="width" val="2" /></comp>
+  <comp lib="2" loc="(600,300)" name="Decoder" />
+  <comp lib="0" loc="(610,270)" name="Tunnel"><a name="label" val="C0" /></comp>
+  <comp lib="0" loc="(610,290)" name="Tunnel"><a name="label" val="C1" /></comp>
+  <comp lib="0" loc="(600,300)" name="Tunnel"><a name="label" val="S" /></comp>
+  <comp lib="0" loc="(590,300)" name="Tunnel"><a name="label" val="E" /></comp>
+
+  <comp lib="0" loc="(1100,100)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="MUX" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(1100,100)" name="Tunnel"><a name="label" val="MUX" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(1100,140)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="D0" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(1100,140)" name="Tunnel"><a name="label" val="D0" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(1100,180)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="D1" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(1100,180)" name="Tunnel"><a name="label" val="D1" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(1100,220)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="C0" /></comp>
+  <comp lib="0" loc="(1100,220)" name="Tunnel"><a name="label" val="C0" /></comp>
+  <comp lib="0" loc="(1100,260)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="C1" /></comp>
+  <comp lib="0" loc="(1100,260)" name="Tunnel"><a name="label" val="C1" /></comp>
+ </circuit>
+</project>

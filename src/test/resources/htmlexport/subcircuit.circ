@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Peler Edition test fixture for HtmlExportDifferentialTest.
+
+  A full adder built from two instances of one half adder circuit plus an OR gate, wrapped in turn
+  inside main, so the nesting goes two levels deep. That is the smallest thing that exercises
+  everything subcircuit support has to get right: a circuit used more than once, so the two
+  instances must not share nodes; nesting, so flattening has to recurse; tunnels named a, b and c at
+  every level, which must not reach each other; and the mapping from a box's ports to the pins
+  behind them, which is the editor's own and not a re-sort of the pin list.
+
+  Every instance also sits at coordinates that overlap the inner circuit's own, so an engine that
+  keys nodes on location alone shorts the design together rather than failing to build. Making the
+  node scope constant turns row 2 into an error on both outputs.
+
+  Gate ports were read off real components: an XOR sits ten wider on the input side than an AND.
+  A doubled hyphen anywhere in this comment would make the file unparseable.
+-->
+<project version="1.0">
+ <lib name="0" desc="#Wiring" />
+ <lib name="1" desc="#Gates" />
+ <lib name="8" desc="#Base" />
+ <main name="main" />
+ <options>
+  <a name="showgrid" val="true" />
+  <a name="simulate" val="true" />
+ </options>
+
+ <circuit name="half">
+  <a name="circuit" val="half" />
+
+  <comp lib="0" loc="(100,100)" name="Pin"><a name="label" val="a" /></comp>
+  <comp lib="0" loc="(100,100)" name="Tunnel"><a name="label" val="a" /></comp>
+  <comp lib="0" loc="(100,200)" name="Pin"><a name="label" val="b" /></comp>
+  <comp lib="0" loc="(100,200)" name="Tunnel"><a name="label" val="b" /></comp>
+
+  <comp lib="1" loc="(300,100)" name="XOR Gate"><a name="size" val="30" /></comp>
+  <comp lib="0" loc="(260,90)" name="Tunnel"><a name="label" val="a" /></comp>
+  <comp lib="0" loc="(260,110)" name="Tunnel"><a name="label" val="b" /></comp>
+  <comp lib="0" loc="(300,100)" name="Tunnel"><a name="label" val="s" /></comp>
+
+  <comp lib="1" loc="(300,200)" name="AND Gate"><a name="size" val="30" /></comp>
+  <comp lib="0" loc="(270,190)" name="Tunnel"><a name="label" val="a" /></comp>
+  <comp lib="0" loc="(270,210)" name="Tunnel"><a name="label" val="b" /></comp>
+  <comp lib="0" loc="(300,200)" name="Tunnel"><a name="label" val="c" /></comp>
+
+  <comp lib="0" loc="(500,100)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="s" />
+  </comp>
+  <comp lib="0" loc="(500,100)" name="Tunnel"><a name="label" val="s" /></comp>
+  <comp lib="0" loc="(500,200)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="c" />
+  </comp>
+  <comp lib="0" loc="(500,200)" name="Tunnel"><a name="label" val="c" /></comp>
+ </circuit>
+
+ <circuit name="full">
+  <a name="circuit" val="full" />
+
+  <comp lib="0" loc="(100,100)" name="Pin"><a name="label" val="A" /></comp>
+  <comp lib="0" loc="(100,100)" name="Tunnel"><a name="label" val="a" /></comp>
+  <comp lib="0" loc="(100,140)" name="Pin"><a name="label" val="B" /></comp>
+  <comp lib="0" loc="(100,140)" name="Tunnel"><a name="label" val="b" /></comp>
+  <comp lib="0" loc="(100,180)" name="Pin"><a name="label" val="CI" /></comp>
+  <comp lib="0" loc="(100,180)" name="Tunnel"><a name="label" val="ci" /></comp>
+
+  <comp loc="(300,100)" name="half" />
+  <comp lib="0" loc="(270,100)" name="Tunnel"><a name="label" val="a" /></comp>
+  <comp lib="0" loc="(270,110)" name="Tunnel"><a name="label" val="b" /></comp>
+  <comp lib="0" loc="(300,100)" name="Tunnel"><a name="label" val="s1" /></comp>
+  <comp lib="0" loc="(300,110)" name="Tunnel"><a name="label" val="c" /></comp>
+
+  <comp loc="(300,300)" name="half" />
+  <comp lib="0" loc="(270,300)" name="Tunnel"><a name="label" val="s1" /></comp>
+  <comp lib="0" loc="(270,310)" name="Tunnel"><a name="label" val="ci" /></comp>
+  <comp lib="0" loc="(300,300)" name="Tunnel"><a name="label" val="s" /></comp>
+  <comp lib="0" loc="(300,310)" name="Tunnel"><a name="label" val="c2" /></comp>
+
+  <comp lib="1" loc="(700,300)" name="OR Gate"><a name="size" val="30" /></comp>
+  <comp lib="0" loc="(670,290)" name="Tunnel"><a name="label" val="c" /></comp>
+  <comp lib="0" loc="(670,310)" name="Tunnel"><a name="label" val="c2" /></comp>
+  <comp lib="0" loc="(700,300)" name="Tunnel"><a name="label" val="co" /></comp>
+
+  <comp lib="0" loc="(900,100)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="S" />
+  </comp>
+  <comp lib="0" loc="(900,100)" name="Tunnel"><a name="label" val="s" /></comp>
+  <comp lib="0" loc="(900,200)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="CO" />
+  </comp>
+  <comp lib="0" loc="(900,200)" name="Tunnel"><a name="label" val="co" /></comp>
+ </circuit>
+
+ <circuit name="main">
+  <a name="circuit" val="main" />
+
+  <comp lib="0" loc="(100,100)" name="Pin"><a name="label" val="A" /></comp>
+  <comp lib="0" loc="(100,100)" name="Tunnel"><a name="label" val="a" /></comp>
+  <comp lib="0" loc="(100,140)" name="Pin"><a name="label" val="B" /></comp>
+  <comp lib="0" loc="(100,140)" name="Tunnel"><a name="label" val="b" /></comp>
+  <comp lib="0" loc="(100,180)" name="Pin"><a name="label" val="CI" /></comp>
+  <comp lib="0" loc="(100,180)" name="Tunnel"><a name="label" val="ci" /></comp>
+
+  <comp loc="(500,300)" name="full" />
+  <comp lib="0" loc="(470,300)" name="Tunnel"><a name="label" val="a" /></comp>
+  <comp lib="0" loc="(470,310)" name="Tunnel"><a name="label" val="b" /></comp>
+  <comp lib="0" loc="(470,320)" name="Tunnel"><a name="label" val="ci" /></comp>
+  <comp lib="0" loc="(500,300)" name="Tunnel"><a name="label" val="s" /></comp>
+  <comp lib="0" loc="(500,310)" name="Tunnel"><a name="label" val="co" /></comp>
+
+  <comp lib="0" loc="(900,100)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="S" />
+  </comp>
+  <comp lib="0" loc="(900,100)" name="Tunnel"><a name="label" val="s" /></comp>
+  <comp lib="0" loc="(900,200)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="CO" />
+  </comp>
+  <comp lib="0" loc="(900,200)" name="Tunnel"><a name="label" val="co" /></comp>
+ </circuit>
+</project>

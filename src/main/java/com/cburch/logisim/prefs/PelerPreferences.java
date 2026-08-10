@@ -52,6 +52,22 @@ public final class PelerPreferences {
   /** Set once the question has been asked, whether or not the answer was yes. */
   private static final String ASKED_KEY = "pelerImportAsked";
 
+  /** Mirrors the key {@code AppPreferences.FPGA_Workspace} is declared with; keep the two in step. */
+  private static final String FPGA_WORKSPACE_KEY = "FPGAWorkspace";
+
+  /**
+   * Where this edition generates FPGA output, unless the user points it somewhere else.
+   *
+   * <p>Upstream defaults to {@code ~/logisim_evolution_workspace}, and both editions used to write
+   * there. That directory is not just an output dump: {@code DownloadBase} lays it out as
+   * {@code <workspace>/<project file name>/<circuit>/} and wipes each circuit's directory before
+   * regenerating it, so the same project opened in either edition maps to the same path and each
+   * download deletes whatever the other edition left there.
+   */
+  public static String defaultFpgaWorkspace() {
+    return System.getProperty("user.home") + "/logisim_evolution_peler_workspace";
+  }
+
   public static Preferences node() {
     return Preferences.userRoot().node(NODE);
   }
@@ -143,7 +159,7 @@ public final class PelerPreferences {
 
   private static boolean copyLegacySettings() {
     try {
-      copyNode(legacyNode(), node());
+      copyNode(legacyNode(), node(), true);
       flush(node());
       return true;
     } catch (BackingStoreException e) {
@@ -151,16 +167,25 @@ public final class PelerPreferences {
     }
   }
 
-  /** Copies keys and sub-nodes, leaving anything already in the destination that the source has no
-   * opinion about. */
-  private static void copyNode(Preferences from, Preferences to) throws BackingStoreException {
+  /**
+   * Copies keys and sub-nodes, leaving anything already in the destination that the source has no
+   * opinion about.
+   *
+   * <p>Two top-level keys are deliberately not brought across. {@link #ASKED_KEY} is this class's
+   * own bookkeeping. {@code FPGAWorkspace} is a path both editions would then generate into and
+   * clean out from under each other -- see {@link #defaultFpgaWorkspace()} -- which is the opposite
+   * of what the import dialog promises, so this edition keeps its own workspace and the user can
+   * still point it at the old one by hand.
+   */
+  private static void copyNode(Preferences from, Preferences to, boolean isRoot)
+      throws BackingStoreException {
     for (final var key : from.keys()) {
-      if (ASKED_KEY.equals(key)) continue;
+      if (isRoot && (ASKED_KEY.equals(key) || FPGA_WORKSPACE_KEY.equals(key))) continue;
       final var value = from.get(key, null);
       if (value != null) to.put(key, value);
     }
     for (final var child : from.childrenNames()) {
-      copyNode(from.node(child), to.node(child));
+      copyNode(from.node(child), to.node(child), false);
     }
   }
 

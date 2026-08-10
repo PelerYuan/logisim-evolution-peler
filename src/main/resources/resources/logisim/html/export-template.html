@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font: 14px system-ui, sans-serif; background: #fff; color: #111; }
+  @media (prefers-color-scheme: dark) { body { background: #14161a; color: #e8e8e8; } }
+  header { padding: 10px 14px; border-bottom: 1px solid #8883; display: flex; gap: 14px;
+           align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header .hint { opacity: .65; font-size: 12px; }
+  #stage { overflow: auto; padding: 12px; }
+  /* The drawing is Logisim's own artwork, in Logisim's own colours, and those assume paper. It
+     keeps its white sheet in a dark theme rather than becoming black lines on a black page. */
+  svg { display: block; background: #fff; border: 1px solid #8883; border-radius: 6px; }
+  svg.fit { max-width: 100%; height: auto; }
+  .clickable { cursor: pointer; }
+  header button { font: inherit; padding: 2px 10px; margin-right: 4px; cursor: pointer;
+                  border: 1px solid #8886; border-radius: 5px; background: #8881; color: inherit; }
+  header button:hover { background: #8883; }
+  #warn { display: none; margin: 8px 14px; padding: 8px 10px; border-radius: 6px;
+          background: #b000201a; color: #b00020; font-size: 13px; }
+  @media (prefers-color-scheme: dark) { #warn { color: #ff8a90; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>__TITLE__</h1>
+  <span class="hint">Click an input pin, button or switch to change it. Nothing here can be moved or edited.</span>
+  <button id="fit" type="button">Fit to width</button>
+  <span id="clockbar" hidden>
+    <button id="tick" type="button">Tick</button>
+    <button id="run" type="button">Run</button>
+    <button id="reset" type="button">Reset</button>
+    <span class="hint" id="tickcount">0 ticks</span>
+  </span>
+</header>
+<div id="warn"></div>
+<div id="stage"></div>
+<script>
+"use strict";
+const CIRCUIT = /*__CIRCUIT__*/null;
+
+// Bit states, matching Logisim's four-valued model.
+const ZERO = 0, ONE = 1, UNK = 2, ERR = 3;
+
+function makeValue(width, fill) {
+  return new Uint8Array(width).fill(fill);
+}
+
+function isDefined(bits) {
+  for (const bit of bits) if (bit !== ZERO && bit !== ONE) return false;
+  return true;
+}
+
+function anyError(bits) {
+  for (const bit of bits) if (bit === ERR) return true;
+  return false;
+}
+
+function allUnknown(bits) {
+  for (const bit of bits) if (bit !== UNK) return false;
+  return bits.length > 0;
+}
+
+// Two drivers on one net: a driven bit beats a floating one, and two different driven bits are an
+// error. This is what the editor shows as a red wire.
+function joinBit(a, b) {
+  if (a === UNK) return b;
+  if (b === UNK) return a;
+  if (a === ERR || b === ERR) return ERR;
+  return a === b ? a : ERR;
+}
+
+// Numbers are BigInt throughout. Logisim allows buses up to 64 bits wide and a JavaScript number
+// stops being exact at 53, so an ordinary number would quietly round a wide adder's result.
+function bitsToBig(bits, signed) {
+  let out = 0n;
+  for (let i = bits.length - 1; i >= 0; i--) {
+    if (bits[i] === UNK || bits[i] === ERR) return null;
+    out = (out << 1n) | BigInt(bits[i]);
+  }
+  if (signed && bits.length > 0 && bits[bits.length - 1] === ONE) out -= 1n << BigInt(bits.length);
+  return out;
+}
+
+/** As Value.toBigInteger reads a partly undefined value: anything that is not a firm 1 is a 0. */
+function bitsToBigLoose(bits, signed) {
+  let out = 0n;
+  for (let i = bits.length - 1; i >= 0; i--) out = (out << 1n) | (bits[i] === ONE ? 1n : 0n);
+  if (signed && bits.length > 0 && bits[bits.length - 1] === ONE) out -= 1n << BigInt(bits.length);
+  return out;
+}
+
+function bigToBits(value, width) {
+  const bits = makeValue(width, ZERO);
+  for (let i = 0; i < width; i++) bits[i] = Number((value >> BigInt(i)) & 1n);
+  return bits;
+}
+
+/**
+ * A value as the editor writes it, in the radix the component was set to.
+ *
+ * <p>The characters standing for a floating or conflicting bit are preferences in Logisim, not
+ * constants, so they travel with the netlist alongside the colours. A grouped radix reports a whole
+ * digit as unknown when any bit in it is, rather than guessing at the rest, which is what makes a
+ * partly driven bus visibly partly driven instead of merely wrong.
+ */
+function formatValue(bits, radix) {
+  const chars = CIRCUIT.chars;
+  const width = bits.length;
+  if (width === 0) return chars.dontcare;
+  if (width === 1) return charOf(bits[0]);
+  switch (radix) {
+    case "2": {
+      let out = "";
+      for (let i = width - 1; i >= 0; i--) {
+        out += charOf(bits[i]);
+        if (i % 4 === 0 && i !== 0) out += " ";
+      }
+      return out;
+    }
+    case "8": return groupedDigits(bits, 3, 8);
+    case "10signed": return decimalString(bits, true);
+    case "10unsigned": return decimalString(bits, false);
+    default: return groupedDigits(bits, 4, 16);
+  }
+}
+
+function charOf(bit) {
+  const chars = CIRCUIT.chars;
+  return bit === ERR ? chars.error
+    : bit === UNK ? chars.unknown
+    : bit === ONE ? chars["true"] : chars["false"];
+}
+
+function groupedDigits(bits, size, base) {
+  const chars = CIRCUIT.chars;
+  const digits = Math.ceil(bits.length / size);
+  let out = "";
+  for (let i = 0; i < digits; i++) {
+    const k = digits - 1 - i;
+    const first = size * k;
+    const last = Math.min(bits.length, size * (k + 1));
+    let value = 0;
+    let digit = "";
+    for (let j = last - 1; j >= first; j--) {
+      if (bits[j] === ERR) { digit = chars.error; break; }
+      if (bits[j] === UNK) { digit = chars.unknown; break; }
+      value = 2 * value + (bits[j] === ONE ? 1 : 0);
+    }
+    out += digit === "" ? value.toString(base) : digit;
+  }
+  return out;
+}
+
+function decimalString(bits, signed) {
+  const chars = CIRCUIT.chars;
+  if (anyError(bits)) return chars.error;
+  if (!isDefined(bits)) return chars.unknown;
+  return bitsToBig(bits, signed).toString();
+}
+
+// ---------------------------------------------------------------- component behaviour
+
+function reduceGate(inputs, kind, negateMask, width) {
+  const out = makeValue(width, UNK);
+  for (let bit = 0; bit < width; bit++) {
+    let sawError = false, sawUnknown = false, ones = 0, zeros = 0, parity = 0;
+    for (let i = 0; i < inputs.length; i++) {
+      let v = inputs[i][bit % inputs[i].length];
+      if ((negateMask >> i) & 1) v = v === ZERO ? ONE : v === ONE ? ZERO : v;
+      if (v === ERR) sawError = true;
+      else if (v === UNK) sawUnknown = true;
+      else if (v === ONE) { ones++; parity ^= 1; }
+      else zeros++;
+    }
+    let result;
+    switch (kind) {
+      case "and": result = zeros > 0 ? ZERO : sawError ? ERR : sawUnknown ? UNK : ONE; break;
+      case "or": result = ones > 0 ? ONE : sawError ? ERR : sawUnknown ? UNK : ZERO; break;
+      case "xor": result = sawError ? ERR : sawUnknown ? UNK : (parity ? ONE : ZERO); break;
+      default: result = UNK;
+    }
+    out[bit] = result;
+  }
+  return out;
+}
+
+/** Value.not(): a defined bit flips, an undefined one stays as it is. */
+function flipBit(bit) {
+  return bit === ZERO ? ONE : bit === ONE ? ZERO : bit;
+}
+
+function invert(bits) {
+  const out = makeValue(bits.length, UNK);
+  for (let i = 0; i < bits.length; i++) out[i] = flipBit(bits[i]);
+  return out;
+}
+
+/**
+ * Adder.computeSum, including its bit at a time path.
+ *
+ * <p>The fast path is not just an optimisation in Logisim: a fully defined addition carries
+ * normally, while an addition with one floating bit stops carrying information past that bit. Both
+ * are reproduced, because a page that shows a clean number where the editor shows a floating bus
+ * would be lying about the circuit.
+ */
+function computeSum(width, a, b, carryIn) {
+  let carry = carryIn === UNK ? ZERO : carryIn;
+  if (isDefined(a) && isDefined(b) && carry !== ERR) {
+    const sum = bitsToBig(a, false) + bitsToBig(b, false) + BigInt(carry);
+    return [bigToBits(sum, width), ((sum >> BigInt(width)) & 1n) === 0n ? ZERO : ONE];
+  }
+  const bits = makeValue(width, UNK);
+  for (let i = 0; i < width; i++) {
+    if (carry === ERR) { bits[i] = ERR; continue; }
+    if (carry === UNK) { bits[i] = UNK; continue; }
+    const ab = i < a.length ? a[i] : UNK;
+    const bb = i < b.length ? b[i] : UNK;
+    if (ab === ERR || bb === ERR) { bits[i] = ERR; carry = ERR; }
+    else if (ab === UNK || bb === UNK) { bits[i] = UNK; carry = UNK; }
+    else {
+      const sum = (ab === ONE ? 1 : 0) + (bb === ONE ? 1 : 0) + (carry === ONE ? 1 : 0);
+      bits[i] = (sum & 1) === 1 ? ONE : ZERO;
+      carry = sum >= 2 ? ONE : ZERO;
+    }
+  }
+  return [bits, carry];
+}
+
+/** Negator: two's complement, and Logisim's fill rule for a value that is not fully defined. */
+function negate(bits) {
+  const width = bits.length;
+  if (isDefined(bits)) return bigToBits(-bitsToBig(bits, false), width);
+  const out = Uint8Array.from(bits);
+  let fill = ZERO;
+  let pos = 0;
+  while (pos < width) {
+    if (out[pos] === ZERO) {
+      out[pos] = fill;
+    } else if (out[pos] === ONE) {
+      if (fill !== ZERO) out[pos] = fill;
+      pos++;
+      break;
+    } else if (out[pos] === ERR) {
+      fill = ERR;
+    } else {
+      if (fill === ZERO) fill = out[pos];
+      else out[pos] = fill;
+    }
+    pos++;
+  }
+  while (pos < width) {
+    out[pos] = flipBit(out[pos]);
+    pos++;
+  }
+  return out;
+}
+
+/** Comparator: walks down from the top bit and stops at the first difference, as Logisim does. */
+function compareValues(a, b, signed) {
+  let gt = ZERO, eq = ONE, lt = ZERO;
+  const length = Math.max(a.length, b.length);
+  for (let pos = length - 1; pos >= 0; pos--) {
+    let ab = pos < a.length ? a[pos] : ERR;
+    let bb = pos < b.length ? b[pos] : ERR;
+    // The top bit of a signed value is the sign, so its sense is the other way round.
+    if (pos === a.length - 1 && ab !== bb && signed) { const swap = ab; ab = bb; bb = swap; }
+    if (ab === ERR || bb === ERR) return [ERR, ERR, ERR];
+    if (ab === UNK || bb === UNK) return [UNK, UNK, UNK];
+    if (ab !== bb) {
+      eq = ZERO;
+      if (ab === ONE) gt = ONE; else lt = ONE;
+      break;
+    }
+  }
+  return [gt, eq, lt];
+}
+
+function firstOf(bits, want) {
+  for (let i = 0; i < bits.length; i++) if (bits[i] === want) return i;
+  return bits.length;
+}
+
+/** Multiplier.computeProduct: below the lowest undefined bit the product is still known. */
+function computeProduct(width, a, b, carryIn, unsigned) {
+  const carry = allUnknown(carryIn) ? makeValue(width, ZERO) : carryIn;
+  const signed = !unsigned;
+  if (isDefined(a) && isDefined(b) && isDefined(carry)) {
+    const product = bitsToBig(a, signed) * bitsToBig(b, signed) + bitsToBig(carry, signed);
+    return [bigToBits(product, width), bigToBits(product >> BigInt(width), width)];
+  }
+  const known = Math.min(firstOf(a, UNK), firstOf(b, UNK), firstOf(carry, UNK));
+  const failed = Math.min(firstOf(a, ERR), firstOf(b, ERR), firstOf(carry, ERR));
+  const product =
+    bitsToBigLoose(a, signed) * bitsToBigLoose(b, signed) + bitsToBigLoose(carry, signed);
+  const bits = makeValue(width, UNK);
+  for (let i = 0; i < width; i++) {
+    if (i < known) bits[i] = Number((product >> BigInt(i)) & 1n);
+    else if (i < failed) bits[i] = UNK;
+    else bits[i] = ERR;
+  }
+  return [bits, makeValue(width, failed < width ? ERR : UNK)];
+}
+
+/** Shifter, in all five modes, keeping Logisim's clamping of an over-wide shift distance. */
+function shiftBits(bits, distance, mode) {
+  const width = bits.length;
+  let d = distance;
+  const out = makeValue(width, ZERO);
+  if (d === 0) return Uint8Array.from(bits);
+  switch (mode) {
+    case "lr":
+      if (d >= width) d = width;
+      for (let i = 0; i < width - d; i++) out[i] = bits[i + d];
+      return out;
+    case "ar":
+      if (d >= width) d = width;
+      for (let i = 0; i < width - d; i++) out[i] = bits[i + d];
+      for (let i = width - d; i < width; i++) out[i] = bits[width - 1];
+      return out;
+    case "rr":
+      if (d >= width) d -= width;
+      for (let i = 0; i < width; i++) out[i] = bits[(i + d) % width];
+      return out;
+    case "rl":
+      if (d >= width) d -= width;
+      for (let i = 0; i < width; i++) out[(i + d) % width] = bits[i];
+      return out;
+    default: // logical left
+      if (d >= width) d = width;
+      for (let i = d; i < width; i++) out[i] = bits[i - d];
+      return out;
+  }
+}
+
+/**
+ * The flip-flop family, which Logisim builds from one shared component and a rule for the next
+ * value. The port order comes from AbstractFlipFlop: inputs first, then clock, Q, not Q, clear and
+ * preset. Its enable port exists but is not consulted, which is upstream's decision, not an
+ * omission here.
+ */
+const FLIPFLOP = {
+  "D Flip-Flop": { inputs: 1, next: (inputs) => inputs[0] },
+  "T Flip-Flop": {
+    inputs: 1,
+    next: (inputs, current) => {
+      const held = current === UNK ? ZERO : current;
+      return inputs[0] === ONE ? flipBit(held) : held;
+    },
+  },
+  "J-K Flip-Flop": {
+    inputs: 2,
+    next: (inputs, current) => {
+      if (inputs[0] === ZERO) {
+        if (inputs[1] === ZERO) return current;
+        if (inputs[1] === ONE) return ZERO;
+      } else if (inputs[0] === ONE) {
+        if (inputs[1] === ZERO) return ONE;
+        if (inputs[1] === ONE) return flipBit(current);
+      }
+      return UNK;
+    },
+  },
+  "S-R Flip-Flop": {
+    inputs: 2,
+    next: (inputs, current) => {
+      if (inputs[0] === ZERO) {
+        if (inputs[1] === ZERO) return current;
+        if (inputs[1] === ONE) return ZERO;
+      } else if (inputs[0] === ONE) {
+        if (inputs[1] === ZERO) return ONE;
+        if (inputs[1] === ONE) return ERR; // set and reset at once
+      }
+      return UNK;
+    },
+  },
+};
+
+/** Components holding a value between clock edges, and how wide that value is. */
+function storedWidth(comp) {
+  if (FLIPFLOP[comp.kind]) return 1;
+  if (comp.kind === "Register" || comp.kind === "Counter") return comp.portWidths[0] || 1;
+  return 0;
+}
+
+const GATES = {
+  "AND Gate": ["and", false], "NAND Gate": ["and", true],
+  "OR Gate": ["or", false], "NOR Gate": ["or", true],
+  "XOR Gate": ["xor", false], "XNOR Gate": ["xor", true],
+};
+
+/** Components that show or accept a value without producing one. */
+const SINKS = new Set([
+  "Splitter", "Tunnel", "LED", "Probe", "RGBLED", "7-Segment Display", "Hex Digit Display",
+]);
+
+// ---------------------------------------------------------------- simulation
+
+class Simulation {
+  constructor(circuit) {
+    this.circuit = circuit;
+    // Values live on threads, not on nets: a splitter joins single bits of two different nets, so
+    // a net is not the unit that carries a value. This mirrors WireBundle's threads in the editor.
+    this.threads = new Uint8Array(circuit.threadCount).fill(UNK);
+    this.inputs = new Map();
+    this.state = new Map();
+    // Buttons and switches carry their value themselves: nothing on any wire says where they are,
+    // so the page is the only thing that knows.
+    this.self = new Map();
+    this.ticks = 0;
+    for (const comp of circuit.components) {
+      if (comp.kind === "Pin" && comp.a_isInput) {
+        this.inputs.set(comp.id, makeValue(comp.portWidths[0] || 1, ZERO));
+      }
+      // A pin keeps its value in inputs, not here, even though it is clickable the same way.
+      if (comp.poke && comp.kind !== "Pin") this.self.set(comp.id, 0);
+      const stored = storedWidth(comp);
+      if (stored > 0) {
+        // The remembered clock starts unknown, not low. ClockState's constructor says low, but a
+        // fresh circuit propagates once with every wire still unset, so a flip-flop's first look at
+        // its clock is at an unknown level and a clock that is already high is not an edge. The
+        // ffedge fixture is that case, and it fails the moment this starts at zero instead.
+        this.state.set(comp.id, { value: makeValue(stored, ZERO), lastClock: UNK, carry: ZERO });
+      }
+    }
+    this.oscillating = false;
+  }
+
+  /** Whether a clock component is in its high phase right now, honouring its duty attributes. */
+  clockHigh(comp) {
+    const high = comp.a_highDuration === undefined ? 1 : comp.a_highDuration;
+    const low = comp.a_lowDuration === undefined ? 1 : comp.a_lowDuration;
+    const phase = comp.a_phaseOffset === undefined ? 0 : comp.a_phaseOffset;
+    const cycle = high + low;
+    // Copied from Clock.ClockState.updateTick rather than reasoned out: the phase convention is
+    // that the low part of the cycle comes first, so a fresh clock reads 0 before the first tick.
+    const isLow = (((this.ticks + phase) % cycle) + cycle) % cycle < low;
+    return isLow ? ZERO : ONE;
+  }
+
+  reset() {
+    this.ticks = 0;
+    for (const [, entry] of this.state) {
+      entry.value.fill(ZERO);
+      entry.lastClock = UNK;
+    }
+    this.run();
+  }
+
+  /** One clock tick: advance time, then let the circuit settle around the new clock level. */
+  tick() {
+    this.ticks++;
+    this.run();
+  }
+
+  netOf(id) {
+    return this.circuit.nets[id];
+  }
+
+  readThreads(netId, width) {
+    const net = this.netOf(netId);
+    const bits = makeValue(width, UNK);
+    for (let i = 0; i < width && i < net.threads.length; i++) bits[i] = this.threads[net.threads[i]];
+    return bits;
+  }
+
+  valueOfPort(comp, portIndex) {
+    const width = comp.portWidths[portIndex] || 1;
+    const netId = comp.ports[portIndex];
+    if (netId < 0) return makeValue(width, UNK);
+    return this.readThreads(netId, width);
+  }
+
+  /**
+   * Settle the circuit, in two alternating phases.
+   *
+   * <p>Combinational logic is iterated to a fixed point while every state element holds its output
+   * still; only then do state elements look at their inputs and decide whether an edge arrived.
+   * Latching inside the settling loop instead would let one clock edge be seen several times, and a
+   * chain of flip-flops would shift more than one stage per tick.
+   *
+   * <p>This is a delta-cycle model, not a timed one. Logisim gives components real propagation
+   * delays, so a circuit whose behaviour depends on gate delay -- a pulse generator built from a
+   * chain of inverters, say -- will not agree with the editor here.
+   */
+  run() {
+    const rounds = 200;
+    this.oscillating = false;
+    for (let pass = 0; pass < rounds; pass++) {
+      this.settleCombinational(rounds);
+      if (!this.updateStateElements()) return;
+    }
+    this.oscillating = true;
+  }
+
+  settleCombinational(limit) {
+    for (let round = 0; round < limit; round++) {
+      const next = new Uint8Array(this.circuit.threadCount).fill(UNK);
+      for (const comp of this.circuit.components) {
+        for (const [portIndex, bits] of this.outputsOf(comp)) {
+          const netId = comp.ports[portIndex];
+          if (netId < 0) continue;
+          const net = this.netOf(netId);
+          for (let i = 0; i < bits.length && i < net.threads.length; i++) {
+            const t = net.threads[i];
+            next[t] = joinBit(next[t], bits[i]);
+          }
+        }
+      }
+      let changed = false;
+      for (let i = 0; i < next.length; i++) {
+        if (next[i] !== this.threads[i]) { changed = true; this.threads[i] = next[i]; }
+      }
+      if (!changed) return;
+    }
+    this.oscillating = true;
+  }
+
+  /** @return true when some stored value moved, so the combinational half needs settling again. */
+  updateStateElements() {
+    let moved = false;
+    for (const comp of this.circuit.components) {
+      const entry = this.state.get(comp.id);
+      if (!entry) continue;
+      if (FLIPFLOP[comp.kind]) moved = this.updateFlipFlop(comp, entry) || moved;
+      else if (comp.kind === "Register") moved = this.updateRegister(comp, entry) || moved;
+      else if (comp.kind === "Counter") moved = this.updateCounter(comp, entry) || moved;
+    }
+    return moved;
+  }
+
+  /**
+   * Whether a clock edge just arrived, and remembering the level for next time.
+   *
+   * <p>Straight from ClockState.updateClock, including the level-sensitive settings, where every
+   * pass counts as a trigger for as long as the level holds.
+   */
+  clockEdge(comp, entry, port) {
+    const clock = this.valueOfPort(comp, port)[0];
+    const previous = entry.lastClock;
+    entry.lastClock = clock;
+    switch (comp.a_trigger) {
+      case "falling": return previous === ONE && clock === ZERO;
+      case "high": return clock === ONE;
+      case "low": return clock === ZERO;
+      default: return previous === ZERO && clock === ONE;
+    }
+  }
+
+  /** Replaces the stored bits, reporting whether anything actually moved. */
+  static store(entry, bits) {
+    let moved = false;
+    for (let i = 0; i < entry.value.length; i++) {
+      const bit = i < bits.length ? bits[i] : ZERO;
+      if (entry.value[i] !== bit) { entry.value[i] = bit; moved = true; }
+    }
+    return moved;
+  }
+
+  updateFlipFlop(comp, entry) {
+    const spec = FLIPFLOP[comp.kind];
+    const n = spec.inputs;
+    const triggered = this.clockEdge(comp, entry, n);
+    let next = entry.value[0];
+    // Asynchronous clear beats preset beats the clock, as it does in the editor.
+    if (this.valueOfPort(comp, n + 3)[0] === ONE) {
+      next = ZERO;
+    } else if (this.valueOfPort(comp, n + 4)[0] === ONE) {
+      next = ONE;
+    } else if (triggered) {
+      const inputs = [];
+      for (let i = 0; i < n; i++) inputs.push(this.valueOfPort(comp, i)[0]);
+      const computed = spec.next(inputs, entry.value[0]);
+      // An undefined next value leaves the flip-flop holding what it had.
+      if (computed === ZERO || computed === ONE) next = computed;
+    }
+    return Simulation.store(entry, [next]);
+  }
+
+  updateRegister(comp, entry) {
+    const triggered = this.clockEdge(comp, entry, 2);
+    if (this.valueOfPort(comp, 3)[0] === ONE) {
+      return Simulation.store(entry, makeValue(entry.value.length, ZERO));
+    }
+    if (triggered && this.valueOfPort(comp, 4)[0] !== ZERO) {
+      return Simulation.store(entry, this.valueOfPort(comp, 1));
+    }
+    return false;
+  }
+
+  /**
+   * Counter, with its load, direction and enable ports and its behaviour on reaching the limit.
+   *
+   * <p>One divergence, deliberately: Logisim throws when a counter holding an undefined value is
+   * clocked, because it works out the carry from a value it has just decided is null. The page
+   * settles on an undefined count with no carry instead, which is what the surrounding code reads
+   * as if the exception had not happened.
+   */
+  updateCounter(comp, entry) {
+    const width = entry.value.length;
+    const limit = comp.a_max === undefined
+      ? (1n << BigInt(width)) - 1n : BigInt(comp.a_max) & ((1n << BigInt(width)) - 1n);
+    const triggered = this.clockEdge(comp, entry, 2);
+
+    if (this.valueOfPort(comp, 3)[0] === ONE) {
+      entry.carry = ZERO;
+      return Simulation.store(entry, makeValue(width, ZERO));
+    }
+    const load = this.valueOfPort(comp, 4)[0] === ONE;
+    const up = this.valueOfPort(comp, 5)[0] !== ZERO;
+    const enabled = this.valueOfPort(comp, 6)[0] !== ZERO;
+    const loadValue = bitsToBigLoose(this.valueOfPort(comp, 1), false) & limit;
+    const held = bitsToBig(entry.value, false);
+
+    let next;
+    if (!triggered) next = held;
+    else if (load) next = loadValue;
+    else if (held === null) next = null;
+    else if (!enabled) next = held;
+    else if (held === (up ? limit : 0n)) {
+      switch (comp.a_ongoal) {
+        case "stay": next = held; break;
+        case "load": next = loadValue; break;
+        case "continue": next = up ? held + 1n : held - 1n; break;
+        default: next = up ? 0n : limit; // wrap
+      }
+    } else {
+      next = up ? held + 1n : held - 1n;
+    }
+
+    entry.carry = next !== null && next === (up ? limit : 0n) ? ONE : ZERO;
+    return Simulation.store(entry, next === null ? makeValue(width, ERR) : bigToBits(next, width));
+  }
+
+  /** Whether anything is attached to a port, which some components ask before reporting an error. */
+  connected(comp, port) {
+    const netId = comp.ports[port];
+    if (netId < 0) return false;
+    const net = this.netOf(netId);
+    return net.pins.length > 1 || net.segments.length > 0;
+  }
+
+  outputsOf(comp) {
+    // A subcircuit box drives nothing: it was flattened at export, and its ports are already the
+    // same nodes as the pins behind them. Naming it here rather than relying on its kind being
+    // unrecognised matters, because that kind is whatever the circuit was called.
+    if (comp.passive) return [];
+    const width = comp.portWidths[0] || 1;
+    switch (comp.kind) {
+      case "Pin":
+        return comp.a_isInput ? [[0, this.inputs.get(comp.id)]] : [];
+      case "Clock":
+        return [[0, Uint8Array.from([this.clockHigh(comp)])]];
+      case "Constant":
+        return [[0, bigToBits(BigInt(comp.a_value === undefined ? 1 : comp.a_value), width)]];
+      case "Power":
+        return [[0, makeValue(width, ONE)]];
+      case "Ground":
+        return [[0, makeValue(width, ZERO)]];
+      case "NOT Gate":
+        return [[0, invert(this.valueOfPort(comp, 1))]];
+      case "Buffer":
+        return [[0, this.valueOfPort(comp, 1)]];
+      case "Bit Extender":
+        return [[0, this.extend(comp)]];
+      case "Multiplexer": case "Demultiplexer": case "Decoder":
+        return this.plex(comp);
+      case "Adder": {
+        const [sum, carry] = computeSum(
+          width, this.valueOfPort(comp, 0), this.valueOfPort(comp, 1),
+          this.valueOfPort(comp, 3)[0]);
+        return [[2, sum], [4, Uint8Array.from([carry])]];
+      }
+      case "Subtractor": {
+        // A subtractor is an adder fed the complement of b and of the incoming borrow.
+        const borrowIn = this.valueOfPort(comp, 3)[0];
+        const [difference, carry] = computeSum(
+          width, this.valueOfPort(comp, 0), invert(this.valueOfPort(comp, 1)),
+          flipBit(borrowIn === UNK ? ZERO : borrowIn));
+        return [[2, difference], [4, Uint8Array.from([flipBit(carry)])]];
+      }
+      case "Negator":
+        return [[1, negate(this.valueOfPort(comp, 0))]];
+      case "Comparator": {
+        const [gt, eq, lt] = compareValues(
+          this.valueOfPort(comp, 0), this.valueOfPort(comp, 1), comp.a_mode !== "unsigned");
+        return [[2, Uint8Array.from([gt])], [3, Uint8Array.from([eq])],
+                [4, Uint8Array.from([lt])]];
+      }
+      case "Multiplier": {
+        const [low, high] = computeProduct(
+          width, this.valueOfPort(comp, 0), this.valueOfPort(comp, 1),
+          this.valueOfPort(comp, 3), comp.a_mode === "unsigned");
+        return [[2, low], [4, high]];
+      }
+      case "Shifter": {
+        const value = this.valueOfPort(comp, 0);
+        const distance = this.valueOfPort(comp, 1);
+        // An unconnected data port is a zero width value in the editor, which the shifter reports
+        // as an error rather than shifting.
+        if (!isDefined(distance) || !this.connected(comp, 0)) {
+          return [[2, makeValue(width, ERR)]];
+        }
+        return [[2, shiftBits(value, Number(bitsToBig(distance, false)), comp.a_shift)]];
+      }
+      case "Counter": {
+        const entry = this.state.get(comp.id);
+        return [[0, entry.value], [7, Uint8Array.from([entry.carry])]];
+      }
+      case "Button": {
+        // Which way round the press reads is the component's own attribute, not a fixed polarity.
+        const pressed = (this.self.get(comp.id) & 1) !== 0;
+        const passive = comp.a_press === "passive";
+        return [[0, Uint8Array.from([pressed === passive ? ZERO : ONE])]];
+      }
+      case "DipSwitch": {
+        const bits = this.self.get(comp.id) | 0;
+        const driven = [];
+        for (let i = 0; i < comp.ports.length; i++) {
+          driven.push([i, Uint8Array.from([(bits >> i) & 1])]);
+        }
+        return driven;
+      }
+      case "Register":
+        return [[0, this.state.get(comp.id).value]];
+      default: {
+        // A splitter is wiring, merged bit by bit when the netlist was built, so it drives nothing.
+        // The rest of SINKS show a value without producing one.
+        if (SINKS.has(comp.kind)) return [];
+        const flipFlop = FLIPFLOP[comp.kind];
+        if (flipFlop) {
+          const held = this.state.get(comp.id).value;
+          return [[flipFlop.inputs + 1, held], [flipFlop.inputs + 2, invert(held)]];
+        }
+        const gate = GATES[comp.kind];
+        if (!gate) return [];
+        const inputs = [];
+        for (let i = 1; i < comp.ports.length; i++) inputs.push(this.valueOfPort(comp, i));
+        if (inputs.length === 0) return [];
+        let out = reduceGate(inputs, gate[0], comp.a_negate || 0, width);
+        if (gate[1]) out = invert(out);
+        return [[0, out]];
+      }
+    }
+  }
+
+  /**
+   * Multiplexer, demultiplexer and decoder, which Logisim writes three times over one shape.
+   *
+   * <p>Port order is positional and depends on the attributes: the lanes come first, then select,
+   * then enable if it exists, then the single data port. Getting that arithmetic wrong reads the
+   * select line as data and produces a page that is wrong only for some selections.
+   */
+  plex(comp) {
+    const selectBits = comp.a_select === undefined ? 1 : comp.a_select;
+    const lanes = 1 << selectBits;
+    const enabled = comp.a_enable === true;
+    const width = comp.kind === "Decoder" ? 1 : (comp.a_width === undefined ? 1 : comp.a_width);
+    const whenDisabled = comp.a_disabled === "0" ? ZERO : UNK;
+    const enable = enabled ? this.valueOfPort(comp, lanes + 1)[0] : ONE;
+    const select = this.valueOfPort(comp, lanes);
+    const dataPort = lanes + (enabled ? 2 : 1);
+
+    if (comp.kind === "Multiplexer") {
+      let out;
+      if (enable === ZERO) out = makeValue(width, whenDisabled);
+      else if (enable === ERR && this.connected(comp, lanes + 1)) out = makeValue(width, ERR);
+      else if (isDefined(select)) out = this.valueOfPort(comp, Number(bitsToBig(select, false)));
+      else if (anyError(select)) out = makeValue(width, ERR);
+      else out = makeValue(width, UNK);
+      return [[dataPort, out]];
+    }
+
+    // A demultiplexer and a decoder differ only in what the chosen lane carries.
+    let others = makeValue(width, comp.a_tristate === true ? UNK : ZERO);
+    let chosen = -1;
+    let value = null;
+    if (enable === ZERO) {
+      others = makeValue(width, whenDisabled);
+    } else if (enable === ERR && this.connected(comp, lanes + 1)) {
+      others = makeValue(width, ERR);
+    } else if (isDefined(select)) {
+      chosen = Number(bitsToBig(select, false));
+      value = comp.kind === "Decoder"
+        ? Uint8Array.from([ONE])
+        : this.valueOfPort(comp, dataPort);
+    } else if (anyError(select)) {
+      others = makeValue(width, ERR);
+    } else {
+      others = makeValue(width, UNK);
+    }
+
+    const driven = [];
+    for (let i = 0; i < lanes; i++) driven.push([i, i === chosen ? value : others]);
+    return driven;
+  }
+
+  extend(comp) {
+    const outWidth = comp.portWidths[0] || 1;
+    const input = this.valueOfPort(comp, 1);
+    const out = makeValue(outWidth, UNK);
+    for (let i = 0; i < outWidth; i++) {
+      if (i < input.length) { out[i] = input[i]; continue; }
+      switch (comp.a_type) {
+        case "one": out[i] = ONE; break;
+        case "sign": out[i] = input.length ? input[input.length - 1] : UNK; break;
+        case "input": out[i] = this.valueOfPort(comp, 2)[0]; break;
+        default: out[i] = ZERO;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Which of a component's pre-rendered pictures applies right now.
+   *
+   * <p>The bit order is not a convention the page reproduces: the exporter lists the (port, bit)
+   * pairs it swept, in the order it swept them, and this reads exactly those. A bit that is not
+   * TRUE counts as zero, which is what Logisim's own displays do with a floating input.
+   */
+  stateIndexOf(comp) {
+    const dyn = comp.dyn;
+    if (!dyn) return 0;
+    if (!dyn.src) {
+      const own = this.inputs.get(comp.id);
+      if (!own) return this.self.get(comp.id) | 0;
+      let index = 0;
+      for (let bit = 0; bit < own.length; bit++) if (own[bit] === ONE) index |= 1 << bit;
+      return index;
+    }
+    let index = 0;
+    for (let i = 0; i < dyn.src.length; i++) {
+      const bits = this.valueOfPort(comp, dyn.src[i][0]);
+      if (bits[dyn.src[i][1]] === ONE) index |= 1 << i;
+    }
+    return index;
+  }
+
+  setSelf(comp, value) {
+    if (!comp.poke) return;
+    const masked = comp.poke >= 32 ? value | 0 : value & ((1 << comp.poke) - 1);
+    if (this.self.get(comp.id) === masked) return;
+    this.self.set(comp.id, masked);
+    this.run();
+  }
+
+  toggleSelfBit(comp, bit) {
+    if (bit < 0 || bit >= comp.poke) return;
+    this.setSelf(comp, (this.self.get(comp.id) | 0) ^ (1 << bit));
+  }
+
+  toggleInput(comp) {
+    const bits = this.inputs.get(comp.id);
+    if (!bits) return;
+    const width = bits.length;
+    if (width === 1) {
+      bits[0] = bits[0] === ONE ? ZERO : ONE;
+    } else {
+      const current = bitsToBig(bits, false);
+      this.inputs.set(comp.id, bigToBits((current === null ? 0n : current) + 1n, width));
+    }
+    this.run();
+  }
+}
+
+// __SIMULATION_END__ -- everything above is engine and is lifted out verbatim by
+// HtmlExportDifferentialTest to run under Node against Logisim's own simulator. Keep it free of
+// anything that needs a DOM, and keep this marker where it is.
+
+// ---------------------------------------------------------------- drawing
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function el(name, attrs) {
+  const node = document.createElementNS(SVG_NS, name);
+  for (const key in attrs) node.setAttribute(key, attrs[key]);
+  return node;
+}
+
+/** One entry of a pre-rendered appearance patch. A null value means the attribute goes away. */
+function setPart(node, attribute, value) {
+  if (!node) return;
+  if (attribute === "#text") {
+    node.textContent = value === null ? "" : value;
+  } else if (value === null) {
+    node.removeAttribute(attribute);
+  } else {
+    node.setAttribute(attribute, value);
+  }
+}
+
+/** Circuit coordinates of a pointer event, whatever the page has scaled the drawing to. */
+function circuitPointOf(view, event) {
+  const local = new DOMPoint(event.clientX, event.clientY)
+    .matrixTransform(view.root.getScreenCTM().inverse());
+  return [local.x + view.ox, local.y + view.oy];
+}
+
+/**
+ * Which switch of a DIP switch a click landed on.
+ *
+ * <p>This is the mapping the component's own poker applies, kept identical so that a click here
+ * and a click in the editor pick the same switch. The exporter drove the same mapping backwards
+ * when it rendered the pictures, so all three agree by construction rather than by inspection.
+ */
+function dipSwitchAt(comp, px, py) {
+  const [lx, ly] = comp.loc;
+  const n = comp.poke;
+  const facing = comp.hit.facing;
+  if (facing === "south") return n + Math.trunc((px - lx - 5) / 10);
+  if (facing === "east") return Math.trunc((py - ly - 5) / 10);
+  if (facing === "west") return Math.trunc((ly - py - 5) / 10);
+  return Math.trunc((px - lx - 5) / 10);
+}
+
+class View {
+  constructor(circuit, sim) {
+    this.circuit = circuit;
+    this.sim = sim;
+    this.ox = circuit.originX;
+    this.oy = circuit.originY;
+
+    this.root = el("svg", {
+      viewBox: `0 0 ${circuit.width} ${circuit.height}`,
+      width: circuit.width, height: circuit.height,
+      xmlns: SVG_NS,
+    });
+    this.wireLayer = el("g", { "stroke-linecap": "round" });
+    this.bodyLayer = el("g", {});
+    this.dotLayer = el("g", {});
+    this.dynamicLayer = el("g", {});
+    this.hitLayer = el("g", {});
+    this.root.append(this.wireLayer, this.bodyLayer, this.dotLayer,
+                     this.dynamicLayer, this.hitLayer);
+
+    // Bodies are Logisim's own drawing, already in page coordinates. Each component gets a group
+    // of its own so an appearance patch can address its elements by position.
+    this.bodyNodes = [];
+    for (const comp of circuit.components) {
+      const group = el("g", {});
+      group.innerHTML = comp.svg || "";
+      this.bodyLayer.append(group);
+      this.bodyNodes.push(group);
+    }
+
+    this.wireNodes = [];
+    for (const net of circuit.nets) {
+      for (const seg of net.segments) {
+        const line = el("line", {
+          x1: seg[0] - this.ox, y1: seg[1] - this.oy,
+          x2: seg[2] - this.ox, y2: seg[3] - this.oy,
+          "stroke-width": net.width > 1 ? 3 : 2,
+        });
+        this.wireLayer.append(line);
+        this.wireNodes.push([line, net]);
+      }
+    }
+
+    // Port dots carry a value, so the page owns them. Leaving them baked into the bodies would
+    // freeze them at whatever the editor happened to be showing when the export was made.
+    this.portDots = [];
+    for (const comp of circuit.components) {
+      if (comp.hidden) continue;
+      for (let port = 0; port < comp.portLocs.length; port++) {
+        const dot = el("circle", {
+          cx: comp.portLocs[port][0] - this.ox,
+          cy: comp.portLocs[port][1] - this.oy,
+          r: circuit.pinDot,
+        });
+        this.dotLayer.append(dot);
+        this.portDots.push([dot, comp, port]);
+      }
+    }
+
+    this.buildAnimated();
+    this.buildInteractive();
+    this.buildPokeTargets();
+  }
+
+  colorFor(net) {
+    const colors = this.circuit.colors;
+    const bits = this.sim.readThreads(net.id, net.width);
+    if (bits.some((b) => b === ERR)) return colors.error;
+    if (net.width > 1) return bits.some((b) => b === UNK) ? colors.unknown : colors.multi;
+    if (bits[0] === UNK) return colors.unknown;
+    return bits[0] === ONE ? colors["true"] : colors["false"];
+  }
+
+  /**
+   * Components that were rendered once per state. Everything a patch can touch is read back out of
+   * the base picture first, so a state can be undone by restoring rather than by re-rendering.
+   */
+  buildAnimated() {
+    this.animated = [];
+    for (const comp of this.circuit.components) {
+      if (!comp.dyn) continue;
+      const node = this.bodyNodes[comp.id];
+      const entry = { comp, node, elements: node.querySelectorAll("*"), reset: [], shown: -1 };
+      if (comp.dyn.mode !== "full") {
+        const seen = new Set();
+        for (const patch of comp.dyn.patch) {
+          for (const [index, attribute] of patch) {
+            const key = index + " " + attribute;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            const target = entry.elements[index];
+            let was = null;
+            if (!target) was = null;
+            else if (attribute === "#text") was = target.textContent;
+            else if (target.hasAttribute(attribute)) was = target.getAttribute(attribute);
+            entry.reset.push([index, attribute, was]);
+          }
+        }
+      }
+      this.animated.push(entry);
+    }
+  }
+
+  refreshAnimated() {
+    for (const entry of this.animated) {
+      const index = this.sim.stateIndexOf(entry.comp);
+      if (index === entry.shown) continue;
+      entry.shown = index;
+      const dyn = entry.comp.dyn;
+      if (dyn.mode === "full") {
+        entry.node.innerHTML = dyn.frags[index] || dyn.frags[0];
+        continue;
+      }
+      for (const [at, attribute, value] of entry.reset) {
+        setPart(entry.elements[at], attribute, value);
+      }
+      if (dyn.mode === "table") {
+        const patch = dyn.patch[index] || [];
+        for (const [at, attribute, value] of patch) setPart(entry.elements[at], attribute, value);
+      } else {
+        for (let bit = 0; bit < dyn.patch.length; bit++) {
+          if (((index >> bit) & 1) === 0) continue;
+          for (const [at, attribute, value] of dyn.patch[bit]) {
+            setPart(entry.elements[at], attribute, value);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * The fallback for a pin or probe too wide to have been drawn once per value.
+   *
+   * <p>Anything narrow enough came out of Logisim's own painter and is already in place; this is
+   * for the rest, where a legible number beats a frozen picture of the wrong one.
+   */
+  buildInteractive() {
+    this.dynamic = [];
+    for (const comp of this.circuit.components) {
+      if (comp.hidden || comp.dyn) continue;
+      if (comp.kind !== "Pin" && comp.kind !== "Probe") continue;
+      const [bx, by, bw, bh] = comp.bounds;
+      const x = bx - this.ox, y = by - this.oy;
+      const group = el("g", {});
+      const shape = el("rect", {
+        x, y, width: bw, height: bh, stroke: "#444", "stroke-width": 1,
+        fill: "#fff", rx: comp.a_isInput ? 0 : 4,
+      });
+      const text = el("text", {
+        x: x + bw / 2, y: y + bh / 2 + 4, "text-anchor": "middle",
+        "font-size": 11, "font-family": "monospace", fill: "#111",
+      });
+      group.append(shape, text);
+      this.dynamicLayer.append(group);
+      this.dynamic.push({ comp, shape, text });
+    }
+  }
+
+  /**
+   * Buttons and switches. The target is the component's own bounds, which is the area the editor
+   * hands to the poker, so nothing is clickable here that would not be clickable there.
+   */
+  buildPokeTargets() {
+    for (const comp of this.circuit.components) {
+      if (!comp.poke) continue;
+      const [bx, by, bw, bh] = comp.bounds;
+      const target = el("rect", {
+        x: bx - this.ox, y: by - this.oy, width: bw, height: bh,
+        fill: "transparent", class: "clickable",
+      });
+      if (comp.kind === "Pin") {
+        // Clicking a pin steps it, which for one bit is a toggle and for a bus is a count.
+        target.addEventListener("click", () => { this.sim.toggleInput(comp); this.refresh(); });
+      } else if (comp.kind === "Button") {
+        // Held down while the pointer is down, exactly as the real one behaves.
+        const press = (down) => { this.sim.setSelf(comp, down ? 1 : 0); this.refresh(); };
+        target.addEventListener("pointerdown", (e) => {
+          // Capture so releasing away from the button still releases it. Not every pointer can be
+          // captured, and a button that cannot be released would be worse than one that drags off.
+          try {
+            target.setPointerCapture(e.pointerId);
+          } catch (ignored) {
+            // no capture available; the pointerup below still covers the ordinary case
+          }
+          press(true);
+        });
+        target.addEventListener("pointerup", () => press(false));
+        target.addEventListener("pointercancel", () => press(false));
+      } else {
+        target.addEventListener("click", (e) => {
+          const [px, py] = circuitPointOf(this, e);
+          const which = comp.hit && comp.hit.kind === "dip" ? dipSwitchAt(comp, px, py) : 0;
+          this.sim.toggleSelfBit(comp, which);
+          this.refresh();
+        });
+      }
+      this.hitLayer.append(target);
+    }
+  }
+
+  refresh() {
+    for (const [line, net] of this.wireNodes) line.setAttribute("stroke", this.colorFor(net));
+    const colors = this.circuit.colors;
+    for (const [dot, comp, port] of this.portDots) {
+      const netId = comp.ports[port];
+      dot.setAttribute("fill", netId < 0 ? colors.nil : this.colorFor(this.circuit.nets[netId]));
+    }
+    this.refreshAnimated();
+    for (const item of this.dynamic) {
+      const comp = item.comp;
+      const bits = comp.kind === "Pin" && comp.a_isInput
+        ? this.sim.inputs.get(comp.id)
+        : this.sim.valueOfPort(comp, 0);
+      item.text.textContent = formatValue(bits, comp.a_radix);
+    }
+    const warn = document.getElementById("warn");
+    warn.style.display = this.sim.oscillating ? "block" : "none";
+    warn.textContent = this.sim.oscillating
+      ? "The circuit did not settle: it oscillates, or contains a feedback loop this export cannot resolve."
+      : "";
+  }
+}
+
+const sim = new Simulation(CIRCUIT);
+sim.run();
+const view = new View(CIRCUIT, sim);
+const stage = document.getElementById("stage");
+stage.append(view.root);
+view.refresh();
+
+// A circuit is drawn at the size the editor drew it. Wider than the window it would only be
+// scrolled, which is no way to meet a page, so it starts fitted and can be put back.
+const fitButton = document.getElementById("fit");
+const setFit = (on) => {
+  view.root.classList.toggle("fit", on);
+  fitButton.textContent = on ? "Actual size" : "Fit to width";
+};
+setFit(CIRCUIT.width > stage.clientWidth - 24);
+fitButton.addEventListener("click", () => setFit(!view.root.classList.contains("fit")));
+
+// The clock controls only appear when there is something for them to drive.
+const hasClock = CIRCUIT.components.some((c) => c.kind === "Clock");
+if (hasClock || CIRCUIT.components.some((c) => storedWidth(c) > 0)) {
+  const bar = document.getElementById("clockbar");
+  const counter = document.getElementById("tickcount");
+  bar.hidden = false;
+  let timer = null;
+
+  const redraw = () => { view.refresh(); counter.textContent = sim.ticks + " ticks"; };
+  document.getElementById("tick").addEventListener("click", () => { sim.tick(); redraw(); });
+  document.getElementById("reset").addEventListener("click", () => { sim.reset(); redraw(); });
+  document.getElementById("run").addEventListener("click", (e) => {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+      e.target.textContent = "Run";
+    } else {
+      timer = setInterval(() => { sim.tick(); redraw(); }, 250);
+      e.target.textContent = "Stop";
+    }
+  });
+}
+</script>
+</body>
+</html>

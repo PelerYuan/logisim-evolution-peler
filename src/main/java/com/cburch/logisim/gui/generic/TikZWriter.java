@@ -468,6 +468,15 @@ public class TikZWriter extends Graphics2D {
     MyInfo.writeFile(outfile);
   }
 
+  /**
+   * Peler Edition: the recorded drawing as an SVG document rather than a file, so the HTML export
+   * can take one component's fragment at a time. See {@code TikZInfo.buildSvgDocument}.
+   */
+  public org.w3c.dom.Document buildSvgDocument(int width, int height)
+      throws javax.xml.parsers.ParserConfigurationException {
+    return MyInfo.buildSvgDocument(width, height);
+  }
+
   public void writeSvg(int width, int height, File outfile)
       throws ParserConfigurationException, TransformerException {
     MyInfo.writeSvg(width, height, outfile);

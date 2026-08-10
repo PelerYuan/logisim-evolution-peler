@@ -24,6 +24,25 @@ Release tags going forward: `v<peler major>.<peler minor>.<peler build number>` 
 independent of upstream's own version. The historical `v1.0.0-peler.1` through `v1.0.0-peler.4` tags
 predate this and are not being renamed/rebuilt.
 
+### Dev builds must outrank the current stable (2026-08-10)
+
+The scheme above put dev at a fixed `1.0.<run_number>` and started stable at `v1.1.0`, on the
+reasoning that keeping the two in separate number ranges keeps them from colliding. They do not
+collide — but they are ordered, and the order came out backwards.
+
+Every channel shares one `--win-upgrade-uuid`, so Windows Installer compares the numbers *across*
+channels. Once stable v1.1.0 existed, every dev build — `1.0.32` and counting — looked older than
+it, so installing a dev build over stable is a downgrade, which the MSI refuses. The dev channel is
+by definition the newer code, so this made it uninstallable for anyone already on stable.
+
+Fixed by giving dev the patch field of the *current* stable: `X.Y.<run_number>` where `X.Y` comes
+from whichever release GitHub marks latest. Stable then owns the major and the minor, and the
+workflow rejects a stable tag whose patch is not zero — `1.1.1` would sort below the dev builds of
+`1.1.x` and could never be installed over them. The base is read from the releases API rather than
+from git tags, because this repository still carries upstream's tags and `v4.1.0` is the highest.
+
+Nothing publishes into `1.0.x` any more; `v1.0.5` through `v1.0.20` stay as historical tags.
+
 **Multi-platform (added 2026-08-07)**: `release.yml` now mirrors `nightly.yml`'s full platform
 coverage instead of Windows only -- Linux deb/rpm/snap, Linux ARM deb/rpm, macOS dmg (x86_64 +
 aarch64), Windows MSI/zip, all built from a shared `prep` job (resolves the tag/version once) and
@@ -495,6 +514,33 @@ cache and renders correctly.
 Key files: `gui/find/ToolSearch.java`, `gui/find/FindToolDialog.java` (both new),
 `prefs/AppPreferences.java`, `gui/menu/MenuProject.java`.
 
+### Enter and Shift+Enter did nothing (found and fixed 2026-08-10)
+
+The feature shipped with its two headline keys dead. Pressing Enter left the dialog open and armed
+no tool; only the mouse double-click worked. It had been recorded as "unverified by automation",
+on the theory that synthetic key events never reach the JVM — the wrong conclusion, and it kept the
+bug alive. Real XTEST events do reach Swing; only `xdotool key --window <id>` is ignored.
+
+The cause is a method-resolution trap with no compiler warning. `javax.swing.Action` has carried a
+`default boolean accept(Object)` since JDK 9. `AcceptAction extends AbstractAction` inherits it, and
+Java resolves an unqualified call against the *inner* class's own hierarchy first, so
+`accept(sticky)` inside that action bound to `Action.accept(Object)` — boxing the flag, returning
+true and never reaching `FindToolDialog.accept(boolean)`. Confirmed from the bytecode rather than by
+reading: `invokestatic Boolean.valueOf` followed by `invokevirtual accept:(Ljava/lang/Object;)Z`
+and a `pop`.
+
+The same call written in the `MouseAdapter` compiled correctly, because `MouseAdapter` has no
+`accept` member to shadow the enclosing one — which is exactly why double-click worked and the keys
+did not, and why the difference looked like an input-layer problem.
+
+Fixed by renaming the enclosing method to `chooseSelected(boolean)`, a name no nested `Action` can
+inherit; qualifying the call would have worked too but leaves the trap for whoever adds the next
+action. `FindToolDialogTest` (new) fails if a method named `accept` reappears on the class.
+
+Verified live on the Linux VM: Enter arms the selected tool and closes; Shift+Enter arms it in
+continuous mode, and three clicks placed three gates; Esc closes with the current tool untouched;
+double-clicking the third result selects that row rather than the default first one.
+
 ## Feature 8 — Settings and identity isolation (2026-08-09)
 
 Changing the language in one edition changed it in the other. `Preferences.userNodeForPackage(X.class)`
@@ -525,6 +571,322 @@ Key files: `prefs/PelerPreferences.java` (new), `prefs/AppPreferences.java`, `Ma
 `gui/menu/MenuFile.java`, `file/Loader.java`, `build.gradle.kts`, `snap/snapcraft.yaml`,
 `support/Flatpak/`.
 
+### FPGA workspace (2026-08-10)
+
+The last shared path left after that pass. Upstream defaults `FPGAWorkspace` to
+`~/logisim_evolution_workspace`, and both editions generated into it. That directory is not an inert
+output dump: `DownloadBase.getProjDir` lays it out as `<workspace>/<project file name>/<circuit>/`
+and `writeHDL` calls `cleanDirectory` on the circuit's directory before regenerating it. The same
+project opened in either edition therefore resolves to the same path, and each download deletes
+whatever the other edition put there.
+
+The default is now `~/logisim_evolution_peler_workspace`, kept next to the shared one rather than
+inside it, and defined in `PelerPreferences.defaultFpgaWorkspace()` so the reason sits with the rest
+of the separation logic instead of inline in `AppPreferences`.
+
+Only the *default* moves. `PrefMonitorString` writes to the store on `set()` only, so a workspace
+the user picked themselves is a stored value and still wins; **FPGA > Options** changes nothing. No
+migration of an existing default workspace: the fork has no users yet, and what lives there is
+generated HDL and scripts that the next download rebuilds anyway.
+
+`FPGAWorkspace` is also skipped by the settings import (`copyNode`, root level only, alongside
+`pelerImportAsked`). Importing it would hand both editions the same generating-and-cleaning
+directory again, which contradicts what the import dialog promises. Pointing this edition back at
+the old workspace by hand still works.
+
+`PelerPreferencesTest` (new) pins the default away from upstream's path. It deliberately does not
+touch `AppPreferences`, whose static initialiser reads the real preference store.
+
+Key files: `prefs/PelerPreferences.java`, `prefs/AppPreferences.java`,
+`src/test/java/com/cburch/logisim/prefs/PelerPreferencesTest.java` (new).
+
+## Feature 9 — Interactive HTML export (experimental, 2026-08-10)
+
+Export a circuit as one self-contained HTML page that cannot be edited but still simulates: click an
+input pin and the values propagate. Branch `peler/html-export`.
+
+### Why not the obvious approaches
+
+**Precomputing every state at export time** and shipping a lookup table needs no simulator in the
+page and is perfectly faithful — for combinational circuits with few input bits. One 8-bit pin is
+already 256 entries, two are 65536, and a single flip-flop turns the state space into (inputs x
+internal state) with no bound. A digital logic course is mostly sequential circuits, so this dies on
+the second circuit anyone tries.
+
+**Compiling the Java to WebAssembly** (CheerpJ, TeaVM) would be the highest-fidelity route, but
+Logisim's model classes are entangled with AWT down to component painting, so what compiles is the
+whole Swing application: tens of megabytes, slow to start, and an editor — the opposite of the
+requirement, which would then have to be locked back down.
+
+### The split that makes this tractable
+
+Geometry comes from Logisim, dynamics from the page.
+
+Component bodies are drawn by the editor's own paint code through `TikZWriter`, which already backs
+File > Export Image's SVG option, so gates and everything else look exactly as they do in the editor
+with no drawing code in JavaScript. Each component is rendered through a writer of its own and its
+fragment wrapped separately; grouping one shared writer's output by index into `TikZInfo.contents`
+would not survive `optimize()`, which merges and reorders. `TikZInfo.buildSvgDocument` (new) returns
+the document instead of writing a file.
+
+Only what the simulation changes is drawn by the page: wires and their colours, and the three
+components that show or accept a value (`Pin`, `LED`, `Probe`), which also need hit areas. The
+editor's own wire colours are exported with the netlist, since they are preferences — an export from
+someone who retuned them should not come out looking like a different program.
+
+### Connectivity
+
+`HtmlCircuitModel` derives nets itself rather than borrowing `CircuitWires`' bundle map, which is
+package-private and carries much more than this needs. It reproduces the editor's rules: ports and
+wire ends sharing a `Location` are one node, a wire end landing anywhere along another wire joins
+it, and same-label tunnels are one node. Splitters are deliberately *not* connectivity — a splitter
+maps bit ranges, which is component behaviour, so it will be exported as a component and sliced by
+the runtime.
+
+### Phase 1 scope
+
+Combinational only: pins, constants, tunnels, probes, LEDs and the gate family. The runtime iterates
+to a fixed point with a 200-round cap rather than reproducing `Propagator`'s event queue, and says
+so on screen if it fails to settle. Anything outside `HtmlExporter.supportedKinds()` stops the export
+and is named in a dialog — an export that silently computes the wrong answer would be worse than no
+export.
+
+Verified end to end: a two-input AND circuit exported from the running application, the netlist
+checked to have the gate output and the output pin on one net, all four rows of the truth table
+evaluated by running the page's own simulation code under Node, and the page itself clicked through
+in Chrome — inputs toggle, wires change colour, the output follows.
+
+### Phase 2 — the differential test (2026-08-10)
+
+The export states the semantics of every supported component twice, in two languages, and nothing
+makes the second copy follow the first. A divergence surfaces as a page that quietly computes the
+wrong answer, so this was built before the component list grew rather than after.
+
+`HtmlExportDifferentialTest` loads a fixture circuit, drives every combination of its input pins
+through Logisim's own `Propagator`, exports the page, lifts the engine out of it at the
+`__SIMULATION_END__` marker, runs the same sweep under Node, and compares row by row. It follows
+`TtyInterface`'s headless pattern: a fresh `CircuitState.createRootState` per row, `driveInputPin`
+in, `Pin.FACTORY.getValue` out. It skips itself when `node` is not on the PATH.
+
+**Tests now run with their own preferences store.** Touching almost anything in the simulator pulls
+in `AppPreferences` -- `Value`'s colours are preferences -- and a headless run resolves
+`hotkeyMenuMask` to `ALT_DOWN_MASK` and persists it, which would rewrite the developer's real
+shortcuts from a test run. `build.gradle.kts` now points `java.util.prefs.userRoot` at a directory
+under `build/`. Only the Unix backend honours that; on Windows the registry store ignores it.
+
+The harness was mutation-checked rather than trusted: inverting the JavaScript XOR to behave like OR
+made it fail on the expected row, so it has teeth.
+
+It caught two real faults immediately, both in hand-written fixtures rather than in the exporter,
+which is itself informative -- port coordinates are not guessable. Gates whose outline carries a
+curve or an inversion bubble (XOR, NOR, NAND) sit ten units wider on the input side than AND, so
+wires drawn to the obvious coordinate miss and leave the circuit silently unconnected. And a doubled
+hyphen inside an XML comment makes a `.circ` unparseable, the same trap `default.templ` carries a
+warning about; the loader then tries to report it through a dialog and throws `HeadlessException`
+instead.
+
+### Phase 3 — splitters, and why values had to move onto bits (2026-08-10)
+
+A splitter cannot be a component that drives its ports. It is passive and bidirectional, so such a
+component has to re-drive on each round whatever it read on the last one; a driver that then changes
+value collides with that stale echo and the wire goes red for a round before settling. The first
+design had exactly this shape and would have failed the moment anyone clicked an input.
+
+Nor is a splitter plain connectivity: it joins *individual bits* of two nets, not the nets. So value
+identity moved off the net and onto the bit. Every net now carries a `threads` array naming the
+identity of each of its bits, splitters merge those identities in the exporter, and the runtime keeps
+one array indexed by thread. This is the same shape `WireBundle` uses in the editor, arrived at for
+the same reason.
+
+Also added: bit extender (zero, one, sign and input modes), power, ground, and multi-bit constants.
+
+`splitter.circ` joins two 1-bit inputs into a 2-bit bus through a splitter and extends a third input,
+so it fails if bit identity is wrong in either direction. Checked that it is not a vacuous pass: the
+circuit's own truth table shows S counting 0..3 and E holding its forced high bit.
+
+Not covered here: a pin's tristate and pull attributes, and drawing the width-mismatch error the
+editor shows when two different widths meet.
+
+### Phase 4 — sequential logic (2026-08-10)
+
+Clock, D flip-flop and register, plus tick, run and reset controls that appear on the page only when
+there is something for them to drive.
+
+**Settling happens in two alternating phases.** Combinational logic iterates to a fixed point while
+every state element holds its output still; only then do state elements look at their inputs and
+decide whether an edge arrived. Latching inside the settling loop would let one clock edge be seen
+several times, and a chain of flip-flops would shift more than one stage per tick. The fixture is
+built to fail if that regresses: the first flip-flop feeds its own inverted output back, so it halves
+the clock, and the second follows it one edge later.
+
+**This is a delta-cycle model, not a timed one.** Logisim gives components real propagation delays.
+A circuit whose behaviour depends on gate delay -- a pulse generator built from a chain of inverters
+is the usual example -- will not agree with the editor, and the differential test is the thing that
+will say so.
+
+The clock phase was taken from `Clock.ClockState.updateTick` rather than reasoned out. The first
+attempt used the high duration where Logisim uses the low one, which starts the clock in the
+opposite phase; the differential test caught it on tick 0 of the very first sequential fixture.
+
+`HtmlExportDifferentialTest` grew a second comparison for this: sequential fixtures cannot be swept
+over their inputs, so it drives a fixed number of ticks with `toggleClocks` on the Java side and
+`tick()` on the page's, and compares after every one.
+
+Not covered: counters, T/JK/SR flip-flops, shift registers, and RAM.
+
+### Phase 5 — display and clickable components (2026-08-10)
+
+Seven-segment display, hex digit display, LED, RGB LED, button and DIP switch. None of these could
+be drawn by hand in the page without a second, worse copy of Logisim's artwork, so none of them is:
+each is rendered by Logisim's own painter once per state at export time.
+
+**A component is driven offline to get those pictures.** `HtmlOfflineState` is an `InstanceState`
+with no simulation behind it, so `propagate` can be run against port values the exporter picks. The
+seven-segment display's segment map is therefore never restated anywhere; it comes out of the
+component. Buttons and DIP switches, whose value is not on any port, are set through their own
+`InstancePoker` at the coordinate the poker maps to that switch, so a click in the page and a click
+in the editor pick the same one by construction.
+
+**Shipping 256 pictures per display would be absurd, so states travel as differences** against the
+all-zero render, in the cheapest encoding that is exact for the component: one patch per state bit
+where the bits are independent (seven-segment, DIP switch), one patch per state where the shapes
+stay put but recolour (hex digit, whose four bits jointly choose a glyph), and whole fragments only
+where the shapes genuinely differ (a released button is a raised polygon, a pressed one a flat
+rectangle). Per-bit independence is checked against real renders rather than assumed, exhaustively
+where that is affordable. A seven-segment display costs about 400 bytes instead of 50 kB.
+
+**A component that remembers anything is refused an appearance.** The encoding is looked up by the
+value on the ports, which can only be right for a component that has nothing else to go on; a
+flip-flop's indicator shows what it latched. The exporter renders a state cold and again after
+another state has gone by, carrying the component's data across, and drops the encoding if the two
+differ. Flip-flops and registers therefore keep a frozen picture rather than a confidently wrong
+one, which is a phase 6 gap, not a bug.
+
+`HtmlExportAppearanceTest` unpacks every state of every animated component and compares it against a
+fresh render, and asserts the chosen encoding so a silent fall back to whole pictures is visible.
+The poke components join the differential test, since a button whose polarity or a switch whose bit
+order came out reversed looks perfectly reasonable on its own.
+
+**Two real defects came out of this phase, both older than it.**
+
+`ComponentDrawContext`'s six-argument constructor takes `printView`, not `showState`. Every export
+since phase 1 passed `true`, so every component was drawn in print mode with state and colour
+suppressed — which is why an LED had to be drawn by hand at all. Fixing it turned the whole page
+colour-accurate, including the flip-flop indicators.
+
+`Value.create(Value[])` indexes its array **least significant bit first**. The exporter and the
+differential test both filled it the other way round. On a one-bit port that is invisible, which is
+why every fixture passed; the hex digit display showed `A` for an input of `5`. Caught by reading
+the page, not by a test. `splitter.circ` now takes a two-bit input pin apart, which is the only
+fixture with a wide input pin, and reverting the fix makes it fail.
+
+Also in this phase: port dots are drawn by the page and coloured live rather than baked in, and
+bodies are rendered against a scratch circuit state, so an export no longer depends on what the
+editor happened to be showing.
+
+### Phase 6 — arithmetic, plexers and counters (2026-08-10)
+
+Multiplexer, demultiplexer and decoder; adder, subtractor, negator, comparator, multiplier and
+shifter; T, J-K and S-R flip-flops and the counter. Each is a transcription of the component's own
+`propagate`, including the paths that only run when an input is floating, because a page that shows
+a clean number where the editor shows a floating bus is lying about the circuit.
+
+**Values are BigInt throughout.** Logisim allows buses up to 64 bits and a JavaScript number stops
+being exact at 53, so an ordinary number would quietly round a wide adder.
+
+**Fixtures connect with tunnels placed on the ports rather than with wires.** A comparator's three
+outputs sit ten units apart; routing wires between them would make the fixture a test of the
+routing. `arith.circ` and `plexer.circ` feed every component the same narrow inputs, so one sweep
+covers all of them, and two bits is enough: the sweep is exponential in the input width and the
+semantics do not get more interesting at eight.
+
+**A flip-flop's remembered clock level starts unknown, not low.** `ClockState`'s constructor says
+low, which would make a circuit whose clock is already high latch once at startup. It does not: a
+fresh circuit propagates once with every wire still unset, so the level a flip-flop first sees is
+unknown and no edge fires. `ffedge.circ` clocks a flip-flop from an input pin and sweeps from a
+fresh state, which is the only arrangement where the difference is visible; taking the constructor
+at its word fails its row 3 and nothing else here notices.
+
+The JavaScript half of the combinational sweep now builds a fresh engine per row, matching the
+fresh `CircuitState` the Java half already built. Sharing one engine across rows carried a
+flip-flop's contents into the next row, which passed anyway and would have hidden exactly this.
+
+One deliberate divergence: Logisim throws when a counter holding an undefined value is clocked,
+because it works out the carry from a value it has just decided is null. The page settles on an
+undefined count with no carry.
+
+Not covered: divider, bit adder, bit finder, bit selector, priority encoder, shift register, ROM,
+RAM and random. The shift register's parallel ports depend on its appearance attribute, and the
+memory arrays need their contents exported and a poke interface, so both are more than a
+transcription.
+
+### Phase 7 — subcircuits (2026-08-10)
+
+Flattened at export. The box keeps being drawn by Logisim's painter, and everything behind it is
+pulled into the one netlist as components nobody draws.
+
+**Nodes are named by scope as well as by location.** Two circuits are free to use the same
+coordinates and the same tunnel names, and inside a subcircuit those mean different wires. The
+union-find was keyed on `Location` alone until this phase, which was correct only because there was
+nothing else to collide with. The fixture is built so that it does collide: every level uses tunnels
+called a, b and c, and the instances sit on the inner circuit's own coordinates. Making the scope
+constant turns row 2 of its truth table into an error on both outputs.
+
+**A pin inside a subcircuit is not a component of the flattened design.** It is the point where a
+wire crosses the boundary, so it is dropped and the two nodes are merged instead. Keeping it would
+have been worse than redundant: an input pin left in place would drive its own zero onto a net the
+parent is already driving.
+
+**The port-to-pin mapping is the editor's own.** `CircuitAttributes.getPinInstances()` is the array
+the editor built when it worked out where the ports go, so the two orders agree by construction
+rather than by both sorting the pin list the same way.
+
+Connectivity for the whole design, subcircuits included, is now settled before any node becomes a
+net: two nodes that a later merge would have joined would otherwise already be two nets with no way
+back. That is why the model has two passes.
+
+The menu's refusal walks into subcircuits too, since their contents end up in the page just the
+same.
+
+The fixture is a full adder made of two half adders, wrapped again in main, so the nesting is two
+levels and one circuit is used twice at each level.
+
+### Phase 8 — the page itself (2026-08-10)
+
+**Pins and probes are drawn by Logisim too**, wherever their value has few enough states to render
+one picture each, which covers every pin narrow enough to read at a glance. An input pin is set
+through `Pin.FACTORY.driveInputPin` for the same reason a switch is set through its poker: its value
+is its own, not something arriving on a wire. A pin too wide for that keeps the page's own value
+box, which is legible rather than faithful, and the encoder now refuses a per-state table over four
+thousand changes so one wide component cannot cost a hundred kilobytes.
+
+**Values are written the way the editor writes them**, in the component's own radix, with a whole
+hex or octal digit reported as unknown when any bit in it is. The characters standing for a floating
+or conflicting bit are preferences in Logisim, so they travel with the netlist alongside the
+colours. The differential test now compares against `Value.toDisplayString` rather than a
+hand-written mirror of it, so the comparison covers how a value is written as well as what it is.
+
+**The drawing keeps a white sheet in a dark theme.** It is Logisim's artwork in Logisim's colours
+and those assume paper; the page chrome follows the reader's theme, the schematic does not. A
+circuit wider than the window opens fitted, with a button to put it back to the size the editor
+drew it.
+
+Verified end to end through the application itself: File > Export as interactive HTML on a
+two-level nested full adder, saved through the file dialog, opened in a browser, and swept through
+all eight rows of its truth table.
+
+The twelve locales already carried this feature's strings from phase 1.
+
+### Known limits
+
+- **Delta-cycle, not timed.** Components have no propagation delay, so a circuit that depends on
+  gate delay does not behave as it does in the editor.
+- **Not yet supported**, and refused by name rather than exported wrongly: RAM, ROM, shift
+  register, divider, bit adder, bit finder, bit selector, priority encoder, random.
+- **A pin wider than about nine bits** falls back to a value box drawn by the page rather than by
+  Logisim.
+- **No README recording yet.** Every other feature has a GIF; this one has prose.
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the
@@ -538,10 +900,6 @@ Key files: `prefs/PelerPreferences.java` (new), `prefs/AppPreferences.java`, `Ma
 - **macOS bundle identifier is unverified.** `--mac-package-identifier` was added to `build.gradle.kts`
   based on jpackage's documented default; confirming it needs a real macOS build and a look at
   `Info.plist`.
-- **Finder key handling is unverified by automation.** Enter, Shift+Enter and Esc could not be tested
-  through the automation input layer — a control experiment showed Esc does not reach upstream's own
-  `JFileChooser` either, so the keys never arrive at the JVM. Needs testing by hand.
-- **`FPGAWorkspace` still defaults to a shared `~/logisim_evolution_workspace`.** Not yet separated.
 - **The exported project bundle's inner file is still named `.circ`.**
 - **Roughly 372 upstream commits are in this fork but not in v4.1.0.** Only the red-highlight one has
   been reverted. A full rebase onto the release tag was raised with the user and not undertaken, since

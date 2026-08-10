@@ -90,6 +90,7 @@ jobs:
           INPUT_CHANNEL: ${{ github.event.inputs.channel }}
           INPUT_PLATFORMS: ${{ github.event.inputs.platforms }}
           RUN_NUMBER: ${{ github.run_number }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Have no mercy.
           set -euo pipefail
@@ -125,7 +126,29 @@ jobs:
             # first number of 0 outright, and the Windows MSI ProductVersion field caps the parts
             # at 255.255.65535 -- so a date-derived version like 2026.8.8 would fail there too.
             # github.run_number is monotonic, unique per build, and stays well inside 65535.
-            peler_version="1.0.${RUN_NUMBER}"
+            #
+            # It must also sort ABOVE the newest stable release. Every channel shares one
+            # --win-upgrade-uuid, so Windows Installer compares these numbers across channels: the
+            # old fixed "1.0.<run>" scheme made every dev build look older than stable v1.1.0 and
+            # refuse to install over it, even though dev is by definition the newer code. So the
+            # major.minor is taken from the current stable release and only the patch counts builds.
+            #
+            # Read from the GitHub release marked latest, NOT from git tags -- this repository still
+            # carries upstream's tags, and the highest of those is v4.1.0. The dev release is a
+            # prerelease, so /releases/latest already excludes it.
+            latest_stable="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name 2>/dev/null || true)"
+            stable_base="${latest_stable#v}"
+            stable_base="${stable_base%%-*}"
+            dev_major="${stable_base%%.*}"
+            dev_minor="${stable_base#*.}"
+            dev_minor="${dev_minor%%.*}"
+            if [[ ! "${dev_major}" =~ ^[0-9]+$ || ! "${dev_minor}" =~ ^[0-9]+$ ]]; then
+              # No stable release yet, or an unparseable tag. 1.1 is where stable numbering starts.
+              echo "::warning::No parseable stable release (got '${latest_stable}'); defaulting dev version base to 1.1"
+              dev_major=1
+              dev_minor=1
+            fi
+            peler_version="${dev_major}.${dev_minor}.${RUN_NUMBER}"
           else
             if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
               resolved_tag="${GITHUB_REF_NAME}"
@@ -134,6 +157,16 @@ jobs:
             else
               resolved_tag="v${version_prop}"
             fi
+
+            # Stable must bump the major or the minor, never the patch: dev builds occupy the whole
+            # patch range of the current major.minor, so a stable "1.1.1" would sort BELOW dev
+            # builds like 1.1.32 and could not be installed over them. Failing here is deliberate --
+            # the alternative is a release that silently cannot be upgraded to.
+            if [[ ! "${resolved_tag}" =~ ^v[0-9]+\.[0-9]+\.0$ ]]; then
+              echo "::error::Stable tag '${resolved_tag}' must look like vX.Y.0 -- the patch field belongs to the dev channel (see the version scheme in CLAUDE.md)."
+              exit 1
+            fi
+
             echo "release_name=${resolved_tag}" >> "$GITHUB_OUTPUT"
             peler_version=""
           fi
