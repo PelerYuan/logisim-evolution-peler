@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Peler Edition test fixture for HtmlExportDifferentialTest.
+
+  S is a 2 bit bus assembled from two 1 bit inputs through a splitter, which is the case that forces
+  values to live on bits rather than on nets. E exercises the bit extender in "one" mode.
+
+  Splitter geometry, facing east: the combined end sits at the component location and the split ends
+  at (x+20, y-20) and (x+20, y-10). Read coordinates off a real component before editing; a wire
+  that misses by ten leaves the circuit unconnected without complaining.
+
+  A doubled hyphen anywhere in this comment would make the file unparseable.
+-->
+<project version="1.0">
+ <lib name="0" desc="#Wiring" />
+ <lib name="8" desc="#Base" />
+ <main name="main" />
+ <options>
+  <a name="showgrid" val="true" />
+  <a name="simulate" val="true" />
+ </options>
+ <circuit name="main">
+  <a name="circuit" val="main" />
+
+  <comp lib="0" loc="(420,180)" name="Pin"><a name="label" val="A" /></comp>
+  <comp lib="0" loc="(420,240)" name="Pin"><a name="label" val="B" /></comp>
+  <comp lib="0" loc="(500,400)" name="Pin"><a name="label" val="C" /></comp>
+
+  <comp lib="0" loc="(300,200)" name="Splitter">
+   <a name="fanout" val="2" /><a name="incoming" val="2" />
+  </comp>
+
+  <comp lib="0" loc="(600,400)" name="Bit Extender">
+   <a name="in_width" val="1" /><a name="out_width" val="2" /><a name="type" val="one" />
+  </comp>
+
+  <comp lib="0" loc="(200,200)" name="Pin">
+   <a name="output" val="true" /><a name="width" val="2" /><a name="label" val="S" />
+  </comp>
+  <comp lib="0" loc="(700,400)" name="Pin">
+   <a name="facing" val="west" /><a name="output" val="true" />
+   <a name="width" val="2" /><a name="label" val="E" />
+  </comp>
+
+  <wire from="(320,180)" to="(420,180)" />
+  <wire from="(320,190)" to="(380,190)" />
+  <wire from="(380,190)" to="(380,240)" />
+  <wire from="(380,240)" to="(420,240)" />
+  <wire from="(200,200)" to="(300,200)" />
+
+  <wire from="(500,400)" to="(560,400)" />
+  <wire from="(600,400)" to="(700,400)" />
+ </circuit>
+</project>

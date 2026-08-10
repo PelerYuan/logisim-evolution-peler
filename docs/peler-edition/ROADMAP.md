@@ -685,6 +685,28 @@ hyphen inside an XML comment makes a `.circ` unparseable, the same trap `default
 warning about; the loader then tries to report it through a dialog and throws `HeadlessException`
 instead.
 
+### Phase 3 — splitters, and why values had to move onto bits (2026-08-10)
+
+A splitter cannot be a component that drives its ports. It is passive and bidirectional, so such a
+component has to re-drive on each round whatever it read on the last one; a driver that then changes
+value collides with that stale echo and the wire goes red for a round before settling. The first
+design had exactly this shape and would have failed the moment anyone clicked an input.
+
+Nor is a splitter plain connectivity: it joins *individual bits* of two nets, not the nets. So value
+identity moved off the net and onto the bit. Every net now carries a `threads` array naming the
+identity of each of its bits, splitters merge those identities in the exporter, and the runtime keeps
+one array indexed by thread. This is the same shape `WireBundle` uses in the editor, arrived at for
+the same reason.
+
+Also added: bit extender (zero, one, sign and input modes), power, ground, and multi-bit constants.
+
+`splitter.circ` joins two 1-bit inputs into a 2-bit bus through a splitter and extends a third input,
+so it fails if bit identity is wrong in either direction. Checked that it is not a vacuous pass: the
+circuit's own truth table shows S counting 0..3 and E holding its forced high bit.
+
+Not covered here: a pin's tristate and pull attributes, and drawing the width-mismatch error the
+editor shows when two different widths meet.
+
 ### Still to do
 
 The sequential half: a real event-driven propagator with component delays, D flip-flops, registers,

@@ -77,6 +77,7 @@ public final class HtmlExporter {
         .put("height", bounds.getHeight())
         .put("originX", bounds.getX())
         .put("originY", bounds.getY())
+        .put("threadCount", model.getThreadCount())
         .put("nets", netsJson(model))
         .put("components", componentsJson(model, bodies))
         .put("colors", colorsJson())
@@ -94,6 +95,7 @@ public final class HtmlExporter {
       out.add(new HtmlJson()
           .put("id", net.id)
           .put("width", net.width)
+          .put("threads", net.threads)
           .put("segments", net.segments)
           .put("pins", net.pins));
     }
@@ -209,6 +211,7 @@ public final class HtmlExporter {
     return new LinkedHashSet<>(List.of(
         "Pin", "LED", "Probe", "Constant", "Tunnel",
         "AND Gate", "OR Gate", "NAND Gate", "NOR Gate", "XOR Gate", "XNOR Gate",
-        "NOT Gate", "Buffer"));
+        "NOT Gate", "Buffer",
+        "Splitter", "Bit Extender", "Power", "Ground"));
   }
 }

@@ -125,7 +125,9 @@ const GATES = {
 class Simulation {
   constructor(circuit) {
     this.circuit = circuit;
-    this.netValues = circuit.nets.map((net) => makeValue(net.width, UNK));
+    // Values live on threads, not on nets: a splitter joins single bits of two different nets, so
+    // a net is not the unit that carries a value. This mirrors WireBundle's threads in the editor.
+    this.threads = new Uint8Array(circuit.threadCount).fill(UNK);
     this.inputs = new Map();
     for (const comp of circuit.components) {
       if (comp.kind === "Pin" && comp.a_isInput) {
@@ -135,10 +137,22 @@ class Simulation {
     this.oscillating = false;
   }
 
+  netOf(id) {
+    return this.circuit.nets[id];
+  }
+
+  readThreads(netId, width) {
+    const net = this.netOf(netId);
+    const bits = makeValue(width, UNK);
+    for (let i = 0; i < width && i < net.threads.length; i++) bits[i] = this.threads[net.threads[i]];
+    return bits;
+  }
+
   valueOfPort(comp, portIndex) {
-    const net = comp.ports[portIndex];
-    if (net < 0) return makeValue(comp.portWidths[portIndex] || 1, UNK);
-    return this.netValues[net];
+    const width = comp.portWidths[portIndex] || 1;
+    const netId = comp.ports[portIndex];
+    if (netId < 0) return makeValue(width, UNK);
+    return this.readThreads(netId, width);
   }
 
   // Iterate to a fixed point. Phase 1 is combinational, so there is nothing to schedule in time --
@@ -147,17 +161,21 @@ class Simulation {
     const limit = 200;
     this.oscillating = false;
     for (let round = 0; round < limit; round++) {
-      const next = this.circuit.nets.map((net) => makeValue(net.width, UNK));
+      const next = new Uint8Array(this.circuit.threadCount).fill(UNK);
       for (const comp of this.circuit.components) {
-        const driven = this.outputsOf(comp);
-        for (const [portIndex, bits] of driven) {
-          const net = comp.ports[portIndex];
-          if (net >= 0) joinInto(next[net], bits);
+        for (const [portIndex, bits] of this.outputsOf(comp)) {
+          const netId = comp.ports[portIndex];
+          if (netId < 0) continue;
+          const net = this.netOf(netId);
+          for (let i = 0; i < bits.length && i < net.threads.length; i++) {
+            const t = net.threads[i];
+            next[t] = joinBit(next[t], bits[i]);
+          }
         }
       }
       let changed = false;
       for (let i = 0; i < next.length; i++) {
-        if (!sameValue(next[i], this.netValues[i])) { changed = true; this.netValues[i] = next[i]; }
+        if (next[i] !== this.threads[i]) { changed = true; this.threads[i] = next[i]; }
       }
       if (!changed) return;
     }
@@ -165,19 +183,24 @@ class Simulation {
   }
 
   outputsOf(comp) {
-    const width = comp.portWidths[comp.portWidths.length - 1] || 1;
+    const width = comp.portWidths[0] || 1;
     switch (comp.kind) {
       case "Pin":
         return comp.a_isInput ? [[0, this.inputs.get(comp.id)]] : [];
-      case "Constant": {
-        const w = comp.portWidths[0] || 1;
-        return [[0, numberToBits(comp.a_value === undefined ? 1 : comp.a_value, w)]];
-      }
+      case "Constant":
+        return [[0, numberToBits(comp.a_value === undefined ? 1 : comp.a_value, width)]];
+      case "Power":
+        return [[0, makeValue(width, ONE)]];
+      case "Ground":
+        return [[0, makeValue(width, ZERO)]];
       case "NOT Gate":
         return [[0, invert(this.valueOfPort(comp, 1))]];
       case "Buffer":
         return [[0, this.valueOfPort(comp, 1)]];
-      case "LED": case "Probe": case "Tunnel":
+      case "Bit Extender":
+        return [[0, this.extend(comp)]];
+      // A splitter is wiring, merged bit by bit when the netlist was built, so it drives nothing.
+      case "Splitter": case "LED": case "Probe": case "Tunnel":
         return [];
       default: {
         const gate = GATES[comp.kind];
@@ -185,12 +208,27 @@ class Simulation {
         const inputs = [];
         for (let i = 1; i < comp.ports.length; i++) inputs.push(this.valueOfPort(comp, i));
         if (inputs.length === 0) return [];
-        const negate = comp.a_negate || 0;
-        let out = reduceGate(inputs, gate[0], negate, width);
+        let out = reduceGate(inputs, gate[0], comp.a_negate || 0, width);
         if (gate[1]) out = invert(out);
         return [[0, out]];
       }
     }
+  }
+
+  extend(comp) {
+    const outWidth = comp.portWidths[0] || 1;
+    const input = this.valueOfPort(comp, 1);
+    const out = makeValue(outWidth, UNK);
+    for (let i = 0; i < outWidth; i++) {
+      if (i < input.length) { out[i] = input[i]; continue; }
+      switch (comp.a_type) {
+        case "one": out[i] = ONE; break;
+        case "sign": out[i] = input.length ? input[input.length - 1] : UNK; break;
+        case "input": out[i] = this.valueOfPort(comp, 2)[0]; break;
+        default: out[i] = ZERO;
+      }
+    }
+    return out;
   }
 
   toggleInput(comp) {
@@ -201,8 +239,7 @@ class Simulation {
       bits[0] = bits[0] === ONE ? ZERO : ONE;
     } else {
       const current = bitsToNumber(bits) || 0;
-      const next = (current + 1) % Math.pow(2, width);
-      this.inputs.set(comp.id, numberToBits(next, width));
+      this.inputs.set(comp.id, numberToBits((current + 1) % Math.pow(2, width), width));
     }
     this.run();
   }
@@ -261,7 +298,7 @@ class View {
 
   colorFor(net) {
     const colors = this.circuit.colors;
-    const bits = this.sim.netValues[net.id];
+    const bits = this.sim.readThreads(net.id, net.width);
     if (bits.some((b) => b === ERR)) return colors.error;
     if (net.width > 1) return bits.some((b) => b === UNK) ? colors.unknown : colors.multi;
     if (bits[0] === UNK) return colors.unknown;

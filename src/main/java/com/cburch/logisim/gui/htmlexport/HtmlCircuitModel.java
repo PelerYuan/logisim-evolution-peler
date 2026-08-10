@@ -9,6 +9,7 @@
 package com.cburch.logisim.gui.htmlexport;
 
 import com.cburch.logisim.circuit.Circuit;
+import com.cburch.logisim.circuit.SplitterFactory;
 import com.cburch.logisim.circuit.Wire;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.data.Location;
@@ -33,18 +34,27 @@ import java.util.TreeMap;
  * anywhere along another wire joins it, and tunnels with the same label are one node however far
  * apart they sit.
  *
- * <p>Splitters are deliberately not treated as connectivity. A splitter maps bit ranges between one
- * combined end and several split ends, which is component behaviour, not a node -- so it is exported
- * as a component and the runtime does the slicing.
+ * <p>Splitters are connectivity too, but one bit at a time. A splitter joins individual bits of two
+ * different nodes rather than the nodes themselves, so identity has to live on the bit -- see
+ * {@link Net#threads}. Treating a splitter as a component that drives its ports does not work: it is
+ * passive and bidirectional, so such a component has to re-drive whatever it read on the previous
+ * round, and a driver that then changes value collides with that stale echo.
  */
 public final class HtmlCircuitModel {
 
-  /** One electrically connected node: what it joins, and the segments to draw for it. */
+  /**
+   * One electrically connected node: what it joins, and the segments to draw for it.
+   *
+   * <p>{@link #threads} carries the identity of each bit. Two nets joined by a splitter are
+   * different nodes that nonetheless share individual bits, so a value cannot live on the net --
+   * it lives on the thread, exactly as {@code WireBundle} does it in the editor.
+   */
   public static final class Net {
     public final int id;
     public int width = 1;
     public final List<int[]> segments = new ArrayList<>();
     public final List<int[]> pins = new ArrayList<>(); // {component index, port index}
+    public int[] threads = new int[0];
 
     Net(int id) {
       this.id = id;
@@ -74,6 +84,12 @@ public final class HtmlCircuitModel {
   private final Map<Location, Integer> netOfLocation = new HashMap<>();
 
   private final Map<Location, Location> parent = new HashMap<>();
+  private int threadCount;
+
+  /** How many distinct bits the circuit has, once splitters have merged what they merge. */
+  public int getThreadCount() {
+    return threadCount;
+  }
 
   public List<Net> getNets() {
     return nets;
@@ -148,6 +164,78 @@ public final class HtmlCircuitModel {
           });
       net.width = Math.max(net.width, 1);
     }
+
+    assignThreads(parts);
+  }
+
+  /**
+   * Gives every bit of every net an identity, then makes splitters merge those identities.
+   *
+   * <p>A splitter cannot be modelled as a component that drives its ports. It is passive and
+   * bidirectional, so an engine that treats it as a driver has to echo back whatever it read a
+   * moment ago -- and then a driver changing value collides with the splitter's own stale echo and
+   * the wire turns red for a round. Merging bits instead makes the two sides literally the same
+   * wire, which is what they are.
+   */
+  private void assignThreads(List<Component> parts) {
+    var next = 0;
+    for (final var net : nets) {
+      net.threads = new int[net.width];
+      for (var bit = 0; bit < net.width; bit++) net.threads[bit] = next++;
+    }
+    final var threadUnion = new int[next];
+    for (var i = 0; i < next; i++) threadUnion[i] = i;
+
+    for (final var part : parts) {
+      if (!(part.getFactory() instanceof SplitterFactory)) continue;
+      final var attrs = part.getAttributeSet();
+      final var ends = part.getEnds();
+      if (ends.isEmpty()) continue;
+      final var combined = netFor(ends.get(0).getLocation());
+      final var incoming = ends.get(0).getWidth().getWidth();
+
+      // bitN says which end bit N leaves by: 0 is "nowhere", otherwise it is the end's own index,
+      // ends 1..fanout being the split side. Bits reaching the same end keep their relative order.
+      final var usedPerEnd = new HashMap<Integer, Integer>();
+      for (var bit = 0; bit < incoming; bit++) {
+        final var attribute = attrs.getAttribute("bit" + bit);
+        if (attribute == null) continue;
+        final var raw = attrs.getValue(attribute);
+        if (!(raw instanceof Integer endIndex) || endIndex <= 0 || endIndex >= ends.size()) continue;
+        final var splitNet = netFor(ends.get(endIndex).getLocation());
+        final var position = usedPerEnd.merge(endIndex, 1, Integer::sum) - 1;
+        if (bit >= combined.threads.length || position >= splitNet.threads.length) continue;
+        unionThread(threadUnion, combined.threads[bit], splitNet.threads[position]);
+      }
+    }
+
+    // Compact, so the runtime can size one array by the thread count.
+    final var renumbered = new HashMap<Integer, Integer>();
+    for (final var net : nets) {
+      for (var bit = 0; bit < net.threads.length; bit++) {
+        final var root = findThread(threadUnion, net.threads[bit]);
+        net.threads[bit] = renumbered.computeIfAbsent(root, key -> renumbered.size());
+      }
+    }
+    threadCount = renumbered.size();
+  }
+
+  private static int findThread(int[] union, int value) {
+    var root = value;
+    while (union[root] != root) root = union[root];
+    var walk = value;
+    while (union[walk] != root) {
+      final var next = union[walk];
+      union[walk] = root;
+      walk = next;
+    }
+    return root;
+  }
+
+  private static void unionThread(int[] union, int a, int b) {
+    final var rootA = findThread(union, a);
+    final var rootB = findThread(union, b);
+    if (rootA != rootB) union[rootA] = rootB;
   }
 
   /**
@@ -178,12 +266,17 @@ public final class HtmlCircuitModel {
       if (value == null) continue;
       switch (name) {
         case "width", "inputs", "size", "negate", "value", "facing", "radix", "tristate",
-            "pull", "output", "incoming", "fanout", "bit0", "bit1", "bit2", "bit3", "bit4",
-            "bit5", "bit6", "bit7", "appearance", "labelloc" ->
+            "pull", "output", "incoming", "fanout", "in_width", "out_width", "type",
+            "appearance", "labelloc" ->
             comp.attrs.put(name, describe(value));
         default -> {
-          // Everything else is presentation the SVG already carries, or behaviour this phase
-          // does not model. Left out so the exported netlist stays readable.
+          // A splitter carries one bitN per incoming bit, up to 64 of them, so they are matched
+          // by shape. Anything else is presentation the SVG already carries, or behaviour this
+          // phase does not model, and is left out so the netlist stays readable.
+          if (name.startsWith("bit") && name.length() > 3
+              && Character.isDigit(name.charAt(3))) {
+            comp.attrs.put(name, describe(value));
+          }
         }
       }
     }
