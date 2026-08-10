@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Peler Edition test fixture for HtmlExportDifferentialTest.
+
+  A D flip-flop whose clock is an input pin rather than a clock component, swept from a fresh state
+  on every row. That is the case that pins down what a flip-flop believes the clock was doing before
+  it existed. ClockState's constructor says the remembered level starts low, which would make a row
+  that drives the clock high a rising edge, but a fresh circuit propagates once with every wire
+  still unset, so the level a flip-flop actually first sees is unknown and no edge fires. An engine
+  that takes the constructor at its word latches on row 3 and nothing else here would notice.
+
+  A doubled hyphen here would break the file.
+-->
+<project version="1.0">
+ <lib name="0" desc="#Wiring" />
+ <lib name="4" desc="#Memory" />
+ <lib name="8" desc="#Base" />
+ <main name="main" />
+ <options>
+  <a name="showgrid" val="true" />
+  <a name="simulate" val="true" />
+ </options>
+ <circuit name="main">
+  <a name="circuit" val="main" />
+
+  <comp lib="0" loc="(100,100)" name="Pin"><a name="label" val="C" /></comp>
+  <comp lib="0" loc="(100,100)" name="Tunnel"><a name="label" val="C" /></comp>
+  <comp lib="0" loc="(100,160)" name="Pin"><a name="label" val="D" /></comp>
+  <comp lib="0" loc="(100,160)" name="Tunnel"><a name="label" val="D" /></comp>
+
+  <comp lib="4" loc="(900,100)" name="D Flip-Flop" />
+  <comp lib="0" loc="(890,110)" name="Tunnel"><a name="label" val="D" /></comp>
+  <comp lib="0" loc="(890,150)" name="Tunnel"><a name="label" val="C" /></comp>
+  <comp lib="0" loc="(950,110)" name="Tunnel"><a name="label" val="Q" /></comp>
+
+  <comp lib="0" loc="(1400,100)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="Q" /></comp>
+  <comp lib="0" loc="(1400,100)" name="Tunnel"><a name="label" val="Q" /></comp>
+ </circuit>
+</project>

@@ -56,7 +56,7 @@ public class HtmlExportDifferentialTest {
   @TempDir Path workDir;
 
   @ParameterizedTest
-  @ValueSource(strings = {"and2", "mixed", "splitter"})
+  @ValueSource(strings = {"and2", "mixed", "splitter", "arith", "plexer", "ffedge"})
   public void testEngineAgreesWithLogisim(String fixture) throws Exception {
     assumeTrue(node() != null, "node is not on PATH; skipping the JavaScript half");
 
@@ -100,7 +100,7 @@ public class HtmlExportDifferentialTest {
    * outputs after every one, so a flip-flop that shifts twice per edge or misses an edge shows up.
    */
   @ParameterizedTest
-  @ValueSource(strings = {"shift"})
+  @ValueSource(strings = {"shift", "counter"})
   public void testSequentialEngineAgreesWithLogisim(String fixture) throws Exception {
     assumeTrue(node() != null, "node is not on PATH; skipping the JavaScript half");
 
@@ -350,9 +350,11 @@ public class HtmlExportDifferentialTest {
           .sort((a, b) => a.portLocs[0][1] - b.portLocs[0][1] || a.portLocs[0][0] - b.portLocs[0][0]);
         const widths = inputs.map((c) => c.portWidths[0] || 1);
         const total = widths.reduce((a, b) => a + b, 0);
-        const sim = new Simulation(CIRCUIT);
         const rows = [];
         for (let combination = 0; combination < (1 << total); combination++) {
+          // A fresh engine per row, matching the fresh CircuitState the Java side builds. A shared
+          // one would carry a flip-flop's contents into the next row and quietly pass anyway.
+          const sim = new Simulation(CIRCUIT);
           let bit = 0;
           inputs.forEach((pin, i) => {
             const width = widths[i];

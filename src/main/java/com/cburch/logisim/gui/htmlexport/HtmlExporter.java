@@ -386,7 +386,10 @@ public final class HtmlExporter {
         "AND Gate", "OR Gate", "NAND Gate", "NOR Gate", "XOR Gate", "XNOR Gate",
         "NOT Gate", "Buffer",
         "Splitter", "Bit Extender", "Power", "Ground",
-        "Clock", "D Flip-Flop", "Register",
-        "7-Segment Display", "Hex Digit Display", "RGBLED", "Button", "DipSwitch"));
+        "Clock", "D Flip-Flop", "T Flip-Flop", "J-K Flip-Flop", "S-R Flip-Flop",
+        "Register", "Counter",
+        "7-Segment Display", "Hex Digit Display", "RGBLED", "Button", "DipSwitch",
+        "Multiplexer", "Demultiplexer", "Decoder",
+        "Adder", "Subtractor", "Negator", "Comparator", "Multiplier", "Shifter"));
   }
 }

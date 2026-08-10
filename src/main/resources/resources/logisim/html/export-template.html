@@ -47,10 +47,19 @@ function makeValue(width, fill) {
   return new Uint8Array(width).fill(fill);
 }
 
-function sameValue(a, b) {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+function isDefined(bits) {
+  for (const bit of bits) if (bit !== ZERO && bit !== ONE) return false;
   return true;
+}
+
+function anyError(bits) {
+  for (const bit of bits) if (bit === ERR) return true;
+  return false;
+}
+
+function allUnknown(bits) {
+  for (const bit of bits) if (bit !== UNK) return false;
+  return bits.length > 0;
 }
 
 // Two drivers on one net: a driven bit beats a floating one, and two different driven bits are an
@@ -62,31 +71,37 @@ function joinBit(a, b) {
   return a === b ? a : ERR;
 }
 
-function joinInto(target, source) {
-  const n = Math.min(target.length, source.length);
-  for (let i = 0; i < n; i++) target[i] = joinBit(target[i], source[i]);
-}
-
-function bitsToNumber(bits) {
-  let out = 0;
+// Numbers are BigInt throughout. Logisim allows buses up to 64 bits wide and a JavaScript number
+// stops being exact at 53, so an ordinary number would quietly round a wide adder's result.
+function bitsToBig(bits, signed) {
+  let out = 0n;
   for (let i = bits.length - 1; i >= 0; i--) {
     if (bits[i] === UNK || bits[i] === ERR) return null;
-    out = out * 2 + bits[i];
+    out = (out << 1n) | BigInt(bits[i]);
   }
+  if (signed && bits.length > 0 && bits[bits.length - 1] === ONE) out -= 1n << BigInt(bits.length);
   return out;
 }
 
-function numberToBits(value, width) {
+/** As Value.toBigInteger reads a partly undefined value: anything that is not a firm 1 is a 0. */
+function bitsToBigLoose(bits, signed) {
+  let out = 0n;
+  for (let i = bits.length - 1; i >= 0; i--) out = (out << 1n) | (bits[i] === ONE ? 1n : 0n);
+  if (signed && bits.length > 0 && bits[bits.length - 1] === ONE) out -= 1n << BigInt(bits.length);
+  return out;
+}
+
+function bigToBits(value, width) {
   const bits = makeValue(width, ZERO);
-  for (let i = 0; i < width; i++) bits[i] = (value >> i) & 1;
+  for (let i = 0; i < width; i++) bits[i] = Number((value >> BigInt(i)) & 1n);
   return bits;
 }
 
 function formatValue(bits) {
-  if (bits.some((b) => b === ERR)) return "E";
-  if (bits.some((b) => b === UNK)) return "x";
-  const n = bitsToNumber(bits);
-  return bits.length <= 4 ? String(n) : n.toString(16).toUpperCase();
+  if (anyError(bits)) return "E";
+  if (!isDefined(bits)) return "x";
+  const value = bitsToBig(bits, false);
+  return bits.length <= 4 ? value.toString() : value.toString(16).toUpperCase();
 }
 
 // ---------------------------------------------------------------- component behaviour
@@ -115,26 +130,214 @@ function reduceGate(inputs, kind, negateMask, width) {
   return out;
 }
 
+/** Value.not(): a defined bit flips, an undefined one stays as it is. */
+function flipBit(bit) {
+  return bit === ZERO ? ONE : bit === ONE ? ZERO : bit;
+}
+
 function invert(bits) {
   const out = makeValue(bits.length, UNK);
-  for (let i = 0; i < bits.length; i++) {
-    out[i] = bits[i] === ZERO ? ONE : bits[i] === ONE ? ZERO : bits[i];
+  for (let i = 0; i < bits.length; i++) out[i] = flipBit(bits[i]);
+  return out;
+}
+
+/**
+ * Adder.computeSum, including its bit at a time path.
+ *
+ * <p>The fast path is not just an optimisation in Logisim: a fully defined addition carries
+ * normally, while an addition with one floating bit stops carrying information past that bit. Both
+ * are reproduced, because a page that shows a clean number where the editor shows a floating bus
+ * would be lying about the circuit.
+ */
+function computeSum(width, a, b, carryIn) {
+  let carry = carryIn === UNK ? ZERO : carryIn;
+  if (isDefined(a) && isDefined(b) && carry !== ERR) {
+    const sum = bitsToBig(a, false) + bitsToBig(b, false) + BigInt(carry);
+    return [bigToBits(sum, width), ((sum >> BigInt(width)) & 1n) === 0n ? ZERO : ONE];
+  }
+  const bits = makeValue(width, UNK);
+  for (let i = 0; i < width; i++) {
+    if (carry === ERR) { bits[i] = ERR; continue; }
+    if (carry === UNK) { bits[i] = UNK; continue; }
+    const ab = i < a.length ? a[i] : UNK;
+    const bb = i < b.length ? b[i] : UNK;
+    if (ab === ERR || bb === ERR) { bits[i] = ERR; carry = ERR; }
+    else if (ab === UNK || bb === UNK) { bits[i] = UNK; carry = UNK; }
+    else {
+      const sum = (ab === ONE ? 1 : 0) + (bb === ONE ? 1 : 0) + (carry === ONE ? 1 : 0);
+      bits[i] = (sum & 1) === 1 ? ONE : ZERO;
+      carry = sum >= 2 ? ONE : ZERO;
+    }
+  }
+  return [bits, carry];
+}
+
+/** Negator: two's complement, and Logisim's fill rule for a value that is not fully defined. */
+function negate(bits) {
+  const width = bits.length;
+  if (isDefined(bits)) return bigToBits(-bitsToBig(bits, false), width);
+  const out = Uint8Array.from(bits);
+  let fill = ZERO;
+  let pos = 0;
+  while (pos < width) {
+    if (out[pos] === ZERO) {
+      out[pos] = fill;
+    } else if (out[pos] === ONE) {
+      if (fill !== ZERO) out[pos] = fill;
+      pos++;
+      break;
+    } else if (out[pos] === ERR) {
+      fill = ERR;
+    } else {
+      if (fill === ZERO) fill = out[pos];
+      else out[pos] = fill;
+    }
+    pos++;
+  }
+  while (pos < width) {
+    out[pos] = flipBit(out[pos]);
+    pos++;
   }
   return out;
 }
 
-// Components that hold a value between clock edges. Ports are named by index so the runtime does
-// not have to re-derive Logisim's port order every time it looks one up.
-const STATEFUL = {
-  "D Flip-Flop": { d: 0, ck: 1, q: 2, nq: 3, clr: 4, pre: 5, width: 1 },
-  "Register":    { d: 1, ck: 2, q: 0, clr: 3, en: 4 },
+/** Comparator: walks down from the top bit and stops at the first difference, as Logisim does. */
+function compareValues(a, b, signed) {
+  let gt = ZERO, eq = ONE, lt = ZERO;
+  const length = Math.max(a.length, b.length);
+  for (let pos = length - 1; pos >= 0; pos--) {
+    let ab = pos < a.length ? a[pos] : ERR;
+    let bb = pos < b.length ? b[pos] : ERR;
+    // The top bit of a signed value is the sign, so its sense is the other way round.
+    if (pos === a.length - 1 && ab !== bb && signed) { const swap = ab; ab = bb; bb = swap; }
+    if (ab === ERR || bb === ERR) return [ERR, ERR, ERR];
+    if (ab === UNK || bb === UNK) return [UNK, UNK, UNK];
+    if (ab !== bb) {
+      eq = ZERO;
+      if (ab === ONE) gt = ONE; else lt = ONE;
+      break;
+    }
+  }
+  return [gt, eq, lt];
+}
+
+function firstOf(bits, want) {
+  for (let i = 0; i < bits.length; i++) if (bits[i] === want) return i;
+  return bits.length;
+}
+
+/** Multiplier.computeProduct: below the lowest undefined bit the product is still known. */
+function computeProduct(width, a, b, carryIn, unsigned) {
+  const carry = allUnknown(carryIn) ? makeValue(width, ZERO) : carryIn;
+  const signed = !unsigned;
+  if (isDefined(a) && isDefined(b) && isDefined(carry)) {
+    const product = bitsToBig(a, signed) * bitsToBig(b, signed) + bitsToBig(carry, signed);
+    return [bigToBits(product, width), bigToBits(product >> BigInt(width), width)];
+  }
+  const known = Math.min(firstOf(a, UNK), firstOf(b, UNK), firstOf(carry, UNK));
+  const failed = Math.min(firstOf(a, ERR), firstOf(b, ERR), firstOf(carry, ERR));
+  const product =
+    bitsToBigLoose(a, signed) * bitsToBigLoose(b, signed) + bitsToBigLoose(carry, signed);
+  const bits = makeValue(width, UNK);
+  for (let i = 0; i < width; i++) {
+    if (i < known) bits[i] = Number((product >> BigInt(i)) & 1n);
+    else if (i < failed) bits[i] = UNK;
+    else bits[i] = ERR;
+  }
+  return [bits, makeValue(width, failed < width ? ERR : UNK)];
+}
+
+/** Shifter, in all five modes, keeping Logisim's clamping of an over-wide shift distance. */
+function shiftBits(bits, distance, mode) {
+  const width = bits.length;
+  let d = distance;
+  const out = makeValue(width, ZERO);
+  if (d === 0) return Uint8Array.from(bits);
+  switch (mode) {
+    case "lr":
+      if (d >= width) d = width;
+      for (let i = 0; i < width - d; i++) out[i] = bits[i + d];
+      return out;
+    case "ar":
+      if (d >= width) d = width;
+      for (let i = 0; i < width - d; i++) out[i] = bits[i + d];
+      for (let i = width - d; i < width; i++) out[i] = bits[width - 1];
+      return out;
+    case "rr":
+      if (d >= width) d -= width;
+      for (let i = 0; i < width; i++) out[i] = bits[(i + d) % width];
+      return out;
+    case "rl":
+      if (d >= width) d -= width;
+      for (let i = 0; i < width; i++) out[(i + d) % width] = bits[i];
+      return out;
+    default: // logical left
+      if (d >= width) d = width;
+      for (let i = d; i < width; i++) out[i] = bits[i - d];
+      return out;
+  }
+}
+
+/**
+ * The flip-flop family, which Logisim builds from one shared component and a rule for the next
+ * value. The port order comes from AbstractFlipFlop: inputs first, then clock, Q, not Q, clear and
+ * preset. Its enable port exists but is not consulted, which is upstream's decision, not an
+ * omission here.
+ */
+const FLIPFLOP = {
+  "D Flip-Flop": { inputs: 1, next: (inputs) => inputs[0] },
+  "T Flip-Flop": {
+    inputs: 1,
+    next: (inputs, current) => {
+      const held = current === UNK ? ZERO : current;
+      return inputs[0] === ONE ? flipBit(held) : held;
+    },
+  },
+  "J-K Flip-Flop": {
+    inputs: 2,
+    next: (inputs, current) => {
+      if (inputs[0] === ZERO) {
+        if (inputs[1] === ZERO) return current;
+        if (inputs[1] === ONE) return ZERO;
+      } else if (inputs[0] === ONE) {
+        if (inputs[1] === ZERO) return ONE;
+        if (inputs[1] === ONE) return flipBit(current);
+      }
+      return UNK;
+    },
+  },
+  "S-R Flip-Flop": {
+    inputs: 2,
+    next: (inputs, current) => {
+      if (inputs[0] === ZERO) {
+        if (inputs[1] === ZERO) return current;
+        if (inputs[1] === ONE) return ZERO;
+      } else if (inputs[0] === ONE) {
+        if (inputs[1] === ZERO) return ONE;
+        if (inputs[1] === ONE) return ERR; // set and reset at once
+      }
+      return UNK;
+    },
+  },
 };
+
+/** Components holding a value between clock edges, and how wide that value is. */
+function storedWidth(comp) {
+  if (FLIPFLOP[comp.kind]) return 1;
+  if (comp.kind === "Register" || comp.kind === "Counter") return comp.portWidths[0] || 1;
+  return 0;
+}
 
 const GATES = {
   "AND Gate": ["and", false], "NAND Gate": ["and", true],
   "OR Gate": ["or", false], "NOR Gate": ["or", true],
   "XOR Gate": ["xor", false], "XNOR Gate": ["xor", true],
 };
+
+/** Components that show or accept a value without producing one. */
+const SINKS = new Set([
+  "Splitter", "Tunnel", "LED", "Probe", "RGBLED", "7-Segment Display", "Hex Digit Display",
+]);
 
 // ---------------------------------------------------------------- simulation
 
@@ -155,9 +358,13 @@ class Simulation {
         this.inputs.set(comp.id, makeValue(comp.portWidths[0] || 1, ZERO));
       }
       if (comp.poke) this.self.set(comp.id, 0);
-      if (STATEFUL[comp.kind]) {
-        const width = comp.portWidths[STATEFUL[comp.kind].q] || 1;
-        this.state.set(comp.id, { value: makeValue(width, ZERO), lastClock: UNK });
+      const stored = storedWidth(comp);
+      if (stored > 0) {
+        // The remembered clock starts unknown, not low. ClockState's constructor says low, but a
+        // fresh circuit propagates once with every wire still unset, so a flip-flop's first look at
+        // its clock is at an unknown level and a clock that is already high is not an edge. The
+        // ffedge fixture is that case, and it fails the moment this starts at zero instead.
+        this.state.set(comp.id, { value: makeValue(stored, ZERO), lastClock: UNK, carry: ZERO });
       }
     }
     this.oscillating = false;
@@ -257,36 +464,124 @@ class Simulation {
   updateStateElements() {
     let moved = false;
     for (const comp of this.circuit.components) {
-      const spec = STATEFUL[comp.kind];
-      if (!spec) continue;
       const entry = this.state.get(comp.id);
-      const clock = this.valueOfPort(comp, spec.ck)[0];
-      const previous = entry.lastClock;
-      entry.lastClock = clock;
-
-      // Asynchronous clear wins over the clock, as it does in the editor.
-      if (spec.clr !== undefined && this.valueOfPort(comp, spec.clr)[0] === ONE) {
-        if (entry.value.some((b) => b !== ZERO)) { entry.value.fill(ZERO); moved = true; }
-        continue;
-      }
-      if (spec.pre !== undefined && this.valueOfPort(comp, spec.pre)[0] === ONE) {
-        if (entry.value.some((b) => b !== ONE)) { entry.value.fill(ONE); moved = true; }
-        continue;
-      }
-      if (spec.en !== undefined && this.valueOfPort(comp, spec.en)[0] === ZERO) continue;
-
-      const rising = comp.a_trigger === "falling"
-        ? (previous === ONE && clock === ZERO)
-        : (previous === ZERO && clock === ONE);
-      if (!rising) continue;
-
-      const d = this.valueOfPort(comp, spec.d);
-      for (let i = 0; i < entry.value.length; i++) {
-        const bit = i < d.length ? d[i] : ZERO;
-        if (entry.value[i] !== bit) { entry.value[i] = bit; moved = true; }
-      }
+      if (!entry) continue;
+      if (FLIPFLOP[comp.kind]) moved = this.updateFlipFlop(comp, entry) || moved;
+      else if (comp.kind === "Register") moved = this.updateRegister(comp, entry) || moved;
+      else if (comp.kind === "Counter") moved = this.updateCounter(comp, entry) || moved;
     }
     return moved;
+  }
+
+  /**
+   * Whether a clock edge just arrived, and remembering the level for next time.
+   *
+   * <p>Straight from ClockState.updateClock, including the level-sensitive settings, where every
+   * pass counts as a trigger for as long as the level holds.
+   */
+  clockEdge(comp, entry, port) {
+    const clock = this.valueOfPort(comp, port)[0];
+    const previous = entry.lastClock;
+    entry.lastClock = clock;
+    switch (comp.a_trigger) {
+      case "falling": return previous === ONE && clock === ZERO;
+      case "high": return clock === ONE;
+      case "low": return clock === ZERO;
+      default: return previous === ZERO && clock === ONE;
+    }
+  }
+
+  /** Replaces the stored bits, reporting whether anything actually moved. */
+  static store(entry, bits) {
+    let moved = false;
+    for (let i = 0; i < entry.value.length; i++) {
+      const bit = i < bits.length ? bits[i] : ZERO;
+      if (entry.value[i] !== bit) { entry.value[i] = bit; moved = true; }
+    }
+    return moved;
+  }
+
+  updateFlipFlop(comp, entry) {
+    const spec = FLIPFLOP[comp.kind];
+    const n = spec.inputs;
+    const triggered = this.clockEdge(comp, entry, n);
+    let next = entry.value[0];
+    // Asynchronous clear beats preset beats the clock, as it does in the editor.
+    if (this.valueOfPort(comp, n + 3)[0] === ONE) {
+      next = ZERO;
+    } else if (this.valueOfPort(comp, n + 4)[0] === ONE) {
+      next = ONE;
+    } else if (triggered) {
+      const inputs = [];
+      for (let i = 0; i < n; i++) inputs.push(this.valueOfPort(comp, i)[0]);
+      const computed = spec.next(inputs, entry.value[0]);
+      // An undefined next value leaves the flip-flop holding what it had.
+      if (computed === ZERO || computed === ONE) next = computed;
+    }
+    return Simulation.store(entry, [next]);
+  }
+
+  updateRegister(comp, entry) {
+    const triggered = this.clockEdge(comp, entry, 2);
+    if (this.valueOfPort(comp, 3)[0] === ONE) {
+      return Simulation.store(entry, makeValue(entry.value.length, ZERO));
+    }
+    if (triggered && this.valueOfPort(comp, 4)[0] !== ZERO) {
+      return Simulation.store(entry, this.valueOfPort(comp, 1));
+    }
+    return false;
+  }
+
+  /**
+   * Counter, with its load, direction and enable ports and its behaviour on reaching the limit.
+   *
+   * <p>One divergence, deliberately: Logisim throws when a counter holding an undefined value is
+   * clocked, because it works out the carry from a value it has just decided is null. The page
+   * settles on an undefined count with no carry instead, which is what the surrounding code reads
+   * as if the exception had not happened.
+   */
+  updateCounter(comp, entry) {
+    const width = entry.value.length;
+    const limit = comp.a_max === undefined
+      ? (1n << BigInt(width)) - 1n : BigInt(comp.a_max) & ((1n << BigInt(width)) - 1n);
+    const triggered = this.clockEdge(comp, entry, 2);
+
+    if (this.valueOfPort(comp, 3)[0] === ONE) {
+      entry.carry = ZERO;
+      return Simulation.store(entry, makeValue(width, ZERO));
+    }
+    const load = this.valueOfPort(comp, 4)[0] === ONE;
+    const up = this.valueOfPort(comp, 5)[0] !== ZERO;
+    const enabled = this.valueOfPort(comp, 6)[0] !== ZERO;
+    const loadValue = bitsToBigLoose(this.valueOfPort(comp, 1), false) & limit;
+    const held = bitsToBig(entry.value, false);
+
+    let next;
+    if (!triggered) next = held;
+    else if (load) next = loadValue;
+    else if (held === null) next = null;
+    else if (!enabled) next = held;
+    else if (held === (up ? limit : 0n)) {
+      switch (comp.a_ongoal) {
+        case "stay": next = held; break;
+        case "load": next = loadValue; break;
+        case "continue": next = up ? held + 1n : held - 1n; break;
+        default: next = up ? 0n : limit; // wrap
+      }
+    } else {
+      next = up ? held + 1n : held - 1n;
+    }
+
+    entry.carry = next !== null && next === (up ? limit : 0n) ? ONE : ZERO;
+    return Simulation.store(entry, next === null ? makeValue(width, ERR) : bigToBits(next, width));
+  }
+
+  /** Whether anything is attached to a port, which some components ask before reporting an error. */
+  connected(comp, port) {
+    const netId = comp.ports[port];
+    if (netId < 0) return false;
+    const net = this.netOf(netId);
+    return net.pins.length > 1 || net.segments.length > 0;
   }
 
   outputsOf(comp) {
@@ -297,7 +592,7 @@ class Simulation {
       case "Clock":
         return [[0, Uint8Array.from([this.clockHigh(comp)])]];
       case "Constant":
-        return [[0, numberToBits(comp.a_value === undefined ? 1 : comp.a_value, width)]];
+        return [[0, bigToBits(BigInt(comp.a_value === undefined ? 1 : comp.a_value), width)]];
       case "Power":
         return [[0, makeValue(width, ONE)]];
       case "Ground":
@@ -308,6 +603,50 @@ class Simulation {
         return [[0, this.valueOfPort(comp, 1)]];
       case "Bit Extender":
         return [[0, this.extend(comp)]];
+      case "Multiplexer": case "Demultiplexer": case "Decoder":
+        return this.plex(comp);
+      case "Adder": {
+        const [sum, carry] = computeSum(
+          width, this.valueOfPort(comp, 0), this.valueOfPort(comp, 1),
+          this.valueOfPort(comp, 3)[0]);
+        return [[2, sum], [4, Uint8Array.from([carry])]];
+      }
+      case "Subtractor": {
+        // A subtractor is an adder fed the complement of b and of the incoming borrow.
+        const borrowIn = this.valueOfPort(comp, 3)[0];
+        const [difference, carry] = computeSum(
+          width, this.valueOfPort(comp, 0), invert(this.valueOfPort(comp, 1)),
+          flipBit(borrowIn === UNK ? ZERO : borrowIn));
+        return [[2, difference], [4, Uint8Array.from([flipBit(carry)])]];
+      }
+      case "Negator":
+        return [[1, negate(this.valueOfPort(comp, 0))]];
+      case "Comparator": {
+        const [gt, eq, lt] = compareValues(
+          this.valueOfPort(comp, 0), this.valueOfPort(comp, 1), comp.a_mode !== "unsigned");
+        return [[2, Uint8Array.from([gt])], [3, Uint8Array.from([eq])],
+                [4, Uint8Array.from([lt])]];
+      }
+      case "Multiplier": {
+        const [low, high] = computeProduct(
+          width, this.valueOfPort(comp, 0), this.valueOfPort(comp, 1),
+          this.valueOfPort(comp, 3), comp.a_mode === "unsigned");
+        return [[2, low], [4, high]];
+      }
+      case "Shifter": {
+        const value = this.valueOfPort(comp, 0);
+        const distance = this.valueOfPort(comp, 1);
+        // An unconnected data port is a zero width value in the editor, which the shifter reports
+        // as an error rather than shifting.
+        if (!isDefined(distance) || !this.connected(comp, 0)) {
+          return [[2, makeValue(width, ERR)]];
+        }
+        return [[2, shiftBits(value, Number(bitsToBig(distance, false)), comp.a_shift)]];
+      }
+      case "Counter": {
+        const entry = this.state.get(comp.id);
+        return [[0, entry.value], [7, Uint8Array.from([entry.carry])]];
+      }
       case "Button": {
         // Which way round the press reads is the component's own attribute, not a fixed polarity.
         const pressed = (this.self.get(comp.id) & 1) !== 0;
@@ -322,19 +661,16 @@ class Simulation {
         }
         return driven;
       }
-      // A splitter is wiring, merged bit by bit when the netlist was built, so it drives nothing.
-      // The rest are sinks: they show a value without producing one.
-      case "Splitter": case "Tunnel":
-      case "LED": case "Probe": case "RGBLED":
-      case "7-Segment Display": case "Hex Digit Display":
-        return [];
+      case "Register":
+        return [[0, this.state.get(comp.id).value]];
       default: {
-        const spec = STATEFUL[comp.kind];
-        if (spec) {
-          const stored = this.state.get(comp.id).value;
-          const driven = [[spec.q, stored]];
-          if (spec.nq !== undefined) driven.push([spec.nq, invert(stored)]);
-          return driven;
+        // A splitter is wiring, merged bit by bit when the netlist was built, so it drives nothing.
+        // The rest of SINKS show a value without producing one.
+        if (SINKS.has(comp.kind)) return [];
+        const flipFlop = FLIPFLOP[comp.kind];
+        if (flipFlop) {
+          const held = this.state.get(comp.id).value;
+          return [[flipFlop.inputs + 1, held], [flipFlop.inputs + 2, invert(held)]];
         }
         const gate = GATES[comp.kind];
         if (!gate) return [];
@@ -346,6 +682,57 @@ class Simulation {
         return [[0, out]];
       }
     }
+  }
+
+  /**
+   * Multiplexer, demultiplexer and decoder, which Logisim writes three times over one shape.
+   *
+   * <p>Port order is positional and depends on the attributes: the lanes come first, then select,
+   * then enable if it exists, then the single data port. Getting that arithmetic wrong reads the
+   * select line as data and produces a page that is wrong only for some selections.
+   */
+  plex(comp) {
+    const selectBits = comp.a_select === undefined ? 1 : comp.a_select;
+    const lanes = 1 << selectBits;
+    const enabled = comp.a_enable === true;
+    const width = comp.kind === "Decoder" ? 1 : (comp.a_width === undefined ? 1 : comp.a_width);
+    const whenDisabled = comp.a_disabled === "0" ? ZERO : UNK;
+    const enable = enabled ? this.valueOfPort(comp, lanes + 1)[0] : ONE;
+    const select = this.valueOfPort(comp, lanes);
+    const dataPort = lanes + (enabled ? 2 : 1);
+
+    if (comp.kind === "Multiplexer") {
+      let out;
+      if (enable === ZERO) out = makeValue(width, whenDisabled);
+      else if (enable === ERR && this.connected(comp, lanes + 1)) out = makeValue(width, ERR);
+      else if (isDefined(select)) out = this.valueOfPort(comp, Number(bitsToBig(select, false)));
+      else if (anyError(select)) out = makeValue(width, ERR);
+      else out = makeValue(width, UNK);
+      return [[dataPort, out]];
+    }
+
+    // A demultiplexer and a decoder differ only in what the chosen lane carries.
+    let others = makeValue(width, comp.a_tristate === true ? UNK : ZERO);
+    let chosen = -1;
+    let value = null;
+    if (enable === ZERO) {
+      others = makeValue(width, whenDisabled);
+    } else if (enable === ERR && this.connected(comp, lanes + 1)) {
+      others = makeValue(width, ERR);
+    } else if (isDefined(select)) {
+      chosen = Number(bitsToBig(select, false));
+      value = comp.kind === "Decoder"
+        ? Uint8Array.from([ONE])
+        : this.valueOfPort(comp, dataPort);
+    } else if (anyError(select)) {
+      others = makeValue(width, ERR);
+    } else {
+      others = makeValue(width, UNK);
+    }
+
+    const driven = [];
+    for (let i = 0; i < lanes; i++) driven.push([i, i === chosen ? value : others]);
+    return driven;
   }
 
   extend(comp) {
@@ -403,8 +790,8 @@ class Simulation {
     if (width === 1) {
       bits[0] = bits[0] === ONE ? ZERO : ONE;
     } else {
-      const current = bitsToNumber(bits) || 0;
-      this.inputs.set(comp.id, numberToBits((current + 1) % Math.pow(2, width), width));
+      const current = bitsToBig(bits, false);
+      this.inputs.set(comp.id, bigToBits((current === null ? 0n : current) + 1n, width));
     }
     this.run();
   }
@@ -685,7 +1072,7 @@ view.refresh();
 
 // The clock controls only appear when there is something for them to drive.
 const hasClock = CIRCUIT.components.some((c) => c.kind === "Clock");
-if (hasClock || CIRCUIT.components.some((c) => STATEFUL[c.kind])) {
+if (hasClock || CIRCUIT.components.some((c) => storedWidth(c) > 0)) {
   const bar = document.getElementById("clockbar");
   const counter = document.getElementById("tickcount");
   bar.hidden = false;

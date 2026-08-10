@@ -270,7 +270,8 @@ public final class HtmlCircuitModel {
         case "width", "inputs", "size", "negate", "value", "facing", "radix", "tristate",
             "pull", "output", "incoming", "fanout", "in_width", "out_width", "type",
             "appearance", "labelloc", "trigger", "highDuration", "lowDuration", "phaseOffset",
-            "press", "number" ->
+            "press", "number", "select", "enable", "disabled", "mode", "shift", "max",
+            "ongoal" ->
             comp.attrs.put(name, describe(value));
         default -> {
           // A splitter carries one bitN per incoming bit, up to 64 of them, so they are matched
@@ -289,6 +290,9 @@ public final class HtmlCircuitModel {
   }
 
   private static Object describe(Object value) {
+    // A counter's limit is a Long read as unsigned, and its all-ones value is -1 as a signed long.
+    // It travels as text so the page can widen it to a BigInt without having lost the sign first.
+    if (value instanceof Long number) return Long.toUnsignedString(number);
     if (value instanceof Number || value instanceof Boolean) return value;
     if (value instanceof com.cburch.logisim.data.BitWidth bitWidth) return bitWidth.getWidth();
     return value.toString();

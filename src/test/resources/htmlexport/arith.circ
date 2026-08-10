@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Peler Edition test fixture for HtmlExportDifferentialTest.
+
+  Every arithmetic component the page can simulate, all fed the same two-bit A and B and one-bit C,
+  so one sweep of 32 rows covers the lot. Two bits is deliberate: the sweep is exponential in the
+  input width, and the semantics being checked do not get any more interesting at eight.
+
+  Connections are made with tunnels placed exactly on the ports rather than with wires. Port
+  coordinates here are dense (a comparator's three outputs sit ten apart), and routing wires between
+  them would make this file about the routing rather than about the components.
+
+  A doubled hyphen anywhere in this comment would make the file unparseable, as it did once here.
+-->
+<project version="1.0">
+ <lib name="0" desc="#Wiring" />
+ <lib name="2" desc="#Plexers" />
+ <lib name="3" desc="#Arithmetic" />
+ <lib name="4" desc="#Memory" />
+ <lib name="8" desc="#Base" />
+ <main name="main" />
+ <options>
+  <a name="showgrid" val="true" />
+  <a name="simulate" val="true" />
+ </options>
+ <circuit name="main">
+  <a name="circuit" val="main" />
+
+  <comp lib="0" loc="(100,100)" name="Pin"><a name="label" val="A" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(100,100)" name="Tunnel"><a name="label" val="A" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(100,160)" name="Pin"><a name="label" val="B" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(100,160)" name="Tunnel"><a name="label" val="B" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(100,220)" name="Pin"><a name="label" val="C" /></comp>
+  <comp lib="0" loc="(100,220)" name="Tunnel"><a name="label" val="C" /></comp>
+  <comp lib="0" loc="(100,280)" name="Constant"><a name="width" val="2" /><a name="value" val="0x2" /></comp>
+  <comp lib="0" loc="(100,280)" name="Tunnel"><a name="label" val="Z" /><a name="width" val="2" /></comp>
+
+  <comp lib="3" loc="(300,100)" name="Adder"><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(260,90)" name="Tunnel"><a name="label" val="A" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(260,110)" name="Tunnel"><a name="label" val="B" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(280,80)" name="Tunnel"><a name="label" val="C" /></comp>
+  <comp lib="0" loc="(300,100)" name="Tunnel"><a name="label" val="SUM" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(280,120)" name="Tunnel"><a name="label" val="CO" /></comp>
+  <comp lib="3" loc="(300,200)" name="Subtractor"><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(260,190)" name="Tunnel"><a name="label" val="A" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(260,210)" name="Tunnel"><a name="label" val="B" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(280,180)" name="Tunnel"><a name="label" val="C" /></comp>
+  <comp lib="0" loc="(300,200)" name="Tunnel"><a name="label" val="DIF" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(280,220)" name="Tunnel"><a name="label" val="BO" /></comp>
+  <comp lib="3" loc="(300,300)" name="Comparator"><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(260,290)" name="Tunnel"><a name="label" val="A" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(260,310)" name="Tunnel"><a name="label" val="B" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(300,290)" name="Tunnel"><a name="label" val="GT" /></comp>
+  <comp lib="0" loc="(300,300)" name="Tunnel"><a name="label" val="EQ" /></comp>
+  <comp lib="0" loc="(300,310)" name="Tunnel"><a name="label" val="LT" /></comp>
+  <comp lib="3" loc="(300,400)" name="Negator"><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(260,400)" name="Tunnel"><a name="label" val="A" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(300,400)" name="Tunnel"><a name="label" val="NEG" /><a name="width" val="2" /></comp>
+  <comp lib="3" loc="(300,500)" name="Multiplier"><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(260,490)" name="Tunnel"><a name="label" val="A" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(260,510)" name="Tunnel"><a name="label" val="B" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(280,480)" name="Tunnel"><a name="label" val="Z" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(300,500)" name="Tunnel"><a name="label" val="MUL" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(280,520)" name="Tunnel"><a name="label" val="MCO" /><a name="width" val="2" /></comp>
+  <comp lib="3" loc="(300,600)" name="Shifter"><a name="width" val="2" /><a name="shift" val="ar" /></comp>
+  <comp lib="0" loc="(260,590)" name="Tunnel"><a name="label" val="A" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(260,610)" name="Tunnel"><a name="label" val="C" /></comp>
+  <comp lib="0" loc="(300,600)" name="Tunnel"><a name="label" val="SHF" /><a name="width" val="2" /></comp>
+
+  <comp lib="0" loc="(900,100)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="SUM" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,100)" name="Tunnel"><a name="label" val="SUM" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,140)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="CO" /></comp>
+  <comp lib="0" loc="(900,140)" name="Tunnel"><a name="label" val="CO" /></comp>
+  <comp lib="0" loc="(900,180)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="DIF" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,180)" name="Tunnel"><a name="label" val="DIF" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,220)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="BO" /></comp>
+  <comp lib="0" loc="(900,220)" name="Tunnel"><a name="label" val="BO" /></comp>
+  <comp lib="0" loc="(900,260)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="GT" /></comp>
+  <comp lib="0" loc="(900,260)" name="Tunnel"><a name="label" val="GT" /></comp>
+  <comp lib="0" loc="(900,300)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="EQ" /></comp>
+  <comp lib="0" loc="(900,300)" name="Tunnel"><a name="label" val="EQ" /></comp>
+  <comp lib="0" loc="(900,340)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="LT" /></comp>
+  <comp lib="0" loc="(900,340)" name="Tunnel"><a name="label" val="LT" /></comp>
+  <comp lib="0" loc="(900,380)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="NEG" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,380)" name="Tunnel"><a name="label" val="NEG" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,420)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="MUL" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,420)" name="Tunnel"><a name="label" val="MUL" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,460)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="MCO" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,460)" name="Tunnel"><a name="label" val="MCO" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,500)" name="Pin"><a name="facing" val="west" /><a name="output" val="true" /><a name="label" val="SHF" /><a name="width" val="2" /></comp>
+  <comp lib="0" loc="(900,500)" name="Tunnel"><a name="label" val="SHF" /><a name="width" val="2" /></comp>
+ </circuit>
+</project>

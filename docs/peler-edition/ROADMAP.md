@@ -600,7 +600,7 @@ touch `AppPreferences`, whose static initialiser reads the real preference store
 Key files: `prefs/PelerPreferences.java`, `prefs/AppPreferences.java`,
 `src/test/java/com/cburch/logisim/prefs/PelerPreferencesTest.java` (new).
 
-## Feature 9 — Interactive HTML export (experimental, phases 1-5 2026-08-10)
+## Feature 9 — Interactive HTML export (experimental, phases 1-6 2026-08-10)
 
 Export a circuit as one self-contained HTML page that cannot be edited but still simulates: click an
 input pin and the values propagate. Branch `peler/html-export`.
@@ -784,9 +784,45 @@ Also in this phase: port dots are drawn by the page and coloured live rather tha
 bodies are rendered against a scratch circuit state, so an export no longer depends on what the
 editor happened to be showing.
 
+### Phase 6 — arithmetic, plexers and counters (2026-08-10)
+
+Multiplexer, demultiplexer and decoder; adder, subtractor, negator, comparator, multiplier and
+shifter; T, J-K and S-R flip-flops and the counter. Each is a transcription of the component's own
+`propagate`, including the paths that only run when an input is floating, because a page that shows
+a clean number where the editor shows a floating bus is lying about the circuit.
+
+**Values are BigInt throughout.** Logisim allows buses up to 64 bits and a JavaScript number stops
+being exact at 53, so an ordinary number would quietly round a wide adder.
+
+**Fixtures connect with tunnels placed on the ports rather than with wires.** A comparator's three
+outputs sit ten units apart; routing wires between them would make the fixture a test of the
+routing. `arith.circ` and `plexer.circ` feed every component the same narrow inputs, so one sweep
+covers all of them, and two bits is enough: the sweep is exponential in the input width and the
+semantics do not get more interesting at eight.
+
+**A flip-flop's remembered clock level starts unknown, not low.** `ClockState`'s constructor says
+low, which would make a circuit whose clock is already high latch once at startup. It does not: a
+fresh circuit propagates once with every wire still unset, so the level a flip-flop first sees is
+unknown and no edge fires. `ffedge.circ` clocks a flip-flop from an input pin and sweeps from a
+fresh state, which is the only arrangement where the difference is visible; taking the constructor
+at its word fails its row 3 and nothing else here notices.
+
+The JavaScript half of the combinational sweep now builds a fresh engine per row, matching the
+fresh `CircuitState` the Java half already built. Sharing one engine across rows carried a
+flip-flop's contents into the next row, which passed anyway and would have hidden exactly this.
+
+One deliberate divergence: Logisim throws when a counter holding an undefined value is clocked,
+because it works out the carry from a value it has just decided is null. The page settles on an
+undefined count with no carry.
+
+Not covered: divider, bit adder, bit finder, bit selector, priority encoder, shift register, ROM,
+RAM and random. The shift register's parallel ports depend on its appearance attribute, and the
+memory arrays need their contents exported and a poke interface, so both are more than a
+transcription.
+
 ### Still to do
 
-Arithmetic, memory and subcircuits. Every new component needs a fixture in the differential test as
+Subcircuits, then the page itself. Every new component needs a fixture in the differential test as
 it lands.
 
 ## Known open items
