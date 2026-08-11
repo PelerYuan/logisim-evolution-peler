@@ -882,6 +882,14 @@ report as a wheel event with the control flag set.
 where it started, so dragging across a pin pans the view and a still click on the same pin still
 toggles it. Getting this wrong is invisible in a screenshot and obvious in use.
 
+**The pointer is captured on the first real movement, not on the press.** Capturing on the press
+sends the `click` that follows to the capture target rather than to whatever was pressed, so every
+pin, button and switch on the page goes dead while the drawing still looks perfect. It shipped in
+dev build 35 that way. Nothing caught it because the test dispatched its own pointer events, and a
+made up pointer id cannot be captured at all, so the very line at fault never ran. Interaction is
+now checked by driving a real browser with real input; synthetic events are the wrong tool for
+anything the browser itself decides.
+
 Two bugs came out of testing that rather than reading it. `fit()` divided by a window that had no
 size yet, settled on the smallest zoom there is, and left the page apparently blank; it now refuses
 a zero sized window and is retried after the first layout. And the guard that tells a drag from a

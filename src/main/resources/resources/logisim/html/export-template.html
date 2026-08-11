@@ -15,7 +15,10 @@
      moved by the camera, so it stays one pixel crisp at any zoom instead of blurring with the
      drawing. */
   #stage { position: fixed; inset: 0; touch-action: none; cursor: grab;
-           background-color: #fff; background-repeat: repeat; }
+           background-color: #fff; background-repeat: repeat;
+           /* A drag on the canvas pans it. Without this the browser would rather select the
+              text on a pin or start dragging the drawing off as an image. */
+           user-select: none; -webkit-user-select: none; }
   #stage.grabbing { cursor: grabbing; }
   #stage.grid { background-image: radial-gradient(circle at center, #777 0 1px, transparent 1px); }
   #stage svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
@@ -26,9 +29,11 @@
            padding: 6px 8px; border-radius: 8px; background: #ffffffe8; color: #111;
            border: 1px solid #0002; box-shadow: 0 1px 4px #0002;
            backdrop-filter: blur(6px); }
-  #topbar { top: 10px; left: 10px; max-width: calc(100vw - 20px); flex-wrap: wrap; }
-  #zoombar { bottom: 10px; left: 10px; }
-  #topbar .name { font-weight: 600; margin-right: 2px; }
+  #zoombar { bottom: 10px; left: 10px; max-width: calc(100vw - 20px); flex-wrap: wrap; }
+  #clockbar { display: inline-flex; align-items: center; gap: 6px; }
+  /* An author display rule outranks the hidden attribute's, so a circuit with no clock would
+     otherwise be offered tick and run buttons that drive nothing. */
+  #clockbar[hidden] { display: none; }
   .sep { width: 1px; align-self: stretch; background: #0002; margin: 0 2px; }
   .hint { opacity: .6; }
   #zoomlevel { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
@@ -49,27 +54,20 @@
 <div id="stage" class="grid"></div>
 <div id="warn"></div>
 
-<div class="panel" id="topbar">
-  <span class="name">__TITLE__</span>
+<div class="panel" id="zoombar">
+  <button class="icon" id="zoomout" type="button" title="Zoom out">&#8722;</button>
+  <span id="zoomlevel">100%</span>
+  <button class="icon" id="zoomin" type="button" title="Zoom in">+</button>
+  <button id="zoomreset" type="button" title="Back to the size the editor drew it">1:1</button>
   <span class="sep"></span>
+  <button id="gridtoggle" type="button" title="Show or hide the grid">Grid</button>
   <span id="clockbar" hidden>
+    <span class="sep"></span>
     <button id="tick" type="button">Tick</button>
     <button id="run" type="button">Run</button>
     <button id="reset" type="button">Reset</button>
     <span class="hint" id="tickcount">0 ticks</span>
   </span>
-  <span class="hint" id="hint">Click an input to change it. Drag to pan, Ctrl and scroll to zoom.</span>
-</div>
-
-<div class="panel" id="zoombar">
-  <button class="icon" id="zoomout" type="button" title="Zoom out">&#8722;</button>
-  <span id="zoomlevel">100%</span>
-  <button class="icon" id="zoomin" type="button" title="Zoom in">+</button>
-  <span class="sep"></span>
-  <button id="zoomfit" type="button" title="Fit the circuit in the window">Fit</button>
-  <button id="zoomreset" type="button" title="Back to the size the editor drew it">1:1</button>
-  <span class="sep"></span>
-  <button id="gridtoggle" type="button" title="Show or hide the grid">Grid</button>
 </div>
 
 <script>
@@ -1310,6 +1308,7 @@ if (!camera.fit()) requestAnimationFrame(() => camera.fit());
  */
 const pointers = new Map();
 let panFrom = null;
+let panOrigin = null;
 let pinchFrom = null;
 
 function pointerDistance() {
@@ -1322,13 +1321,16 @@ function pointerCentre() {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
+// The browser's own drag, which would otherwise start on a modifier-drag and swallow the pointer
+// events the pan needs.
+stage.addEventListener("dragstart", (event) => event.preventDefault());
+
 stage.addEventListener("pointerdown", (event) => {
   pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
   view.moved = false;
   if (pointers.size === 1 && event.button === 0) {
     panFrom = { x: event.clientX, y: event.clientY };
-    stage.setPointerCapture(event.pointerId);
-    stage.classList.add("grabbing");
+    panOrigin = { x: event.clientX, y: event.clientY };
   } else if (pointers.size === 2) {
     panFrom = null;
     pinchFrom = { distance: pointerDistance(), scale: camera.scale };
@@ -1352,9 +1354,24 @@ stage.addEventListener("pointermove", (event) => {
   if (!panFrom) return;
   const dx = event.clientX - panFrom.x;
   const dy = event.clientY - panFrom.y;
-  // A few pixels of slop, so a click delivered by an unsteady hand is still a click.
-  if (Math.abs(dx) + Math.abs(dy) > 3) view.moved = true;
   panFrom = { x: event.clientX, y: event.clientY };
+
+  if (!view.moved) {
+    // A few pixels of slop, so a click delivered by an unsteady hand is still a click.
+    const travelled = Math.abs(event.clientX - panOrigin.x) + Math.abs(event.clientY - panOrigin.y);
+    if (travelled <= 3) return;
+    view.moved = true;
+    // The pointer is captured here and not on the press. Capturing on the press sends the click
+    // that follows to the stage rather than to whatever was pressed, which leaves every pin,
+    // button and switch on the page dead -- and it looks fine in a test that dispatches its own
+    // events, because a made up pointer id cannot be captured at all.
+    try {
+      stage.setPointerCapture(event.pointerId);
+    } catch (ignored) {
+      // no capture available; pointerup on the stage still ends the pan
+    }
+    stage.classList.add("grabbing");
+  }
   camera.panBy(dx, dy);
 });
 
@@ -1363,6 +1380,7 @@ const endPointer = (event) => {
   if (pointers.size < 2) pinchFrom = null;
   if (pointers.size === 0) {
     panFrom = null;
+    panOrigin = null;
     stage.classList.remove("grabbing");
   }
 };
@@ -1402,7 +1420,6 @@ window.addEventListener("resize", () => {
 
 document.getElementById("zoomin").addEventListener("click", () => camera.zoomCentre(1.25));
 document.getElementById("zoomout").addEventListener("click", () => camera.zoomCentre(1 / 1.25));
-document.getElementById("zoomfit").addEventListener("click", () => camera.fit());
 document.getElementById("zoomreset").addEventListener("click", () => {
   camera.setScale(1);
   camera.centre();

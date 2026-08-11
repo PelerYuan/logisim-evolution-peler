@@ -97,7 +97,7 @@ they do here. Clock circuits get tick, run and reset controls. Nothing can be mo
 edited, which is the point — it is a circuit to hand to someone, not a copy of the editor.
 
 The page is a workspace rather than a document: the same white sheet and dot grid as the canvas
-here, filling the window, with the controls floating over it. Drag to pan, <kbd>Ctrl</kbd>+scroll
+here, filling the window, with one small control strip floating in the corner and nothing else. Drag to pan, <kbd>Ctrl</kbd>+scroll
 to zoom about the pointer, scroll to move up and down and <kbd>Shift</kbd>+scroll to move sideways,
 which is what the canvas in this application does with the same gestures. Pinch works on a
 trackpad or a touchscreen. It opens with the circuit fitted, and a zoom control sits in the corner
