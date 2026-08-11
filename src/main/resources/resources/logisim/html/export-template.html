@@ -5,41 +5,73 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { margin: 0; font: 14px system-ui, sans-serif; background: #fff; color: #111; }
-  @media (prefers-color-scheme: dark) { body { background: #14161a; color: #e8e8e8; } }
-  header { padding: 10px 14px; border-bottom: 1px solid #8883; display: flex; gap: 14px;
-           align-items: baseline; flex-wrap: wrap; }
-  header h1 { font-size: 15px; margin: 0; font-weight: 600; }
-  header .hint { opacity: .65; font-size: 12px; }
-  #stage { overflow: auto; padding: 12px; }
-  /* The drawing is Logisim's own artwork, in Logisim's own colours, and those assume paper. It
-     keeps its white sheet in a dark theme rather than becoming black lines on a black page. */
-  svg { display: block; background: #fff; border: 1px solid #8883; border-radius: 6px; }
-  svg.fit { max-width: 100%; height: auto; }
+  /* The page is a workspace, not a document: one canvas filling the window, drawn the way the
+     editor draws its own, with the controls floating over it. */
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body { font: 13px system-ui, sans-serif; color: #111; background: #fff;
+         -webkit-font-smoothing: antialiased; }
+
+  /* The grid is Logisim's: white paper, grey dots every ten units. It is drawn in screen space and
+     moved by the camera, so it stays one pixel crisp at any zoom instead of blurring with the
+     drawing. */
+  #stage { position: fixed; inset: 0; touch-action: none; cursor: grab;
+           background-color: #fff; background-repeat: repeat; }
+  #stage.grabbing { cursor: grabbing; }
+  #stage.grid { background-image: radial-gradient(circle at center, #777 0 1px, transparent 1px); }
+  #stage svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
   .clickable { cursor: pointer; }
-  header button { font: inherit; padding: 2px 10px; margin-right: 4px; cursor: pointer;
-                  border: 1px solid #8886; border-radius: 5px; background: #8881; color: inherit; }
-  header button:hover { background: #8883; }
-  #warn { display: none; margin: 8px 14px; padding: 8px 10px; border-radius: 6px;
-          background: #b000201a; color: #b00020; font-size: 13px; }
-  @media (prefers-color-scheme: dark) { #warn { color: #ff8a90; } }
+
+  .panel { position: fixed; z-index: 2; display: flex; align-items: center; gap: 6px;
+           padding: 6px 8px; border-radius: 8px; background: #ffffffe8; color: #111;
+           border: 1px solid #0002; box-shadow: 0 1px 4px #0002;
+           backdrop-filter: blur(6px); }
+  #topbar { top: 10px; left: 10px; max-width: calc(100vw - 20px); flex-wrap: wrap; }
+  #zoombar { bottom: 10px; left: 10px; }
+  #topbar .name { font-weight: 600; margin-right: 2px; }
+  .sep { width: 1px; align-self: stretch; background: #0002; margin: 0 2px; }
+  .hint { opacity: .6; }
+  #zoomlevel { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
+
+  button { font: inherit; padding: 3px 9px; cursor: pointer; color: inherit;
+           border: 1px solid #0002; border-radius: 6px; background: #0000000a; }
+  button:hover { background: #00000014; }
+  button:active { background: #0000001f; }
+  .icon { padding: 3px 8px; font-size: 14px; line-height: 1; }
+
+  #warn { position: fixed; z-index: 3; top: 10px; left: 50%; transform: translateX(-50%);
+          display: none; max-width: min(520px, calc(100vw - 20px));
+          padding: 8px 12px; border-radius: 8px; box-shadow: 0 1px 4px #0002;
+          background: #fdecee; color: #b00020; border: 1px solid #b0002033; }
 </style>
 </head>
 <body>
-<header>
-  <h1>__TITLE__</h1>
-  <span class="hint">Click an input pin, button or switch to change it. Nothing here can be moved or edited.</span>
-  <button id="fit" type="button">Fit to width</button>
+<div id="stage" class="grid"></div>
+<div id="warn"></div>
+
+<div class="panel" id="topbar">
+  <span class="name">__TITLE__</span>
+  <span class="sep"></span>
   <span id="clockbar" hidden>
     <button id="tick" type="button">Tick</button>
     <button id="run" type="button">Run</button>
     <button id="reset" type="button">Reset</button>
     <span class="hint" id="tickcount">0 ticks</span>
   </span>
-</header>
-<div id="warn"></div>
-<div id="stage"></div>
+  <span class="hint" id="hint">Click an input to change it. Drag to pan, Ctrl and scroll to zoom.</span>
+</div>
+
+<div class="panel" id="zoombar">
+  <button class="icon" id="zoomout" type="button" title="Zoom out">&#8722;</button>
+  <span id="zoomlevel">100%</span>
+  <button class="icon" id="zoomin" type="button" title="Zoom in">+</button>
+  <span class="sep"></span>
+  <button id="zoomfit" type="button" title="Fit the circuit in the window">Fit</button>
+  <button id="zoomreset" type="button" title="Back to the size the editor drew it">1:1</button>
+  <span class="sep"></span>
+  <button id="gridtoggle" type="button" title="Show or hide the grid">Grid</button>
+</div>
+
 <script>
 "use strict";
 const CIRCUIT = /*__CIRCUIT__*/null;
@@ -925,11 +957,9 @@ class View {
     this.ox = circuit.originX;
     this.oy = circuit.originY;
 
-    this.root = el("svg", {
-      viewBox: `0 0 ${circuit.width} ${circuit.height}`,
-      width: circuit.width, height: circuit.height,
-      xmlns: SVG_NS,
-    });
+    // No fixed size: the element fills the window and the camera moves the viewBox over it, so
+    // panning and zooming cost one attribute rather than a re-layout.
+    this.root = el("svg", { viewBox: `0 0 ${circuit.width} ${circuit.height}`, xmlns: SVG_NS });
     this.wireLayer = el("g", { "stroke-linecap": "round" });
     this.bodyLayer = el("g", {});
     this.dotLayer = el("g", {});
@@ -977,9 +1007,18 @@ class View {
       }
     }
 
+    // Set by the pan handling below: the gesture that just ended moved the view rather than
+    // pressing anything.
+    this.moved = false;
+
     this.buildAnimated();
     this.buildInteractive();
     this.buildPokeTargets();
+  }
+
+  /** Whether the click that just arrived was really the end of a drag, and should be ignored. */
+  swallowClick() {
+    return this.moved;
   }
 
   colorFor(net) {
@@ -1090,11 +1129,17 @@ class View {
       });
       if (comp.kind === "Pin") {
         // Clicking a pin steps it, which for one bit is a toggle and for a bus is a count.
-        target.addEventListener("click", () => { this.sim.toggleInput(comp); this.refresh(); });
+        target.addEventListener("click", () => {
+          if (this.swallowClick()) return;
+          this.sim.toggleInput(comp);
+          this.refresh();
+        });
       } else if (comp.kind === "Button") {
         // Held down while the pointer is down, exactly as the real one behaves.
         const press = (down) => { this.sim.setSelf(comp, down ? 1 : 0); this.refresh(); };
         target.addEventListener("pointerdown", (e) => {
+          // Held, not dragged: the press must not also arm a pan behind it.
+          e.stopPropagation();
           // Capture so releasing away from the button still releases it. Not every pointer can be
           // captured, and a button that cannot be released would be worse than one that drags off.
           try {
@@ -1108,6 +1153,7 @@ class View {
         target.addEventListener("pointercancel", () => press(false));
       } else {
         target.addEventListener("click", (e) => {
+          if (this.swallowClick()) return;
           const [px, py] = circuitPointOf(this, e);
           const which = comp.hit && comp.hit.kind === "dip" ? dipSwitchAt(comp, px, py) : 0;
           this.sim.toggleSelfBit(comp, which);
@@ -1148,15 +1194,221 @@ const stage = document.getElementById("stage");
 stage.append(view.root);
 view.refresh();
 
-// A circuit is drawn at the size the editor drew it. Wider than the window it would only be
-// scrolled, which is no way to meet a page, so it starts fitted and can be put back.
-const fitButton = document.getElementById("fit");
-const setFit = (on) => {
-  view.root.classList.toggle("fit", on);
-  fitButton.textContent = on ? "Actual size" : "Fit to width";
+/**
+ * Where the window is looking: the drawing coordinate at its top left corner, and how many screen
+ * pixels one drawing unit is worth.
+ *
+ * <p>Everything is applied through the SVG's viewBox rather than by scaling the element, so lines
+ * stay one pixel wide and text stays sharp however far in the view is zoomed. The grid is a screen
+ * space background moved to match, which is how the editor's own canvas draws it.
+ */
+class Camera {
+  constructor(view, stage) {
+    this.view = view;
+    this.stage = stage;
+    this.scale = 1;
+    this.x = 0;
+    this.y = 0;
+    this.minScale = 0.1;
+    this.maxScale = 8;
+    // The window keeps choosing the view until the reader does. After that a resize leaves the
+    // view where they put it rather than yanking it back.
+    this.autoFit = true;
+  }
+
+  get width() {
+    return this.stage.clientWidth;
+  }
+
+  get height() {
+    return this.stage.clientHeight;
+  }
+
+  apply() {
+    const w = this.width / this.scale;
+    const h = this.height / this.scale;
+    this.view.root.setAttribute("viewBox", `${this.x} ${this.y} ${w} ${h}`);
+    // The grid belongs to the circuit's coordinates, not the drawing's, so it is offset by the
+    // origin the exporter cropped to as well as by the camera.
+    const step = 10 * this.scale;
+    const offsetX = (-this.x - CIRCUIT.originX) * this.scale;
+    const offsetY = (-this.y - CIRCUIT.originY) * this.scale;
+    this.stage.style.backgroundSize = `${step}px ${step}px`;
+    this.stage.style.backgroundPosition = `${offsetX}px ${offsetY}px`;
+    // Below about a third the dots merge into a wash, which is noise rather than information.
+    this.stage.style.backgroundImage = this.scale < 0.34 ? "none" : "";
+    document.getElementById("zoomlevel").textContent = Math.round(this.scale * 100) + "%";
+  }
+
+  panBy(dx, dy) {
+    this.autoFit = false;
+    this.x -= dx / this.scale;
+    this.y -= dy / this.scale;
+    this.apply();
+  }
+
+  /** Zooms about a point given in screen pixels, so what is under the pointer stays under it. */
+  zoomAt(factor, screenX, screenY) {
+    this.autoFit = false;
+    const wanted = Math.min(this.maxScale, Math.max(this.minScale, this.scale * factor));
+    if (wanted === this.scale) return;
+    const beforeX = this.x + screenX / this.scale;
+    const beforeY = this.y + screenY / this.scale;
+    this.scale = wanted;
+    this.x = beforeX - screenX / this.scale;
+    this.y = beforeY - screenY / this.scale;
+    this.apply();
+  }
+
+  zoomCentre(factor) {
+    this.zoomAt(factor, this.width / 2, this.height / 2);
+  }
+
+  setScale(scale) {
+    this.zoomCentre(scale / this.scale);
+  }
+
+  /**
+   * The whole circuit in view, with a margin, never magnified past its natural size.
+   *
+   * <p>Refuses to work from a window that has no size yet. Called before the first layout it would
+   * otherwise divide by a negative width and settle on the smallest zoom there is, leaving the
+   * page apparently blank -- which is exactly what it did.
+   */
+  fit() {
+    this.autoFit = true;
+    if (this.width <= 0 || this.height <= 0) return false;
+    const margin = 24;
+    const scale = Math.min(
+      (this.width - margin) / CIRCUIT.width,
+      (this.height - margin) / CIRCUIT.height);
+    this.scale = Math.min(this.maxScale, Math.max(this.minScale, Math.min(scale, 1)));
+    this.centre();
+    return true;
+  }
+
+  centre() {
+    this.x = (CIRCUIT.width - this.width / this.scale) / 2;
+    this.y = (CIRCUIT.height - this.height / this.scale) / 2;
+    this.apply();
+  }
+}
+
+const camera = new Camera(view, stage);
+// Once now, and again after the first layout, since a page can be scripted before the window has
+// told it how big it is.
+if (!camera.fit()) requestAnimationFrame(() => camera.fit());
+
+// ---------------------------------------------------------------- pointer
+
+/**
+ * Dragging pans, clicking works a control.
+ *
+ * <p>Which of the two a gesture was is decided by whether it moved, not by where it started, so
+ * dragging across a pin pans the view instead of toggling it, and a still click on the same pin
+ * still toggles. Controls read {@link View#swallowClick} to tell the difference.
+ */
+const pointers = new Map();
+let panFrom = null;
+let pinchFrom = null;
+
+function pointerDistance() {
+  const [a, b] = [...pointers.values()];
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function pointerCentre() {
+  const [a, b] = [...pointers.values()];
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+stage.addEventListener("pointerdown", (event) => {
+  pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  view.moved = false;
+  if (pointers.size === 1 && event.button === 0) {
+    panFrom = { x: event.clientX, y: event.clientY };
+    stage.setPointerCapture(event.pointerId);
+    stage.classList.add("grabbing");
+  } else if (pointers.size === 2) {
+    panFrom = null;
+    pinchFrom = { distance: pointerDistance(), scale: camera.scale };
+  }
+});
+
+stage.addEventListener("pointermove", (event) => {
+  if (!pointers.has(event.pointerId)) return;
+  pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+  if (pinchFrom && pointers.size === 2) {
+    const centre = pointerCentre();
+    const box = stage.getBoundingClientRect();
+    camera.zoomAt(
+      (pinchFrom.distance === 0 ? 1 : pointerDistance() / pinchFrom.distance)
+        * pinchFrom.scale / camera.scale,
+      centre.x - box.left, centre.y - box.top);
+    view.moved = true;
+    return;
+  }
+  if (!panFrom) return;
+  const dx = event.clientX - panFrom.x;
+  const dy = event.clientY - panFrom.y;
+  // A few pixels of slop, so a click delivered by an unsteady hand is still a click.
+  if (Math.abs(dx) + Math.abs(dy) > 3) view.moved = true;
+  panFrom = { x: event.clientX, y: event.clientY };
+  camera.panBy(dx, dy);
+});
+
+const endPointer = (event) => {
+  pointers.delete(event.pointerId);
+  if (pointers.size < 2) pinchFrom = null;
+  if (pointers.size === 0) {
+    panFrom = null;
+    stage.classList.remove("grabbing");
+  }
 };
-setFit(CIRCUIT.width > stage.clientWidth - 24);
-fitButton.addEventListener("click", () => setFit(!view.root.classList.contains("fit")));
+stage.addEventListener("pointerup", endPointer);
+stage.addEventListener("pointercancel", endPointer);
+
+/**
+ * The wheel, split the way the editor's own canvas splits it: control zooms, shift scrolls
+ * sideways, and a bare wheel scrolls up and down.
+ *
+ * <p>Control also covers the trackpad pinch, which browsers report as a wheel event with the
+ * control flag set, so the gesture people reach for on a laptop works without a second code path.
+ */
+stage.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  // A wheel may report lines or pages rather than pixels; a line is about sixteen pixels.
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? stage.clientHeight : 1;
+  const dx = event.deltaX * unit;
+  const dy = event.deltaY * unit;
+
+  if (event.ctrlKey || event.metaKey) {
+    const box = stage.getBoundingClientRect();
+    // A trackpad reports many small deltas and a wheel a few large ones; the exponential keeps
+    // both feeling like the same gesture.
+    camera.zoomAt(Math.exp(-dy * 0.0025), event.clientX - box.left, event.clientY - box.top);
+  } else if (event.shiftKey) {
+    camera.panBy(-(dy || dx), 0);
+  } else {
+    camera.panBy(-dx, -dy);
+  }
+}, { passive: false });
+
+window.addEventListener("resize", () => {
+  if (camera.autoFit) camera.fit();
+  else camera.apply();
+});
+
+document.getElementById("zoomin").addEventListener("click", () => camera.zoomCentre(1.25));
+document.getElementById("zoomout").addEventListener("click", () => camera.zoomCentre(1 / 1.25));
+document.getElementById("zoomfit").addEventListener("click", () => camera.fit());
+document.getElementById("zoomreset").addEventListener("click", () => {
+  camera.setScale(1);
+  camera.centre();
+});
+document.getElementById("gridtoggle").addEventListener("click",
+  () => stage.classList.toggle("grid"));
 
 // The clock controls only appear when there is something for them to drive.
 const hasClock = CIRCUIT.components.some((c) => c.kind === "Clock");

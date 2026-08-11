@@ -866,10 +866,28 @@ or conflicting bit are preferences in Logisim, so they travel with the netlist a
 colours. The differential test now compares against `Value.toDisplayString` rather than a
 hand-written mirror of it, so the comparison covers how a value is written as well as what it is.
 
-**The drawing keeps a white sheet in a dark theme.** It is Logisim's artwork in Logisim's colours
-and those assume paper; the page chrome follows the reader's theme, the schematic does not. A
-circuit wider than the window opens fitted, with a button to put it back to the size the editor
-drew it.
+**The page is a workspace, not a document.** One canvas filling the window, on the same white
+sheet and dot grid the editor's own canvas draws, with the controls floating over it. There is no
+page chrome left to follow a reader's dark theme, which is the point: Logisim's artwork is in
+Logisim's colours and those assume paper.
+
+Panning and zooming go through the SVG's viewBox rather than by scaling the element, so lines stay
+one pixel wide and text stays sharp at any zoom. The grid is a screen space background moved to
+match, which is how the editor draws it too, and it costs nothing to redraw. The gestures are the
+editor's, taken from `Canvas.mouseWheelMoved`: control zooms about the pointer, shift scrolls
+sideways, a bare wheel scrolls up and down. Control also covers the trackpad pinch, which browsers
+report as a wheel event with the control flag set.
+
+**A drag is not a click.** Which of the two a gesture was is decided by whether it moved, not by
+where it started, so dragging across a pin pans the view and a still click on the same pin still
+toggles it. Getting this wrong is invisible in a screenshot and obvious in use.
+
+Two bugs came out of testing that rather than reading it. `fit()` divided by a window that had no
+size yet, settled on the smallest zoom there is, and left the page apparently blank; it now refuses
+a zero sized window and is retried after the first layout. And the guard that tells a drag from a
+click reached the DIP switch but not the pin, because the patch that added it aborted halfway and
+was never written -- so dragging across an input pin toggled it. Both were found by driving the
+page, not by looking at it.
 
 Verified end to end through the application itself: File > Export as interactive HTML on a
 two-level nested full adder, saved through the file dialog, opened in a browser, and swept through

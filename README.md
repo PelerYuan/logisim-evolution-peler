@@ -96,6 +96,13 @@ change it, press a button, flip a DIP switch, and values propagate through the c
 they do here. Clock circuits get tick, run and reset controls. Nothing can be moved, rewired or
 edited, which is the point — it is a circuit to hand to someone, not a copy of the editor.
 
+The page is a workspace rather than a document: the same white sheet and dot grid as the canvas
+here, filling the window, with the controls floating over it. Drag to pan, <kbd>Ctrl</kbd>+scroll
+to zoom about the pointer, scroll to move up and down and <kbd>Shift</kbd>+scroll to move sideways,
+which is what the canvas in this application does with the same gestures. Pinch works on a
+trackpad or a touchscreen. It opens with the circuit fitted, and a zoom control sits in the corner
+the editor's own does.
+
 The picture is Logisim's own. Every component is drawn by the same paint code the editor uses, so
 gates, displays and buses look the same in the page as on screen, down to the colours you have set.
 Subcircuits are flattened into the page, so a design built out of your own blocks exports as one
