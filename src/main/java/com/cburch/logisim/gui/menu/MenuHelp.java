@@ -16,13 +16,10 @@ import com.cburch.logisim.gui.generic.LFrame;
 import com.cburch.logisim.gui.generic.OptionPane;
 import com.cburch.logisim.gui.start.About;
 import com.cburch.logisim.gui.start.AboutPelerEdition;
-import com.cburch.logisim.mcp.McpServerManager;
 import com.cburch.logisim.util.MacCompatibility;
 import java.awt.Desktop;
 import java.awt.Dimension;
-import java.awt.Font;
 import java.awt.Toolkit;
-import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.net.URI;
@@ -31,8 +28,6 @@ import javax.help.HelpSet;
 import javax.help.JHelp;
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
-import javax.swing.JScrollPane;
-import javax.swing.JTextArea;
 
 class MenuHelp extends JMenu implements ActionListener {
 
@@ -46,8 +41,6 @@ class MenuHelp extends JMenu implements ActionListener {
   // upstream's credits/copyright screen and is left untouched. See AboutPelerEdition.
   private final JMenuItem aboutPelerEdition = new JMenuItem();
   private final JMenuItem www = new JMenuItem();
-  // Peler Edition: MCP configuration for Claude/Codex clients.
-  private final JMenuItem mcpConfig = new JMenuItem();
   private HelpSet helpSet;
   private String helpSetUrl = "";
   private JHelp helpComponent;
@@ -62,7 +55,6 @@ class MenuHelp extends JMenu implements ActionListener {
     about.addActionListener(this);
     aboutPelerEdition.addActionListener(this);
     www.addActionListener(this);
-    mcpConfig.addActionListener(this);
 
     add(tutorial);
     add(guide);
@@ -82,8 +74,6 @@ class MenuHelp extends JMenu implements ActionListener {
       addSeparator();
     }
     add(aboutPelerEdition);
-    addSeparator();
-    add(mcpConfig);
   }
 
   @Override
@@ -101,42 +91,7 @@ class MenuHelp extends JMenu implements ActionListener {
       AboutPelerEdition.showDialog(menubar.getParentFrame());
     } else if (www.equals(src)) {
       openProjectWebsite();
-    } else if (mcpConfig.equals(src)) {
-      showMcpConfigDialog();
     }
-  }
-
-  private void showMcpConfigDialog() {
-    final var json = McpServerManager.getInstance().clientConfigJson();
-    if (json == null) {
-      OptionPane.showMessageDialog(
-          menubar.getParentFrame(),
-          S.get("mcpConfigNotRunning"),
-          S.get("mcpConfigTitle"),
-          OptionPane.INFORMATION_MESSAGE);
-      return;
-    }
-    String displayText = json;
-    try {
-      Toolkit.getDefaultToolkit()
-          .getSystemClipboard()
-          .setContents(new StringSelection(json), null);
-      displayText = json + "\n\n" + S.get("mcpConfigCopied");
-    } catch (Exception ignored) {
-      // clipboard may be unavailable in headless/test environments
-    }
-    final var textArea = new JTextArea(displayText);
-    textArea.setEditable(false);
-    // deriveFont rather than new Font(name, ...): a physical font built by name carries no
-    // fallback, which is how CJK turns into boxes elsewhere in this application. See CLAUDE.md.
-    textArea.setFont(textArea.getFont().deriveFont(Font.PLAIN, 12f));
-    textArea.setRows(10);
-    textArea.setColumns(55);
-    OptionPane.showMessageDialog(
-        menubar.getParentFrame(),
-        new JScrollPane(textArea),
-        S.get("mcpConfigTitle"),
-        OptionPane.INFORMATION_MESSAGE);
   }
 
   private void disableHelp() {
@@ -212,7 +167,6 @@ class MenuHelp extends JMenu implements ActionListener {
     library.setText(S.get("helpLibraryItem"));
     about.setText(S.get("helpAboutItem"));
     aboutPelerEdition.setText(S.get("helpAboutPelerEditionItem"));
-    mcpConfig.setText(S.get("helpMcpConfigItem"));
     www.setText(S.get("helpProjectWebsite"));
     if (helpFrame != null) {
       helpFrame.setLocale(Locale.getDefault());

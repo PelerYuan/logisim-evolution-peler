@@ -13,9 +13,11 @@ import com.cburch.logisim.generated.BuildInfo;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.net.InetSocketAddress;
 import java.security.SecureRandom;
 import java.util.HexFormat;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -23,6 +25,8 @@ import java.util.concurrent.ThreadFactory;
 /** Owns the embedded MCP transport and its application-lifetime cleanup. */
 public final class McpServerManager implements AutoCloseable {
   private static final McpServerManager INSTANCE = new McpServerManager();
+  private static final CopyOnWriteArrayList<WeakReference<Runnable>> STATE_LISTENERS =
+      new CopyOnWriteArrayList<>();
 
   private final Object lock = new Object();
   private HttpServer httpServer;
@@ -94,18 +98,50 @@ public final class McpServerManager implements AutoCloseable {
   }
 
   public void start(McpServerConfig requested) throws IOException {
+    // Notified outside the lock on purpose: a listener is free to ask this object anything, and
+    // holding the lock while calling out is how the model executor used to freeze the interface.
+    if (startLocked(requested)) fireStateChanged();
+  }
+
+  private boolean startLocked(McpServerConfig requested) throws IOException {
     synchronized (lock) {
-      if (httpServer != null) return;
+      if (httpServer != null) return false;
       if (!requested.enabled()) {
         config = requested;
-        return;
+        return false;
+      }
+    }
+
+    // Built before the lock is taken, and this is not a style preference. Constructing the project
+    // service hops to the event dispatch thread, and this object is asked questions from that
+    // thread -- the MCP menu asks isRunning() while the main window is being built. Holding the
+    // lock across the hop deadlocks the two against each other, and the application then never
+    // finishes opening its window. Compare McpModelExecutor, which had the same shape.
+    final var executor = new McpModelExecutor();
+    final var registry = new McpProjectRegistry();
+    final McpProjectService service;
+    final McpJsonRpcDispatcher jsonRpc;
+    try {
+      service = new McpProjectService(executor, registry);
+      jsonRpc = new McpJsonRpcDispatcher(BuildInfo.name, BuildInfo.version.toString(), service);
+      service.registerTools(jsonRpc);
+    } catch (RuntimeException e) {
+      executor.close();
+      throw e;
+    }
+
+    synchronized (lock) {
+      if (httpServer != null) {
+        // Another caller won the race while this one was building. Theirs is the live one.
+        service.close();
+        executor.close();
+        return false;
       }
       config = requested;
-      modelExecutor = new McpModelExecutor();
-      projectRegistry = new McpProjectRegistry();
-      projectService = new McpProjectService(modelExecutor, projectRegistry);
-      dispatcher = new McpJsonRpcDispatcher(BuildInfo.name, BuildInfo.version.toString(), projectService);
-      projectService.registerTools(dispatcher);
+      modelExecutor = executor;
+      projectRegistry = registry;
+      projectService = service;
+      dispatcher = jsonRpc;
       final var firstPort = requested.port();
       IOException last = null;
       for (var offset = 0; offset < 100; offset++) {
@@ -120,7 +156,13 @@ public final class McpServerManager implements AutoCloseable {
         }
       }
       if (httpServer == null) {
+        // The service has already attached listeners to every open project, so dropping the
+        // executor alone would leave them attached to a server that never started.
+        projectService.close();
         modelExecutor.close();
+        projectService = null;
+        projectRegistry = null;
+        dispatcher = null;
         modelExecutor = null;
         throw last == null ? new IOException("No MCP port available") : last;
       }
@@ -135,6 +177,7 @@ public final class McpServerManager implements AutoCloseable {
       if (config.token() != null && !config.token().isBlank()) {
         System.err.println("Embedded MCP server authentication is enabled");
       }
+      return true;
     }
   }
 
@@ -183,6 +226,57 @@ public final class McpServerManager implements AutoCloseable {
     }
   }
 
+  /**
+   * The token the running server actually accepts, or an empty string when it wants none.
+   *
+   * <p>Read from the live configuration rather than from preferences: a system property overrides
+   * the stored value, so the two disagree exactly when it would matter.
+   */
+  public String token() {
+    synchronized (lock) {
+      return config == null || config.token() == null ? "" : config.token();
+    }
+  }
+
+  /**
+   * Registers a listener told whenever the server starts or stops.
+   *
+   * <p>For anything whose enabled state has to follow the server, which cannot listen to the
+   * preference instead: the preference changes first, and the server may then fail to bind.
+   *
+   * <p>Held weakly, in the manner of {@code PropertyChangeWeakSupport}. This outlives every window,
+   * and a menu that registers here would otherwise keep its whole frame alive for the rest of the
+   * session -- so the caller keeps the listener in a field, and forgetting to unregister costs
+   * nothing.
+   */
+  public static void addStateListener(Runnable listener) {
+    if (listener != null) STATE_LISTENERS.add(new WeakReference<>(listener));
+  }
+
+  public static void removeStateListener(Runnable listener) {
+    STATE_LISTENERS.removeIf(reference -> {
+      final var current = reference.get();
+      return current == null || current == listener;
+    });
+  }
+
+  private static void fireStateChanged() {
+    for (final var reference : STATE_LISTENERS) {
+      final var listener = reference.get();
+      if (listener == null) {
+        STATE_LISTENERS.remove(reference);
+        continue;
+      }
+      try {
+        listener.run();
+      } catch (RuntimeException e) {
+        // A listener that throws is a bug in the listener; it must not stop the others, and it
+        // must not propagate out of a shutdown hook.
+        System.err.println("MCP state listener failed: " + e.getMessage());
+      }
+    }
+  }
+
   public boolean isRunning() {
     synchronized (lock) {
       return httpServer != null;
@@ -191,7 +285,15 @@ public final class McpServerManager implements AutoCloseable {
 
   @Override
   public void close() {
+    if (closeLocked()) fireStateChanged();
+  }
+
+  private boolean closeLocked() {
+    final boolean wasRunning;
+    final McpProjectService service;
+    final McpModelExecutor executor;
     synchronized (lock) {
+      wasRunning = httpServer != null;
       if (httpServer != null) {
         httpServer.stop(0);
         httpServer = null;
@@ -204,18 +306,20 @@ public final class McpServerManager implements AutoCloseable {
         httpExecutor.shutdownNow();
         httpExecutor = null;
       }
-      if (projectService != null) {
-        projectService.close();
-        projectService = null;
-      }
-      if (modelExecutor != null) {
-        modelExecutor.close();
-        modelExecutor = null;
-      }
+      service = projectService;
+      executor = modelExecutor;
+      projectService = null;
+      modelExecutor = null;
       projectRegistry = null;
       dispatcher = null;
       boundPort = -1;
     }
+    // Detached outside the lock for the reason given in startLocked: removing the listeners hops
+    // to the event dispatch thread, and that thread asks this object whether it is running. By
+    // here the fields are already cleared, so anyone who asks gets the right answer meanwhile.
+    if (service != null) service.close();
+    if (executor != null) executor.close();
+    return wasRunning;
   }
 
   private void installShutdownHook() {

@@ -90,6 +90,7 @@ public class LogisimMenuBar extends JMenuBar {
   public final MenuSimulate simulate;
   public final MenuHelp help;
   public final MenuFpga fpga;
+  final MenuMcp mcp;
   private final LFrame parent;
   private final MyListener listener;
   private final Project saveProj;
@@ -112,6 +113,8 @@ public class LogisimMenuBar extends JMenuBar {
     add(simulate = new MenuSimulate(this));
     add(fpga = new MenuFpga(parent, this, saveProj));
     add(new WindowMenu(parent));
+    // Peler Edition Feature 11: sits before Help, and is disabled unless the server is running.
+    add(mcp = new MenuMcp(this));
     add(help = new MenuHelp(this));
 
     LocaleManager.addLocaleListener(listener);
@@ -213,6 +216,7 @@ public class LogisimMenuBar extends JMenuBar {
       project.localeChanged();
       fpga.localeChanged();
       simulate.localeChanged();
+      mcp.localeChanged();
       help.localeChanged();
     }
   }
