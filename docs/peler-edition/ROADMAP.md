@@ -1020,6 +1020,58 @@ Worth recording because the false version was convincing: it reproduced every ti
 build, with no exception logged. A GUI test driver that bypasses the window manager can manufacture
 a bug that looks exactly like an application one.
 
+## Feature 11 — Embedded MCP server (experimental, contributed 2026-08-13)
+
+Contributed as a single commit on top of `2a5829da2`, roughly 9,600 lines: a
+`com.cburch.logisim.mcp` package exposing 47 tools over Streamable HTTP and stdio, nine test
+classes, and its own design and QA notes (now under `docs/peler-edition/mcp/`). Every circuit change
+goes through `Project.doAction`, so an AI client and a mouse share one undo stack. The design notes
+in that directory are the contributor's own and describe the tool surface in detail.
+
+Merged cleanly into `main` with no conflicts, and the contributor's test claims held on re-run:
+277 tests before this review's additions, 0 failures, 75 of them MCP.
+
+### What was changed before merging
+
+**It was on by default, and open.** `logisim.mcp.enabled` defaulted to true and the token defaulted
+to empty, and `McpHttpHandler.authorized()` returns true when the token is blank. Verified rather
+than inferred: a stock launch printed `Embedded MCP server listening at http://127.0.0.1:8765/mcp`,
+and a bare `curl` with no credentials completed `initialize` and `tools/list`. `Origin` is also
+allowed when absent or `"null"`, which covers every non-browser process and sandboxed `file://`
+pages. The `confirm=true` gates on the destructive tools are caller-supplied JSON arguments, not
+user prompts, so they protect against a careless client and not against a hostile one.
+
+Now: off unless asked for, a checkbox in Preferences -> Peler's Features, and a 24-byte token
+generated on first enable and handed over by Help -> Copy MCP Configuration. Re-verified end to
+end -- stock launch binds nothing; enabled, an unauthenticated request and a wrong-token request
+both get 401 and the generated token gets 200.
+
+The test that encoded the old behaviour was named `usesSafeDefaultsWhenNoPropertiesAreSet` and
+asserted `assertTrue(config.enabled())`. It now asserts the opposite under the same name, which is
+the honest place for it: the name was right and the value was wrong.
+
+**Five UI strings were hardcoded English** (`new JMenuItem("Copy MCP Configuration")` and the dialog
+text), so the Help menu showed English in every locale. Now through `S.get` with all twelve
+bundles, and registered in `MenuHelp.localeChanged`.
+
+**`McpProjectService` carried 201 checkstyle violations** -- helper methods and lambda bodies
+written as single lines up to 665 characters. Expanded to zero, mechanically, with each replacement
+asserted to match exactly once and the 77 MCP tests as the check that nothing changed. Two
+identical methods, `writeSchema` and `lifecycleSchema`, were folded onto a shared helper.
+
+**One `new Font(Font.MONOSPACED, ...)`**, the fallback-less physical font that is how CJK turns into
+boxes elsewhere in this application. Harmless for ASCII JSON, replaced with `deriveFont` anyway so
+it is not copied.
+
+**Eleven `MCP_*.md` files sat in the repository root**; moved to `docs/peler-edition/mcp/`.
+
+### Still worth doing
+
+- The 47 tools have no per-tool authorisation. The token is all-or-nothing: a client that can call
+  `list_projects` can call `load_library`.
+- `McpPathPolicy` bounds file access well, but the allowed roots are a system property. There is no
+  way to grant a directory from the interface.
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the

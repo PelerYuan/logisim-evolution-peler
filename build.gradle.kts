@@ -34,6 +34,10 @@ application {
 }
 
 dependencies {
+  // Gson is used by the embedded MCP JSON-RPC transport.  Keep the protocol
+  // layer independent from Swing and the circuit model so it is also usable
+  // by the stdio smoke client.
+  implementation("com.google.code.gson:gson:2.13.2")
   implementation("org.hamcrest:hamcrest:3.0")
   implementation("javax.help:javahelp:2.0.05")
   implementation("com.fifesoft:rsyntaxtextarea:3.6.1")

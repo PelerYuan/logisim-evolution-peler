@@ -760,6 +760,28 @@ public class AppPreferences {
               new String[] {LOSSY_WARN_ALWAYS, LOSSY_WARN_ONCE, LOSSY_WARN_NEVER},
               LOSSY_WARN_ONCE));
 
+  /**
+   * Whether the embedded MCP server runs, letting an AI client drive this application.
+   *
+   * <p>Off by default, and deliberately a decision rather than a default. The endpoint accepts any
+   * caller that can reach the loopback interface, and its tools open and save files, load JAR
+   * libraries and rewrite VHDL. That is a reasonable thing to switch on; it is not a reasonable
+   * thing to be running because somebody installed a circuit editor.
+   */
+  public static final PrefMonitor<Boolean> MCP_ENABLED =
+      create(new PrefMonitorBoolean("mcpEnabled", false));
+
+  /** Loopback port the MCP server listens on. Zero asks the operating system to pick one. */
+  public static final PrefMonitor<Integer> MCP_PORT = create(new PrefMonitorInt("mcpPort", 8765));
+
+  /**
+   * Bearer token the MCP server requires. Generated the first time the server is switched on --
+   * see {@code McpServerManager.ensureToken()} -- and handed to the client by Help -> Copy MCP
+   * Configuration, so that turning the server on does not also mean leaving it open to every other
+   * process on the machine.
+   */
+  public static final PrefMonitor<String> MCP_TOKEN = create(new PrefMonitorString("mcpToken", ""));
+
   public static final PrefMonitor<String> DefaultAppearance =
       create(
           new PrefMonitorStringOpts(

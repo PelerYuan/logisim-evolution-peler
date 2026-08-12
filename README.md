@@ -120,6 +120,18 @@ say — will not behave as it does here. And the export refuses, naming what it 
 writing a page for a circuit containing a component it cannot simulate: RAM, ROM, shift registers
 and the divider are not supported yet.
 
+**AI clients over MCP (experimental)**
+An embedded [Model Context Protocol](https://modelcontextprotocol.io) server lets an AI client —
+Claude, Codex — drive the running application: create circuits, place components, draw wires, run
+the simulator, export. Every change goes through the same undo stack your own edits do, so it is
+one project being worked on rather than a file being rewritten behind your back.
+
+**Off unless you turn it on**, under **Preferences → Peler's Features**. When you do, it listens on
+the loopback interface only and requires a token that is generated for you; **Help → Copy MCP
+Configuration** puts the whole client configuration, token included, on the clipboard. Nothing on
+the machine can reach it without that token, and file access stays inside the open project's
+directory unless you name other locations with `-Dlogisim.mcp.allowedPaths`.
+
 **Its own settings page**
 **Preferences → Peler's Features** holds the settings for everything above, in one place rather
 than scattered through upstream's panels — so what this fork lets you change is also the list of
@@ -138,6 +150,7 @@ what it changed:
   theirs; each one saves its own.
 * **Saving as `.circ`** — how often you are warned that the compatible format drops annotations:
   every time, once per file each session (the default), or never.
+* **AI clients (MCP server)** — whether it runs at all (off by default), and which port.
 
 The in-application **Help → About** window is left exactly as upstream ships it, crediting
 upstream; this fork's own changes are described under **Help → About Peler's Edition**.

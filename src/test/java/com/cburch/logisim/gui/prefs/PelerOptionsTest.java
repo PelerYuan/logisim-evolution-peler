@@ -61,7 +61,11 @@ public class PelerOptionsTest extends TestBase {
           // Records that the one-time "the menu moved to Ctrl+left-click" hint has been shown.
           // Internal bookkeeping, not a choice: a checkbox for it would offer to re-show a message
           // whose whole purpose is to appear once.
-          "SHOWN_QUICK_ROTATE_HINT");
+          "SHOWN_QUICK_ROTATE_HINT",
+          // The MCP bearer token. Generated when the server is first switched on and handed to the
+          // client by Help -> Copy MCP Configuration. Deliberately not an editable field: a secret
+          // someone types into a settings page is a secret they choose badly and reuse.
+          "MCP_TOKEN");
 
   /**
    * Every string the panel asks for has to exist in every language.

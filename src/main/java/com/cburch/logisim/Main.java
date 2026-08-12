@@ -12,6 +12,8 @@ package com.cburch.logisim;
 import com.cburch.logisim.generated.BuildInfo;
 import com.cburch.logisim.gui.generic.OptionPane;
 import com.cburch.logisim.gui.start.Startup;
+import com.cburch.logisim.mcp.McpServerManager;
+import com.cburch.logisim.mcp.McpStdioServer;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.prefs.PelerPreferences;
 import com.formdev.flatlaf.FlatDarculaLaf;
@@ -39,6 +41,18 @@ public class Main {
     //    java -Dorg.slf4j.simpleLogger.defaultLogLevel=debug
     // or uncomment next line
     // System.setProperty("org.slf4j.simpleLogger.defaultLogLevel", "debug");
+
+    // MCP stdio is intentionally handled before Swing and preferences. stdout remains a clean
+    // JSON-RPC stream for clients that launch Logisim as a child process.
+    if (containsArgument(args, "--mcp-stdio")) {
+      try {
+        McpStdioServer.run(System.in, System.out);
+      } catch (Exception e) {
+        e.printStackTrace(System.err);
+        System.exit(1);
+      }
+      return;
+    }
 
     // Peler Edition: must come before ANY preference is read -- AppPreferences freezes every
     // stored value as it initialises, so an import after that point would not take effect
@@ -80,6 +94,9 @@ public class Main {
 
     try {
       startup.run();
+      // Peler Edition: only if the user turned it on in Preferences -> Peler's Features. See
+      // AppPreferences.MCP_ENABLED for why this is not something the application decides.
+      McpServerManager.startFromPreferences();
     } catch (Throwable e) {
       final var strWriter = new StringWriter();
       final var printWriter = new PrintWriter(strWriter);
@@ -87,6 +104,14 @@ public class Main {
       OptionPane.showMessageDialog(null, strWriter.toString());
       System.exit(100);
     }
+  }
+
+  private static boolean containsArgument(String[] args, String expected) {
+    if (args == null) return false;
+    for (final var arg : args) {
+      if (expected.equals(arg)) return true;
+    }
+    return false;
   }
 
   public static boolean headless = false;

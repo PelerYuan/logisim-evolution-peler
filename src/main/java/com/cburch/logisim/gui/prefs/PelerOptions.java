@@ -10,10 +10,12 @@ package com.cburch.logisim.gui.prefs;
 
 import static com.cburch.logisim.gui.Strings.S;
 
+import com.cburch.logisim.mcp.McpServerManager;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.prefs.PrefMonitor;
 import com.cburch.logisim.util.TableLayout;
 import java.awt.BorderLayout;
+import java.awt.Font;
 import java.awt.GraphicsEnvironment;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
@@ -51,18 +53,22 @@ class PelerOptions extends OptionsPanel {
   private final JLabel annotationSizeLabel = new JLabel();
   private final JLabel annotationColorLabel = new JLabel();
   private final JLabel snapRadiusLabel = new JLabel();
+  private final JLabel mcpPortLabel = new JLabel();
+  private final JLabel mcpStatus = new JLabel();
 
   private final PrefOptionList placement;
   private final PrefOptionList finder;
   private final PrefOptionList quickRotate;
   private final PrefOptionList lossySave;
   private final PrefBoolean wireAutoSnap;
+  private final PrefBoolean mcpEnabled;
   private final JComboBox<String> annotationFont;
   private final TitledBorder placementBorder;
   private final TitledBorder wiringBorder;
   private final TitledBorder rotateBorder;
   private final TitledBorder annotationBorder;
   private final TitledBorder filesBorder;
+  private final TitledBorder mcpBorder;
 
   /**
    * True while the combo box is being rewritten from the preference rather than by the user.
@@ -111,6 +117,7 @@ class PelerOptions extends OptionsPanel {
               new PrefOption(AppPreferences.LOSSY_WARN_NEVER, S.getter("pelerLossyNever")),
             });
     wireAutoSnap = new PrefBoolean(AppPreferences.WIRE_AUTO_SNAP, S.getter("pelerWireAutoSnap"));
+    mcpEnabled = new PrefBoolean(AppPreferences.MCP_ENABLED, S.getter("pelerMcpEnabled"));
 
     annotationFont = new JComboBox<>();
     annotationFont.addItem(S.get("pelerAnnotationFontDefault"));
@@ -183,6 +190,27 @@ class PelerOptions extends OptionsPanel {
     filesPanel.add(lossySave.getJComboBox());
     filesBorder = section(filesPanel, "pelerFilesSection", gbc);
 
+    final var mcpPanel = new JPanel();
+    mcpPanel.setLayout(new BoxLayout(mcpPanel, BoxLayout.PAGE_AXIS));
+    final var mcpRow = new JPanel(new TableLayout(2));
+    mcpRow.add(mcpPortLabel);
+    // Zero means "any free port", which is what someone behind a port conflict needs; the rest of
+    // the range is arbitrary and only exists to keep a typo from producing an unbindable number.
+    mcpRow.add(spinner(AppPreferences.MCP_PORT, 0, 65535, 1));
+    mcpEnabled.setAlignmentX(LEFT_ALIGNMENT);
+    mcpRow.setAlignmentX(LEFT_ALIGNMENT);
+    mcpStatus.setAlignmentX(LEFT_ALIGNMENT);
+    mcpStatus.setFont(mcpStatus.getFont().deriveFont(Font.ITALIC));
+    mcpPanel.add(mcpEnabled);
+    mcpPanel.add(mcpRow);
+    mcpPanel.add(mcpStatus);
+    mcpBorder = section(mcpPanel, "pelerMcpSection", gbc);
+    AppPreferences.MCP_ENABLED.addPropertyChangeListener(
+        event -> {
+          if (AppPreferences.MCP_ENABLED.isSource(event)) applyMcpState();
+        });
+    applyMcpState();
+
     gbc.gridy++;
     gbc.weighty = 1.0;
     gbc.fill = GridBagConstraints.BOTH;
@@ -216,6 +244,9 @@ class PelerOptions extends OptionsPanel {
   private JSpinner spinner(PrefMonitor<Integer> pref, int min, int max, int step) {
     final var model = new SpinnerNumberModel((int) pref.get(), min, max, step);
     final var field = new JSpinner(model);
+    // No thousands separator: these are a port number and two lengths, and "8,765" in a port field
+    // reads as a typo rather than as eight thousand seven hundred and sixty-five.
+    field.setEditor(new JSpinner.NumberEditor(field, "#"));
     field.addChangeListener(event -> pref.set((Integer) field.getValue()));
     pref.addPropertyChangeListener(
         event -> {
@@ -224,6 +255,26 @@ class PelerOptions extends OptionsPanel {
           }
         });
     return field;
+  }
+
+  /**
+   * Starts or stops the MCP server to match the checkbox, and says which it is.
+   *
+   * <p>Applied immediately rather than at the next launch: a setting that silently needs a restart
+   * is one people conclude is broken, and this one is worth being able to switch off the moment it
+   * is no longer wanted.
+   */
+  private void applyMcpState() {
+    final var manager = McpServerManager.getInstance();
+    if (AppPreferences.MCP_ENABLED.getBoolean()) {
+      McpServerManager.ensureToken();
+      if (!manager.isRunning()) McpServerManager.startFromPreferences();
+    } else if (manager.isRunning()) {
+      manager.close();
+    }
+    final var endpoint = manager.isRunning() ? manager.endpoint() : null;
+    mcpStatus.setText(
+        endpoint == null ? S.get("pelerMcpStopped") : S.get("pelerMcpRunning", endpoint));
   }
 
   private void selectAnnotationFamily() {
@@ -254,7 +305,11 @@ class PelerOptions extends OptionsPanel {
     quickRotate.localeChanged();
     lossySave.localeChanged();
     wireAutoSnap.localeChanged();
+    mcpEnabled.localeChanged();
     snapRadiusLabel.setText(S.get("pelerWireSnapRadius"));
+    mcpPortLabel.setText(S.get("pelerMcpPort"));
+    mcpBorder.setTitle(S.get("pelerMcpSection"));
+    applyMcpState();
     annotationFontLabel.setText(S.get("pelerAnnotationFont"));
     annotationSizeLabel.setText(S.get("pelerAnnotationSize"));
     annotationColorLabel.setText(S.get("pelerAnnotationColor"));

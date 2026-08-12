@@ -178,8 +178,16 @@ The fork's own package version is `pelerAppVersion`, resolved in `.github/workfl
 | Fork's About window | `gui/start/AboutPelerEdition.java` |
 | Interactive HTML export (experimental) | `gui/htmlexport/`, `gui/generic/TikZInfo.java`, `resources/logisim/html/` |
 | This edition's settings page | `gui/prefs/PelerOptions.java`, `tools/ContinuousPlacement.java` |
+| Embedded MCP server (contributed) | `mcp/`, `docs/peler-edition/mcp/` |
 
 New user-visible strings need all 12 locales, in `src/main/resources/resources/logisim/strings/`.
+
+**Anything that listens on a socket is off until the user says otherwise.** The contributed MCP
+server arrived enabled by default with an empty token, which meant every install had an
+unauthenticated endpoint on 127.0.0.1 that could open and save files, load JAR libraries and rewrite
+VHDL. Its own test asserted that as the safe default. A `confirm=true` parameter the caller sets is
+not a safety control -- it stops a careless client, not a hostile one. See `AppPreferences.MCP_*`
+and Feature 11 in the roadmap.
 
 **A new preference needs a control, not just a field.** `WIRE_AUTO_SNAP` sat in `AppPreferences`
 for four days being read by `WiringTool` and written by nothing, while the README said it could be
