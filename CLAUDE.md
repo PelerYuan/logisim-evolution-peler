@@ -105,6 +105,13 @@ Three things to know before automating it:
 - **Screenshots need no extra package.** A five-line `java.awt.Robot` program run as
   `java Screenshot.java out.png` captures the screen; JDK 21 runs single-file sources directly.
 - **A real X display is not headless**, so the `hotkeyMenuMask` hazard below does not apply to it.
+- **Never close a window with `xdotool windowclose`.** Its manual page says it "will destroy the
+  window, but will not try to kill the client controlling it": it calls `XDestroyWindow` rather
+  than sending `WM_DELETE_WINDOW`, so the window disappears while Swing still believes it is
+  visible — and every later `setVisible(true)` on it is then a silent no-op. This manufactured a
+  convincing phantom bug (the Preferences window "could not be reopened", reproducing every time on
+  an unmodified build) that cost a wrong report before it was caught. Click the real titlebar
+  button, or send `_NET_CLOSE_WINDOW`. There is no `wmctrl` on this machine.
 
 Do not run the application headless for probing. `AppPreferences.hotkeyMenuMask` degrades to
 `ALT_DOWN_MASK` when headless, and any new hotkey preference then persists that wrong default into

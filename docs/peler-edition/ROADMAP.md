@@ -1000,14 +1000,27 @@ with rotation off opens the component menu; right-click set to anticlockwise tur
 gate to north while leaving its neighbour alone; and the finder's new default places three gates
 from one <kbd>Enter</kbd>.
 
-## Known open items
+### A bug that was not one
 
-- **The Preferences window will not reopen once it has been closed.** File -> Preferences does
-  nothing afterwards, with no exception logged, until the application is restarted. Found while
-  testing Feature 10 and **not caused by it**: reproduced on a clean worktree at `3c6f3ca4f` with
-  no local changes. The code involved is upstream's (`PreferencesFrame.WindowMenuManager` caches
-  the frame; `WindowMenuItemManager.windowClosed` unregisters it), so this is an upstream v4.1.0
-  defect and worth confirming against the official build before reporting there.
+Feature 10's testing appeared to turn up a serious defect: close the Preferences window, and File ->
+Preferences would never open it again. It reproduced on a clean worktree at `3c6f3ca4f`, so it was
+written up as an upstream v4.1.0 defect.
+
+It is not a defect. It was the test.
+
+`xdotool windowclose` is not the window's close button. Its own manual page says it "will destroy
+the window, but will not try to kill the client controlling it" -- it calls `XDestroyWindow`
+directly rather than sending `WM_DELETE_WINDOW`, so the X window vanishes while the application is
+never told. A probe printing `isVisible()` on the way into `showPreferences` settled it: after a
+forced destroy the frame still reported `visible=true`, which makes `setVisible(true)` a no-op and
+leaves nothing on screen. Clicking the real titlebar button instead gives `visible=false` and the
+window comes straight back, verified by screenshot.
+
+Worth recording because the false version was convincing: it reproduced every time, on an unmodified
+build, with no exception logged. A GUI test driver that bypasses the window manager can manufacture
+a bug that looks exactly like an application one.
+
+## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the
   user's instruction (2026-08-09). FlatLaf supplies UI fonts as composites with a CJK fallback;
