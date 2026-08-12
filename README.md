@@ -127,10 +127,19 @@ the simulator, export. Every change goes through the same undo stack your own ed
 one project being worked on rather than a file being rewritten behind your back.
 
 **Off unless you turn it on**, under **Preferences → Peler's Features**. When you do, it listens on
-the loopback interface only and requires a token that is generated for you; **Help → Copy MCP
-Configuration** puts the whole client configuration, token included, on the clipboard. Nothing on
-the machine can reach it without that token, and file access stays inside the open project's
-directory unless you name other locations with `-Dlogisim.mcp.allowedPaths`.
+the loopback interface only and requires a token that is generated for you. Nothing on the machine
+can reach it without that token, and file access stays inside the open project's directory unless
+you name other locations with `-Dlogisim.mcp.allowedPaths`.
+
+An **MCP** menu appears next to Help once the server is running — greyed out until then — with the
+two ways to connect a client:
+
+* **Copy MCP Configuration** puts the whole client configuration, token included, on the clipboard,
+  for a client that takes an HTTP endpoint (Claude Code, Codex, VS Code).
+* **Export MCP Bundle** writes a `.mcpb` file. Claude Desktop installs one by double-click, and
+  takes no HTTP endpoint at all — so the bundle carries a small bridge script that relays its
+  standard input to this window. It needs Node.js available to the client, and it is written for
+  the port and token in force when you export it: export a fresh one if either changes.
 
 **Its own settings page**
 **Preferences → Peler's Features** holds the settings for everything above, in one place rather

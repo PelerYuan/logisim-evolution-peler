@@ -1042,9 +1042,9 @@ pages. The `confirm=true` gates on the destructive tools are caller-supplied JSO
 user prompts, so they protect against a careless client and not against a hostile one.
 
 Now: off unless asked for, a checkbox in Preferences -> Peler's Features, and a 24-byte token
-generated on first enable and handed over by Help -> Copy MCP Configuration. Re-verified end to
-end -- stock launch binds nothing; enabled, an unauthenticated request and a wrong-token request
-both get 401 and the generated token gets 200.
+generated on first enable and handed over by Copy MCP Configuration (in the Help menu at the time;
+it has its own menu now, below). Re-verified end to end -- stock launch binds nothing; enabled, an
+unauthenticated request and a wrong-token request both get 401 and the generated token gets 200.
 
 The test that encoded the old behaviour was named `usesSafeDefaultsWhenNoPropertiesAreSet` and
 asserted `assertTrue(config.enabled())`. It now asserts the opposite under the same name, which is
@@ -1064,6 +1064,73 @@ boxes elsewhere in this application. Harmless for ASCII JSON, replaced with `der
 it is not copied.
 
 **Eleven `MCP_*.md` files sat in the repository root**; moved to `docs/peler-edition/mcp/`.
+
+### An MCP menu, and a bundle Claude Desktop can install (2026-08-13)
+
+Copy MCP Configuration was one item at the bottom of Help, and it produced a configuration only a
+client that speaks HTTP can use. Claude Desktop is not one: it installs **MCP Bundles** -- a zip of
+`manifest.json` plus a server, extension `.mcpb` since the rename from `.dxt` in late 2025 -- and a
+bundle manifest can only describe a **local process spoken to over stdin and stdout**. There is no
+way to write "connect to this URL" in one.
+
+Which rules out the obvious shortcut and also the second obvious one: the contributed
+`--mcp-stdio` mode advertises a tools capability and then returns **zero tools**, because it has no
+window and so no project to expose. The whole point of this server is that the circuit being edited
+is the one on screen.
+
+So the bundle carries a bridge instead of a server: `resources/logisim/mcp/bridge.js`, ~180 lines
+of dependency-free Node, reads a JSON-RPC line from stdin, POSTs it to the endpoint, writes the
+reply back. Two details are not incidental:
+
+- **It reopens its session.** The server issues an `Mcp-Session-Id` on initialize and 404s a
+  request carrying a stale one, so a Logisim restart would otherwise break every client until it
+  was restarted too. The bridge replays the original `initialize` on a 404 or 400 and retries the
+  request once, single-flighted so a burst produces one reopen. Verified across a real restart.
+- **It does not await.** Requests are forwarded as they arrive rather than one at a time, so a slow
+  tool call cannot hold up the ping behind it.
+
+`McpBundleWriter` zips that script together with a generated manifest naming the live endpoint and
+the live token -- read from the running configuration, not from preferences, since a system property
+overrides the stored value exactly when it matters. Entry timestamps are zeroed so two exports of
+one configuration are byte-identical.
+
+The menu itself is new: **MCP**, between Window and Help, disabled while the server is not running,
+holding Copy MCP Configuration and Export MCP Bundle. Disabled rather than hidden, and driven by a
+new `McpServerManager` listener rather than by the preference -- the preference changes first and
+the bind can still fail, so following the preference would show an enabled menu for a server that
+never started. Listeners are held weakly, in the manner of `PropertyChangeWeakSupport`: this
+manager outlives every window, and a menu registered strongly would pin its whole frame for the
+session.
+
+### Two deadlocks, one shape, both invisible to a thread dump
+
+The first was in the contributed code and had been there since it was merged: `tools/call
+list_projects` never returned. `McpModelExecutor.call` held a monitor across
+`SwingUtilities.invokeAndWait`. The simulator thread, arriving from `propagationCompleted`, held
+that monitor while waiting for the event dispatch thread; the event dispatch thread, inside
+`windowOpened` delivering to a project-list listener, waited for the monitor. Every later tool call
+queued behind the same monitor forever.
+
+The second was mine, and it stopped the application from opening a window at all: `startLocked`
+held the manager's lock while constructing `McpProjectService`, whose constructor hops to the event
+dispatch thread -- and the event dispatch thread was in `LogisimMenuBar`, building the new MCP menu,
+calling `isRunning()`, which wants that lock. Enabling the checkbox launched a process with no
+interface and no error.
+
+The same rule fixes both: **do not hold a lock across a hop to the event dispatch thread.** The
+executor's monitor was deleted outright; the manager now builds outside the lock and takes it only
+to publish, re-checking for a racing starter and closing what it built if it lost. `closeLocked`
+got the same treatment -- it captures the service, clears the fields, and closes outside the lock.
+
+Worth recording because `jstack` reports **no deadlock** for either: one edge is `invokeAndWait`'s
+wait/notify, which the detector does not graph. What found the second one was a temporary print of
+the actual state (`pref=true ... running=false`) after several turns of theorising about preference
+event ordering, which is the general lesson.
+
+Both have regression tests that force the interleaving rather than hoping for it, each validated in
+both directions against the broken version, and each interrupting its helper thread in a `finally`
+so a future regression fails one test instead of wedging the shared event dispatch thread for the
+rest of the run.
 
 ### Considered and declined
 

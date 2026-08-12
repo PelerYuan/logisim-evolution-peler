@@ -179,6 +179,7 @@ The fork's own package version is `pelerAppVersion`, resolved in `.github/workfl
 | Interactive HTML export (experimental) | `gui/htmlexport/`, `gui/generic/TikZInfo.java`, `resources/logisim/html/` |
 | This edition's settings page | `gui/prefs/PelerOptions.java`, `tools/ContinuousPlacement.java` |
 | Embedded MCP server (contributed) | `mcp/`, `docs/peler-edition/mcp/` |
+| MCP menu and `.mcpb` bundle | `gui/menu/MenuMcp.java`, `mcp/McpBundleWriter.java`, `resources/logisim/mcp/bridge.js` |
 
 New user-visible strings need all 12 locales, in `src/main/resources/resources/logisim/strings/`.
 
@@ -188,6 +189,16 @@ unauthenticated endpoint on 127.0.0.1 that could open and save files, load JAR l
 VHDL. Its own test asserted that as the safe default. A `confirm=true` parameter the caller sets is
 not a safety control -- it stops a careless client, not a hostile one. See `AppPreferences.MCP_*`
 and Feature 11 in the roadmap.
+
+**Never hold a lock across a hop to the event dispatch thread.** Two separate freezes in the MCP
+code had exactly this shape: `McpModelExecutor.call` held a monitor across `invokeAndWait`, and
+`McpServerManager.startLocked` held its lock while constructing a service whose constructor hops to
+that thread. Each deadlocked against an event dispatch thread that wanted the same lock — the first
+hung every tool call, the second launched the application with no window and no message. **Neither
+is reported as a deadlock by `jstack`**, because one edge is `invokeAndWait`'s wait/notify rather
+than a monitor the detector can graph, so the symptom is a process that simply sits there. Build
+outside the lock and take it only to publish; notify listeners outside it too. When something hangs
+with nothing in the thread dump, print the actual state before theorising about it.
 
 **A new preference needs a control, not just a field.** `WIRE_AUTO_SNAP` sat in `AppPreferences`
 for four days being read by `WiringTool` and written by nothing, while the README said it could be
