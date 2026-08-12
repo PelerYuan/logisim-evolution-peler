@@ -1065,12 +1065,24 @@ it is not copied.
 
 **Eleven `MCP_*.md` files sat in the repository root**; moved to `docs/peler-edition/mcp/`.
 
+### Considered and declined
+
+**Per-tool authorisation.** The token is all-or-nothing: a client that can call `list_projects` can
+call `load_library`. Declined by the maintainer (2026-08-13). The server is off by default and bound
+to the loopback interface, so whoever turns it on is granting one client they chose, on their own
+machine, the ability to drive the application -- which is what an MCP endpoint is for. A permission
+matrix over 47 tools would be answered by ticking every box.
+
 ### Still worth doing
 
-- The 47 tools have no per-tool authorisation. The token is all-or-nothing: a client that can call
-  `list_projects` can call `load_library`.
-- `McpPathPolicy` bounds file access well, but the allowed roots are a system property. There is no
-  way to grant a directory from the interface.
+**`McpPathPolicy` allowed roots cannot be granted from the interface.** File access is bounded by
+`logisim.mcp.allowedPaths` (a system property or environment variable) plus the directory of each
+open project's main file. The second source carries ordinary use -- open a circuit by hand and the
+tools can work beside it -- but it is the only one available to anyone who launched the application
+from a desktop entry rather than a shell, and a project that has never been saved contributes no
+root at all. So there is no way to grant, say, a fixed export directory without editing the launcher
+arguments. Deliberately left until real use shows whether it matters: this is the only boundary
+`load_library` has, and `load_library` puts a JAR on the classpath.
 
 ## Known open items
 
