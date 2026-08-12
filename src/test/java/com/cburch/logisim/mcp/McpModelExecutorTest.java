@@ -127,4 +127,72 @@ class McpModelExecutorTest {
       assertTrue(callers.awaitTermination(2, TimeUnit.SECONDS));
     }
   }
+
+  /**
+   * A call from the event dispatch thread must not be able to wait behind a worker call.
+   *
+   * <p>This is the shape that froze the application on startup. The executor held a monitor across
+   * {@code invokeAndWait}, so the simulator thread -- arriving from {@code propagationCompleted} --
+   * held it while waiting for the event dispatch thread, and the event dispatch thread, already
+   * inside {@code windowOpened} delivering to the project-list listener, waited for that monitor.
+   * The interface never came up, and every MCP tool call afterwards blocked on the same monitor
+   * forever. A thread dump does not name it a deadlock: one edge is {@code invokeAndWait}'s
+   * wait/notify, which the detector does not graph.
+   *
+   * <p>The interleaving is forced rather than hoped for: the event dispatch thread is parked inside
+   * a task, the worker is given time to take the monitor that used to exist, and only then is the
+   * event dispatch thread let go. Once the monitor is gone the test cannot be timing-sensitive --
+   * every interleaving completes -- so a failure here means the monitor is back.
+   */
+  @Test
+  void callsFromTheEventDispatchThreadDoNotWaitBehindAWorker() throws Exception {
+    executor = new McpModelExecutor();
+    final var edtParked = new CountDownLatch(1);
+    final var releaseEdt = new CountDownLatch(1);
+    final var edtFinished = new CountDownLatch(1);
+    final var workerFinished = new CountDownLatch(1);
+
+    SwingUtilities.invokeLater(
+        () -> {
+          edtParked.countDown();
+          try {
+            releaseEdt.await(5, TimeUnit.SECONDS);
+            executor.call(() -> "from the event dispatch thread");
+            edtFinished.countDown();
+          } catch (Exception e) {
+            Thread.currentThread().interrupt();
+          }
+        });
+    assertTrue(edtParked.await(5, TimeUnit.SECONDS), "the event dispatch thread never started");
+
+    final var worker =
+        new Thread(
+            () -> {
+              try {
+                executor.call(() -> "from a worker");
+                workerFinished.countDown();
+              } catch (Exception e) {
+                Thread.currentThread().interrupt();
+              }
+            },
+            "mcp-model-executor-test-worker");
+    worker.start();
+    // Long enough for the worker to reach invokeAndWait, which is where it used to be holding the
+    // monitor. Only the broken version depends on this; the fixed one passes at any timing.
+    Thread.sleep(250);
+    releaseEdt.countDown();
+
+    try {
+      assertTrue(
+          edtFinished.await(5, TimeUnit.SECONDS),
+          "the event dispatch thread is stuck behind a worker call -- the application would be "
+              + "frozen here, and every later MCP tool call would hang");
+      assertTrue(workerFinished.await(5, TimeUnit.SECONDS), "the worker call never completed");
+    } finally {
+      // Interrupting the worker releases invokeAndWait, so a regression fails this one test
+      // instead of leaving the shared event dispatch thread wedged for the rest of the run.
+      worker.interrupt();
+      worker.join(5000);
+    }
+  }
 }
