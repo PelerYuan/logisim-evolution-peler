@@ -35,16 +35,53 @@ class McpServerConfigTest {
     System.clearProperty(MAX_BYTES);
   }
 
+  /**
+   * Nothing configured means nothing listening.
+   *
+   * <p>This assertion used to read {@code assertTrue(config.enabled())} under the same test name,
+   * which is how an endpoint that lets any local caller open files, load JAR libraries and rewrite
+   * VHDL came to be running on every launch of a circuit editor. Turning it on is a decision, and
+   * the decision lives in Preferences -> Peler's Features.
+   */
   @Test
   void usesSafeDefaultsWhenNoPropertiesAreSet() {
     final var config = McpServerConfig.fromSystemProperties();
 
-    assertTrue(config.enabled());
+    assertFalse(config.enabled());
     assertFalse(config.stdio());
     assertEquals("127.0.0.1", config.host());
     assertEquals(McpServerConfig.DEFAULT_PORT, config.port());
     assertEquals("", config.token());
     assertEquals(McpServerConfig.DEFAULT_MAX_REQUEST_BYTES, config.maxRequestBytes());
+  }
+
+  /**
+   * The interesting direction now that off is the default: asking for the server has to work, or
+   * the stdio launcher and every client that starts this application as a child process break.
+   */
+  @Test
+  void theEnabledPropertyCanStillTurnTheServerOn() {
+    System.setProperty(ENABLED, "true");
+
+    assertTrue(McpServerConfig.fromSystemProperties().enabled());
+  }
+
+  /**
+   * The stored preference decides when nothing is set, and an explicit property still overrides it
+   * -- so a client can ask for a port without disturbing what the user chose in Preferences.
+   */
+  @Test
+  void preferencesActAsFallbacksAndPropertiesOverrideThem() {
+    final var fromPreference = McpServerConfig.fromPreferences(true, 9100, "stored-token");
+    assertTrue(fromPreference.enabled());
+    assertEquals(9100, fromPreference.port());
+    assertEquals("stored-token", fromPreference.token());
+
+    System.setProperty(ENABLED, "off");
+    System.setProperty(PORT, "9200");
+    final var overridden = McpServerConfig.fromPreferences(true, 9100, "stored-token");
+    assertFalse(overridden.enabled());
+    assertEquals(9200, overridden.port());
   }
 
   @Test

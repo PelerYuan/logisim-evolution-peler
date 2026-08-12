@@ -10,9 +10,12 @@
 package com.cburch.logisim.mcp;
 
 import com.cburch.logisim.generated.BuildInfo;
+import com.cburch.logisim.prefs.AppPreferences;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.security.SecureRandom;
+import java.util.HexFormat;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -48,6 +51,46 @@ public final class McpServerManager implements AutoCloseable {
       System.err.println("Unable to start embedded MCP server: " + e.getMessage());
     }
     return manager;
+  }
+
+  /**
+   * Starts the service the user asked for in Preferences, if they asked for one.
+   *
+   * <p>Separate from {@link #startDefault()} because this is the only path that reads
+   * {@link AppPreferences}, and the tests must not: its static initialiser reads the real
+   * preference store, and reading it headless writes wrong defaults back. Only {@code Main} calls
+   * this, after the GUI is up.
+   */
+  public static McpServerManager startFromPreferences() {
+    final var manager = getInstance();
+    final var enabled = AppPreferences.MCP_ENABLED.getBoolean();
+    if (enabled) ensureToken();
+    final var config =
+        McpServerConfig.fromPreferences(
+            enabled, AppPreferences.MCP_PORT.get(), AppPreferences.MCP_TOKEN.get());
+    try {
+      manager.start(config);
+    } catch (IOException e) {
+      System.err.println("Unable to start embedded MCP server: " + e.getMessage());
+    }
+    return manager;
+  }
+
+  /**
+   * Makes sure a bearer token exists, returning it.
+   *
+   * <p>Generated rather than asked for, because a token a person invents is a token they reuse. It
+   * is stored so the same one survives a restart -- the client configuration would otherwise stop
+   * working every time the application is reopened.
+   */
+  public static String ensureToken() {
+    final var existing = AppPreferences.MCP_TOKEN.get();
+    if (existing != null && !existing.isBlank()) return existing;
+    final var bytes = new byte[24];
+    new SecureRandom().nextBytes(bytes);
+    final var token = HexFormat.of().formatHex(bytes);
+    AppPreferences.MCP_TOKEN.set(token);
+    return token;
   }
 
   public void start(McpServerConfig requested) throws IOException {

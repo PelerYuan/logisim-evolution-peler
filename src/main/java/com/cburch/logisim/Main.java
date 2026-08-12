@@ -94,7 +94,9 @@ public class Main {
 
     try {
       startup.run();
-      McpServerManager.startDefault();
+      // Peler Edition: only if the user turned it on in Preferences -> Peler's Features. See
+      // AppPreferences.MCP_ENABLED for why this is not something the application decides.
+      McpServerManager.startFromPreferences();
     } catch (Throwable e) {
       final var strWriter = new StringWriter();
       final var printWriter = new PrintWriter(strWriter);

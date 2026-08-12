@@ -47,7 +47,7 @@ class MenuHelp extends JMenu implements ActionListener {
   private final JMenuItem aboutPelerEdition = new JMenuItem();
   private final JMenuItem www = new JMenuItem();
   // Peler Edition: MCP configuration for Claude/Codex clients.
-  private final JMenuItem mcpConfig = new JMenuItem("Copy MCP Configuration");
+  private final JMenuItem mcpConfig = new JMenuItem();
   private HelpSet helpSet;
   private String helpSetUrl = "";
   private JHelp helpComponent;
@@ -111,8 +111,8 @@ class MenuHelp extends JMenu implements ActionListener {
     if (json == null) {
       OptionPane.showMessageDialog(
           menubar.getParentFrame(),
-          "MCP server is not running.",
-          "MCP Configuration",
+          S.get("mcpConfigNotRunning"),
+          S.get("mcpConfigTitle"),
           OptionPane.INFORMATION_MESSAGE);
       return;
     }
@@ -121,19 +121,21 @@ class MenuHelp extends JMenu implements ActionListener {
       Toolkit.getDefaultToolkit()
           .getSystemClipboard()
           .setContents(new StringSelection(json), null);
-      displayText = json + "\n\n(Copied to clipboard)";
+      displayText = json + "\n\n" + S.get("mcpConfigCopied");
     } catch (Exception ignored) {
       // clipboard may be unavailable in headless/test environments
     }
     final var textArea = new JTextArea(displayText);
     textArea.setEditable(false);
-    textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+    // deriveFont rather than new Font(name, ...): a physical font built by name carries no
+    // fallback, which is how CJK turns into boxes elsewhere in this application. See CLAUDE.md.
+    textArea.setFont(textArea.getFont().deriveFont(Font.PLAIN, 12f));
     textArea.setRows(10);
     textArea.setColumns(55);
     OptionPane.showMessageDialog(
         menubar.getParentFrame(),
         new JScrollPane(textArea),
-        "MCP Configuration (Claude / Codex)",
+        S.get("mcpConfigTitle"),
         OptionPane.INFORMATION_MESSAGE);
   }
 
@@ -210,6 +212,7 @@ class MenuHelp extends JMenu implements ActionListener {
     library.setText(S.get("helpLibraryItem"));
     about.setText(S.get("helpAboutItem"));
     aboutPelerEdition.setText(S.get("helpAboutPelerEditionItem"));
+    mcpConfig.setText(S.get("helpMcpConfigItem"));
     www.setText(S.get("helpProjectWebsite"));
     if (helpFrame != null) {
       helpFrame.setLocale(Locale.getDefault());

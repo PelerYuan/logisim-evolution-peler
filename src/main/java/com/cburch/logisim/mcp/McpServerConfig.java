@@ -34,13 +34,31 @@ public record McpServerConfig(
     }
   }
 
-  /** Reads configuration without making preferences or GUI state mandatory. */
+  /**
+   * Reads configuration without making preferences or GUI state mandatory.
+   *
+   * <p>Off unless something asks for it. An MCP endpoint is a way for anything else on the machine
+   * to drive this application -- open and save files, load a JAR library, rewrite VHDL -- so it
+   * cannot be something a person ends up running because they installed a circuit editor. The
+   * property and the environment variable both still turn it on, which is what the stdio launcher
+   * and the tests use.
+   */
   public static McpServerConfig fromSystemProperties() {
-    final var enabled = boolProperty("logisim.mcp.enabled", "LOGISIM_MCP_ENABLED", true);
+    return fromPreferences(false, DEFAULT_PORT, "");
+  }
+
+  /**
+   * The same reading, with the stored preferences as the fallbacks. An explicit system property or
+   * environment variable still wins, so a client that launches this application as a child process
+   * can ask for a port without disturbing what the user chose in Preferences.
+   */
+  public static McpServerConfig fromPreferences(
+      boolean enabledDefault, int portDefault, String tokenDefault) {
+    final var enabled = boolProperty("logisim.mcp.enabled", "LOGISIM_MCP_ENABLED", enabledDefault);
     final var stdio = boolProperty("logisim.mcp.stdio", "LOGISIM_MCP_STDIO", false);
     final var host = firstProperty("logisim.mcp.host", "LOGISIM_MCP_HOST", "127.0.0.1");
-    final var token = firstProperty("logisim.mcp.token", "LOGISIM_MCP_TOKEN", "");
-    final var port = intProperty("logisim.mcp.port", "LOGISIM_MCP_PORT", DEFAULT_PORT);
+    final var token = firstProperty("logisim.mcp.token", "LOGISIM_MCP_TOKEN", tokenDefault);
+    final var port = intProperty("logisim.mcp.port", "LOGISIM_MCP_PORT", portDefault);
     final var max = intProperty(
         "logisim.mcp.maxRequestBytes",
         "LOGISIM_MCP_MAX_REQUEST_BYTES",

@@ -356,7 +356,9 @@ public final class McpProjectService
     return onModel(() -> changeJournal.poll(sessionId, arguments));
   }
 
-  private <T> T onModel(Callable<T> callable) throws Exception { return executor.call(callable); }
+  private <T> T onModel(Callable<T> callable) throws Exception {
+    return executor.call(callable);
+  }
 
   private void refresh() {
     registry.refresh();
@@ -1064,10 +1066,25 @@ public final class McpProjectService
 
   private JsonElement removeComponents(JsonObject args) throws Exception {
     return write("remove_components", args, project -> {
-      final var ids = strings(args, "componentIds"); if (ids.isEmpty()) throw rpc(-32602, "componentIds must not be empty");
-      Circuit circuit = null; final var components = new ArrayList<Component>();
-      for (final var id : ids) { final var found = findComponent(project, id); if (found == null || found instanceof Wire) throw rpc(-32002, "Unknown componentId: " + id); if (circuit == null) circuit = circuitFor(project, found); if (circuitFor(project, found) != circuit) throw rpc(-32602, "Components must share a circuit"); components.add(found); }
-      final var mutation = new CircuitMutation(circuit); for (final var component : components) mutation.remove(component); project.doAction(mutation.toAction(null)); return operation(project, circuit);
+      final var ids = strings(args, "componentIds");
+      if (ids.isEmpty()) throw rpc(-32602, "componentIds must not be empty");
+      Circuit circuit = null;
+      final var components = new ArrayList<Component>();
+      for (final var id : ids) {
+        final var found = findComponent(project, id);
+        if (found == null || found instanceof Wire) {
+          throw rpc(-32002, "Unknown componentId: " + id);
+        }
+        if (circuit == null) circuit = circuitFor(project, found);
+        if (circuitFor(project, found) != circuit) {
+          throw rpc(-32602, "Components must share a circuit");
+        }
+        components.add(found);
+      }
+      final var mutation = new CircuitMutation(circuit);
+      for (final var component : components) mutation.remove(component);
+      project.doAction(mutation.toAction(null));
+      return operation(project, circuit);
     });
   }
 
@@ -1076,31 +1093,76 @@ public final class McpProjectService
       final var circuit = circuit(project, optional(args, "circuitId"));
       final var wire = Wire.create(Location.create(requiredInt(args, "x1"), requiredInt(args, "y1"), true), Location.create(requiredInt(args, "x2"), requiredInt(args, "y2"), true));
       if (wire.getEnd0().equals(wire.getEnd1())) throw rpc(-32602, "Wire endpoints must differ");
-      final var mutation = new CircuitMutation(circuit); mutation.add(wire); project.doAction(mutation.toAction(null)); final var result = operation(project, circuit); result.addProperty("wireId", registry.componentId(wire)); return result;
+      final var mutation = new CircuitMutation(circuit);
+      mutation.add(wire);
+      project.doAction(mutation.toAction(null));
+      final var result = operation(project, circuit);
+      result.addProperty("wireId", registry.componentId(wire));
+      return result;
     });
   }
 
   private JsonElement removeWires(JsonObject args) throws Exception {
     return write("remove_wires", args, project -> {
-      final var ids = strings(args, "wireIds"); if (ids.isEmpty()) throw rpc(-32602, "wireIds must not be empty");
-      Circuit circuit = null; final var wires = new ArrayList<Wire>();
-      for (final var id : ids) { final var found = findComponent(project, id); if (!(found instanceof Wire wire)) throw rpc(-32002, "Unknown wireId: " + id); if (circuit == null) circuit = circuitFor(project, wire); wires.add(wire); }
-      final var mutation = new CircuitMutation(circuit); for (final var wire : wires) mutation.remove(wire); project.doAction(mutation.toAction(null)); return operation(project, circuit);
+      final var ids = strings(args, "wireIds");
+      if (ids.isEmpty()) throw rpc(-32602, "wireIds must not be empty");
+      Circuit circuit = null;
+      final var wires = new ArrayList<Wire>();
+      for (final var id : ids) {
+        final var found = findComponent(project, id);
+        if (!(found instanceof Wire wire)) throw rpc(-32002, "Unknown wireId: " + id);
+        if (circuit == null) circuit = circuitFor(project, wire);
+        wires.add(wire);
+      }
+      final var mutation = new CircuitMutation(circuit);
+      for (final var wire : wires) mutation.remove(wire);
+      project.doAction(mutation.toAction(null));
+      return operation(project, circuit);
     });
   }
 
   private JsonElement setAttributes(JsonObject args) throws Exception {
     return write("set_component_attributes", args, project -> {
-      final var component = findComponent(project, required(args, "componentId")); if (component == null) throw rpc(-32002, "Unknown componentId"); final var circuit = circuitFor(project, component); final var values = args.getAsJsonObject("attributes"); if (values == null) throw rpc(-32602, "attributes must be an object"); final var mutation = new CircuitMutation(circuit);
-      for (final var entry : values.entrySet()) { final var attribute = component.getAttributeSet().getAttribute(entry.getKey()); if (attribute == null) throw rpc(-32602, "Unknown attribute: " + entry.getKey()); mutation.set(component, attribute, parse(attribute, entry.getValue())); }
-      project.doAction(mutation.toAction(null)); return operation(project, circuit);
+      final var component = findComponent(project, required(args, "componentId"));
+      if (component == null) throw rpc(-32002, "Unknown componentId");
+      final var circuit = circuitFor(project, component);
+      final var values = args.getAsJsonObject("attributes");
+      if (values == null) throw rpc(-32602, "attributes must be an object");
+      final var mutation = new CircuitMutation(circuit);
+      for (final var entry : values.entrySet()) {
+        final var attribute = component.getAttributeSet().getAttribute(entry.getKey());
+        if (attribute == null) throw rpc(-32602, "Unknown attribute: " + entry.getKey());
+        mutation.set(component, attribute, parse(attribute, entry.getValue()));
+      }
+      project.doAction(mutation.toAction(null));
+      return operation(project, circuit);
     });
   }
 
   private JsonElement moveComponents(JsonObject args) throws Exception {
     return write("move_components", args, project -> {
-      final var values = args.getAsJsonArray("moves"); if (values == null || values.isEmpty()) throw rpc(-32602, "moves must not be empty"); Circuit circuit = null; final var originals = new ArrayList<Component>(); final var replacements = new ArrayList<Component>();
-      for (final var value : values) { final var move = value.getAsJsonObject(); final var original = findComponent(project, required(move, "componentId")); if (original == null || original instanceof Wire) throw rpc(-32002, "Unknown or non-movable component"); final var current = circuitFor(project, original); if (circuit == null) circuit = current; if (current != circuit) throw rpc(-32602, "Moves must share a circuit"); originals.add(original); replacements.add(original.getFactory().createComponent(Location.create(requiredInt(move, "x"), requiredInt(move, "y"), true), (AttributeSet) original.getAttributeSet().clone())); }
+      final var values = args.getAsJsonArray("moves");
+      if (values == null || values.isEmpty()) throw rpc(-32602, "moves must not be empty");
+      Circuit circuit = null;
+      final var originals = new ArrayList<Component>();
+      final var replacements = new ArrayList<Component>();
+      for (final var value : values) {
+        final var move = value.getAsJsonObject();
+        final var original = findComponent(project, required(move, "componentId"));
+        if (original == null || original instanceof Wire) {
+          throw rpc(-32002, "Unknown or non-movable component");
+        }
+        final var current = circuitFor(project, original);
+        if (circuit == null) circuit = current;
+        if (current != circuit) throw rpc(-32602, "Moves must share a circuit");
+        originals.add(original);
+        replacements.add(
+            original
+                .getFactory()
+                .createComponent(
+                    Location.create(requiredInt(move, "x"), requiredInt(move, "y"), true),
+                    (AttributeSet) original.getAttributeSet().clone()));
+      }
       final var mutation = new CircuitMutation(circuit);
       for (var i = 0; i < originals.size(); i++) {
         mutation.replace(originals.get(i), replacements.get(i));
@@ -1725,11 +1787,21 @@ public final class McpProjectService
   }
 
   private JsonElement simulatorReset(JsonObject args) throws Exception {
-    return onModel(() -> { final var p = requireProject(args); p.getSimulator().reset(); return simulatorState(p); });
+    return onModel(
+        () -> {
+          final var p = requireProject(args);
+          p.getSimulator().reset();
+          return simulatorState(p);
+        });
   }
 
   private JsonElement simulatorStep(JsonObject args) throws Exception {
-    return onModel(() -> { final var p = requireProject(args); p.getSimulator().step(); return simulatorState(p); });
+    return onModel(
+        () -> {
+          final var p = requireProject(args);
+          p.getSimulator().step();
+          return simulatorState(p);
+        });
   }
 
   private JsonElement simulatorTick(JsonObject args) throws Exception {
@@ -2058,7 +2130,14 @@ public final class McpProjectService
     return false;
   }
 
-  private JsonObject operation(Project project, Circuit circuit) { final var result = new JsonObject(); result.addProperty("projectId", registry.projectId(project)); result.addProperty("revision", revision(project)); result.addProperty("dirty", project.isFileDirty()); if (circuit != null) result.addProperty("circuitId", registry.circuitId(circuit)); return result; }
+  private JsonObject operation(Project project, Circuit circuit) {
+    final var result = new JsonObject();
+    result.addProperty("projectId", registry.projectId(project));
+    result.addProperty("revision", revision(project));
+    result.addProperty("dirty", project.isFileDirty());
+    if (circuit != null) result.addProperty("circuitId", registry.circuitId(circuit));
+    return result;
+  }
 
   private JsonElement write(String toolName, JsonObject args, ProjectWrite operation)
       throws Exception {
@@ -2082,31 +2161,201 @@ public final class McpProjectService
         });
   }
 
-  private Project requireProject(JsonObject args) throws McpJsonRpcDispatcher.McpRpcException { refresh(); final var project = registry.resolve(optional(args, "projectId")); if (project == null) throw rpc(-32001, "No open Logisim project"); return project; }
-  private void pruneOwnedActions(Project project) { final var actions = ownedActions.get(project); if (actions == null) return; final var retained = java.util.Collections.newSetFromMap(new IdentityHashMap<Action, Boolean>()); retained.addAll(project.getUndoActions()); retained.addAll(project.getRedoActions()); actions.keySet().removeIf(action -> !retained.contains(action)); if (actions.isEmpty()) ownedActions.remove(project); }
-  private void requireOwnedStackHead(Project project, Action action, String targetOperationId, String verb) throws McpRpcException { final var owned = action == null ? null : ownedActions.getOrDefault(project, new IdentityHashMap<>()).get(action); if (!targetOperationId.equals(owned)) { final var data = new JsonObject(); data.addProperty("targetOperationId", targetOperationId); data.addProperty("stack", verb); data.addProperty("stackHeadOwnedByMcp", owned != null); if (owned != null) data.addProperty("actualOperationId", owned); throw new McpRpcException(-32011, "Refusing to " + verb + ": target MCP action is not the current stack head", data); } }
-  private Circuit circuit(Project project, String id) throws McpJsonRpcDispatcher.McpRpcException { final var result = id == null ? project.getCurrentCircuit() : registry.resolveCircuit(project, id); if (result == null) throw rpc(-32007, "Unknown circuitId"); return result; }
-  private Component findComponent(Project project, String id) { for (final var circuit : project.getLogisimFile().getCircuits()) { for (final var component : circuit.getNonWires()) if (id.equals(registry.componentId(component))) return component; for (final var wire : circuit.getWires()) if (id.equals(registry.componentId(wire))) return wire; } return null; }
-  private Circuit circuitFor(Project project, Component component) throws McpRpcException { for (final var circuit : project.getLogisimFile().getCircuits()) if (circuit.contains(component)) return circuit; throw rpc(-32002, "Object is no longer in the project"); }
-  private ComponentFactory findFactory(Library library, String name) { for (final var tool : library.getTools()) if (tool instanceof AddTool add && (name.equalsIgnoreCase(add.getName()) || name.equalsIgnoreCase(add.getFactory().getName()) || name.equalsIgnoreCase(add.getFactory().getDisplayName()))) return add.getFactory(); for (final var nested : library.getLibraries()) { final var result = findFactory(nested, name); if (result != null) return result; } return null; }
+  private Project requireProject(JsonObject args) throws McpJsonRpcDispatcher.McpRpcException {
+    refresh();
+    final var project = registry.resolve(optional(args, "projectId"));
+    if (project == null) throw rpc(-32001, "No open Logisim project");
+    return project;
+  }
+  private void pruneOwnedActions(Project project) {
+    final var actions = ownedActions.get(project);
+    if (actions == null) return;
+    final var retained =
+        java.util.Collections.newSetFromMap(new IdentityHashMap<Action, Boolean>());
+    retained.addAll(project.getUndoActions());
+    retained.addAll(project.getRedoActions());
+    actions.keySet().removeIf(action -> !retained.contains(action));
+    if (actions.isEmpty()) ownedActions.remove(project);
+  }
+  private void requireOwnedStackHead(
+      Project project, Action action, String targetOperationId, String verb)
+      throws McpRpcException {
+    final var owned =
+        action == null
+            ? null
+            : ownedActions.getOrDefault(project, new IdentityHashMap<>()).get(action);
+    if (targetOperationId.equals(owned)) return;
+    final var data = new JsonObject();
+    data.addProperty("targetOperationId", targetOperationId);
+    data.addProperty("stack", verb);
+    data.addProperty("stackHeadOwnedByMcp", owned != null);
+    if (owned != null) data.addProperty("actualOperationId", owned);
+    throw new McpRpcException(
+        -32011, "Refusing to " + verb + ": target MCP action is not the current stack head", data);
+  }
+  private Circuit circuit(Project project, String id)
+      throws McpJsonRpcDispatcher.McpRpcException {
+    final var result =
+        id == null ? project.getCurrentCircuit() : registry.resolveCircuit(project, id);
+    if (result == null) throw rpc(-32007, "Unknown circuitId");
+    return result;
+  }
+  private Component findComponent(Project project, String id) {
+    for (final var circuit : project.getLogisimFile().getCircuits()) {
+      for (final var component : circuit.getNonWires()) {
+        if (id.equals(registry.componentId(component))) return component;
+      }
+      for (final var wire : circuit.getWires()) {
+        if (id.equals(registry.componentId(wire))) return wire;
+      }
+    }
+    return null;
+  }
+  private Circuit circuitFor(Project project, Component component) throws McpRpcException {
+    for (final var circuit : project.getLogisimFile().getCircuits()) {
+      if (circuit.contains(component)) return circuit;
+    }
+    throw rpc(-32002, "Object is no longer in the project");
+  }
+  private ComponentFactory findFactory(Library library, String name) {
+    for (final var tool : library.getTools()) {
+      if (tool instanceof AddTool add
+          && (name.equalsIgnoreCase(add.getName())
+              || name.equalsIgnoreCase(add.getFactory().getName())
+              || name.equalsIgnoreCase(add.getFactory().getDisplayName()))) {
+        return add.getFactory();
+      }
+    }
+    for (final var nested : library.getLibraries()) {
+      final var result = findFactory(nested, name);
+      if (result != null) return result;
+    }
+    return null;
+  }
 
-  private void checkRevision(Project project, JsonObject args) throws McpRpcException { if (!args.has("expectedRevision") || args.get("expectedRevision").isJsonNull()) throw rpc(-32602, "expectedRevision is required for mutating tools"); final long expected; try { expected = args.get("expectedRevision").getAsLong(); } catch (RuntimeException e) { throw rpc(-32602, "expectedRevision must be an integer"); } final var actual = revision(project); if (expected != actual) { final var data = new JsonObject(); data.addProperty("expectedRevision", expected); data.addProperty("actualRevision", actual); throw new McpRpcException(-32009, "Revision conflict", data); } }
-  private long revision(Project project) { return revisions.getOrDefault(project, 0L); }
-  private static String required(JsonObject object, String name) throws McpRpcException { final var value = object.get(name); if (value == null || value.isJsonNull() || !value.isJsonPrimitive() || value.getAsString().isBlank()) throw rpc(-32602, "Missing parameter: " + name); return value.getAsString(); }
-  private static int requiredInt(JsonObject object, String name) throws McpRpcException { try { return object.get(name).getAsInt(); } catch (RuntimeException e) { throw rpc(-32602, "Missing integer parameter: " + name); } }
-  private static String optional(JsonObject object, String name) { final var value = object.get(name); return value == null || value.isJsonNull() ? null : value.getAsString(); }
-  private static boolean present(JsonObject object, String name) { final var value = object.get(name); return value != null && !value.isJsonNull(); }
-  private static boolean booleanValue(JsonObject object, String name, boolean fallback) throws McpRpcException { final var value = object.get(name); if (value == null || value.isJsonNull()) return fallback; if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isBoolean()) throw rpc(-32602, name + " must be a boolean"); return value.getAsBoolean(); }
-  private static List<String> strings(JsonObject object, String name) throws McpRpcException { final var array = object.get(name); if (array == null || !array.isJsonArray()) throw rpc(-32602, name + " must be an array"); final var result = new ArrayList<String>(); for (final var value : array.getAsJsonArray()) { if (!value.isJsonPrimitive()) throw rpc(-32602, name + " entries must be strings"); result.add(value.getAsString()); } return result; }
+  private void checkRevision(Project project, JsonObject args) throws McpRpcException {
+    if (!args.has("expectedRevision") || args.get("expectedRevision").isJsonNull()) {
+      throw rpc(-32602, "expectedRevision is required for mutating tools");
+    }
+    final long expected;
+    try {
+      expected = args.get("expectedRevision").getAsLong();
+    } catch (RuntimeException e) {
+      throw rpc(-32602, "expectedRevision must be an integer");
+    }
+    final var actual = revision(project);
+    if (expected == actual) return;
+    final var data = new JsonObject();
+    data.addProperty("expectedRevision", expected);
+    data.addProperty("actualRevision", actual);
+    throw new McpRpcException(-32009, "Revision conflict", data);
+  }
+  private long revision(Project project) {
+    return revisions.getOrDefault(project, 0L);
+  }
+  private static String required(JsonObject object, String name) throws McpRpcException {
+    final var value = object.get(name);
+    if (value == null
+        || value.isJsonNull()
+        || !value.isJsonPrimitive()
+        || value.getAsString().isBlank()) {
+      throw rpc(-32602, "Missing parameter: " + name);
+    }
+    return value.getAsString();
+  }
+  private static int requiredInt(JsonObject object, String name) throws McpRpcException {
+    try {
+      return object.get(name).getAsInt();
+    } catch (RuntimeException e) {
+      throw rpc(-32602, "Missing integer parameter: " + name);
+    }
+  }
+  private static String optional(JsonObject object, String name) {
+    final var value = object.get(name);
+    return value == null || value.isJsonNull() ? null : value.getAsString();
+  }
+  private static boolean present(JsonObject object, String name) {
+    final var value = object.get(name);
+    return value != null && !value.isJsonNull();
+  }
+  private static boolean booleanValue(JsonObject object, String name, boolean fallback)
+      throws McpRpcException {
+    final var value = object.get(name);
+    if (value == null || value.isJsonNull()) return fallback;
+    if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isBoolean()) {
+      throw rpc(-32602, name + " must be a boolean");
+    }
+    return value.getAsBoolean();
+  }
+  private static List<String> strings(JsonObject object, String name) throws McpRpcException {
+    final var array = object.get(name);
+    if (array == null || !array.isJsonArray()) {
+      throw rpc(-32602, name + " must be an array");
+    }
+    final var result = new ArrayList<String>();
+    for (final var value : array.getAsJsonArray()) {
+      if (!value.isJsonPrimitive()) throw rpc(-32602, name + " entries must be strings");
+      result.add(value.getAsString());
+    }
+    return result;
+  }
 
   @SuppressWarnings({"unchecked", "rawtypes"})
-  private static Object parse(Attribute attribute, JsonElement value) throws McpRpcException { try { return value == null || value.isJsonNull() ? null : attribute.parse(value.isJsonPrimitive() ? value.getAsString() : value.toString()); } catch (RuntimeException e) { throw rpc(-32602, "Invalid attribute value: " + value); } }
+  private static Object parse(Attribute attribute, JsonElement value) throws McpRpcException {
+    try {
+      if (value == null || value.isJsonNull()) return null;
+      return attribute.parse(value.isJsonPrimitive() ? value.getAsString() : value.toString());
+    } catch (RuntimeException e) {
+      throw rpc(-32602, "Invalid attribute value: " + value);
+    }
+  }
   @SuppressWarnings({"unchecked", "rawtypes"})
-  private static void applyAttributes(AttributeSet set, JsonObject values) throws McpRpcException { if (values == null) return; for (final var entry : values.entrySet()) { final var attribute = set.getAttribute(entry.getKey()); if (attribute == null) throw rpc(-32602, "Unknown attribute: " + entry.getKey()); set.setValue((Attribute) attribute, parse(attribute, entry.getValue())); } }
-  private static JsonObject writeSchema(Object... values) { final var expanded = new Object[values.length + 6]; System.arraycopy(values, 0, expanded, 0, values.length); expanded[values.length] = "expectedRevision"; expanded[values.length + 1] = "integer"; expanded[values.length + 2] = true; expanded[values.length + 3] = "operationId"; expanded[values.length + 4] = "string"; expanded[values.length + 5] = false; return schema(expanded); }
-  private static JsonObject lifecycleSchema(Object... values) { final var expanded = new Object[values.length + 6]; System.arraycopy(values, 0, expanded, 0, values.length); expanded[values.length] = "expectedRevision"; expanded[values.length + 1] = "integer"; expanded[values.length + 2] = true; expanded[values.length + 3] = "operationId"; expanded[values.length + 4] = "string"; expanded[values.length + 5] = false; return schema(expanded); }
-  private static JsonObject schema(Object... values) { final var object = new JsonObject(); object.addProperty("type", "object"); final var properties = new JsonObject(); final var required = new JsonArray(); for (var i = 0; i < values.length; i += 3) { final var property = new JsonObject(); property.addProperty("type", (String) values[i + 1]); properties.add((String) values[i], property); if ((Boolean) values[i + 2]) required.add((String) values[i]); } object.add("properties", properties); object.add("required", required); return object; }
-  private static McpRpcException rpc(int code, String message) { return new McpRpcException(code, message); }
+  private static void applyAttributes(AttributeSet set, JsonObject values)
+      throws McpRpcException {
+    if (values == null) return;
+    for (final var entry : values.entrySet()) {
+      final var attribute = set.getAttribute(entry.getKey());
+      if (attribute == null) throw rpc(-32602, "Unknown attribute: " + entry.getKey());
+      set.setValue((Attribute) attribute, parse(attribute, entry.getValue()));
+    }
+  }
+  private static JsonObject writeSchema(Object... values) {
+    return schemaWithRevision(values);
+  }
+  private static JsonObject lifecycleSchema(Object... values) {
+    return schemaWithRevision(values);
+  }
+
+  /** The shared tail of {@link #writeSchema} and {@link #lifecycleSchema}, which were identical. */
+  private static JsonObject schemaWithRevision(Object... values) {
+    final var expanded = new Object[values.length + 6];
+    System.arraycopy(values, 0, expanded, 0, values.length);
+    expanded[values.length] = "expectedRevision";
+    expanded[values.length + 1] = "integer";
+    expanded[values.length + 2] = true;
+    expanded[values.length + 3] = "operationId";
+    expanded[values.length + 4] = "string";
+    expanded[values.length + 5] = false;
+    return schema(expanded);
+  }
+  private static JsonObject schema(Object... values) {
+    final var object = new JsonObject();
+    object.addProperty("type", "object");
+    final var properties = new JsonObject();
+    final var required = new JsonArray();
+    for (var i = 0; i < values.length; i += 3) {
+      final var property = new JsonObject();
+      property.addProperty("type", (String) values[i + 1]);
+      properties.add((String) values[i], property);
+      if ((Boolean) values[i + 2]) required.add((String) values[i]);
+    }
+    object.add("properties", properties);
+    object.add("required", required);
+    return object;
+  }
+  private static McpRpcException rpc(int code, String message) {
+    return new McpRpcException(code, message);
+  }
   private static final class McpRpcException extends McpJsonRpcDispatcher.McpRpcException {
     private final int errorCode;
 
