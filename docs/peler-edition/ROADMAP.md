@@ -911,7 +911,6 @@ The twelve locales already carried this feature's strings from phase 1.
   register, divider, bit adder, bit finder, bit selector, priority encoder, random.
 - **A pin wider than about nine bits** falls back to a value box drawn by the page rather than by
   Logisim.
-- **No README recording yet.** Every other feature has a GIF; this one has prose.
 
 ## Known open items
 

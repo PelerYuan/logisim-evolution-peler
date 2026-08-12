@@ -1,4 +1,4 @@
-[![Logisim-evolution](docs/img/logisim-evolution-logo.png)](https://github.com/logisim-evolution/logisim-evolution)
+[![Logisim-evolution — Peler's Edition](docs/img/logisim-evolution-peler-logo.png)](https://github.com/PelerYuan/logisim-evolution-peler)
 
 ---
 
@@ -67,6 +67,8 @@ shown with their real component icons. <kbd>Enter</kbd> selects it ready to plac
 <kbd>Shift</kbd>+<kbd>Enter</kbd> keeps placing. It closes on <kbd>Esc</kbd> or as soon as it loses
 focus. The shortcut is listed under **Preferences → Hotkeys** and can be rebound.
 
+![Searching for a gate by name and placing it straight from the results](docs/img/peler-edition/ComponentFinder.gif)
+
 **Its own file format**
 This fork saves `.pcirc`, and `.circ` is left to official Logisim-evolution. A `.pcirc` file keeps
 everything; **Save As** also offers `.circ` for handing work to someone running the official
@@ -95,6 +97,8 @@ simulates. Open it in any browser, with no plugin and nothing to install: click 
 change it, press a button, flip a DIP switch, and values propagate through the circuit exactly as
 they do here. Clock circuits get tick, run and reset controls. Nothing can be moved, rewired or
 edited, which is the point — it is a circuit to hand to someone, not a copy of the editor.
+
+![Exporting a circuit and then driving the exported page in a browser](docs/img/peler-edition/HtmlExport.gif)
 
 The page is a workspace rather than a document: the same white sheet and dot grid as the canvas
 here, filling the window, with one small control strip floating in the corner and nothing else. Drag to pan, <kbd>Ctrl</kbd>+scroll
