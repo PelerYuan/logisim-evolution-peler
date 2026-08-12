@@ -427,7 +427,9 @@ public class Frame extends LFrame.MainWindow implements LocaleListener {
                 ? S.get("titleCircFileKnown", circuit.getName(), name)
                 : S.get("titleFileKnown", name))
         .append(" · ")
-        .append(BuildInfo.displayName);
+        // Peler Edition: this fork's version, with upstream's in parentheses. BuildInfo.displayName
+        // carries upstream's alone, which never changes between this fork's releases.
+        .append(BuildInfo.pelerDisplayName);
 
     // The icon alone may sometimes be missed so we add additional "[UNSAVED]" to the title too.
     if (project.isFileDirty()) {

@@ -123,7 +123,11 @@ extra.apply {
   // tracking the real upstream version, since BuildInfo.version feeds .circ file-format
   // compatibility logic in XmlReader/XmlWriter (default-attribute-value resolution keyed off the
   // saving version) -- corrupting that with an arbitrary "1.0.x" would silently break old/new
-  // file compatibility handling. This override only ever affects OS package metadata/filenames.
+  // file compatibility handling.
+  //
+  // Beyond OS package metadata and filenames, this reaches the running application through
+  // BuildInfo.pelerVersion (see genBuildInfo), which is what the window title shows. Nothing that
+  // is written into a saved file uses it.
   val pelerAppVersion = if (project.hasProperty("pelerAppVersion")) {
     project.property("pelerAppVersion") as String
   } else {
@@ -797,6 +801,28 @@ tasks.register("genBuildInfo") {
   val displayName = "${projectName} v${appVersion}"
   val url = ext.get(APP_URL) as String
 
+  // Peler Edition: the fork's own version, for the places a person reads a version number -- the
+  // window title above all, which otherwise shows upstream's, the same "4.1.0" in every release
+  // this fork has ever made. Both numbers are shown, because both are true: this build is
+  // 1.2.<run> of the fork and it is based on upstream 4.1.0.
+  //
+  // A separate field, never mixed into `version` or `displayName`: `version` feeds .circ
+  // compatibility logic in XmlReader/XmlWriter and is written into every saved file, and
+  // `displayName` goes into file headers and generated VHDL. Only pelerAppVersion is free.
+  //
+  // Ordinary local builds pass no override and get upstream's number, so they read exactly as they
+  // did before -- there is nothing meaningful to put in the parentheses for them.
+  val pelerAppVersion = ext.get(PELER_APP_VERSION) as String
+  val pelerDisplayName =
+    if (pelerAppVersion == ext.get(APP_VERSION_SHORT) as String) {
+      displayName
+    } else {
+      "${projectName} v${pelerAppVersion} (${appVersion})"
+    }
+  // Declared as an input because it arrives as -PpelerAppVersion rather than from a file: without
+  // this, a build that passes a new one reuses the BuildInfo generated for the previous.
+  inputs.property("pelerAppVersion", pelerAppVersion)
+
   doLast {
     val now = Date()
     val nowIso = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ").format(now)
@@ -843,6 +869,12 @@ tasks.register("genBuildInfo") {
           public static final String name = "${projectName}";
           public static final String displayName = "${displayName}";
           public static final String url = "${url}";
+
+          // Peler Edition version, and the display name built from it. Equal to displayName when
+          // this build carries no Peler version of its own. Never use these where the upstream
+          // version is what is meant -- see the comment in build.gradle.kts.
+          public static final String pelerVersion = "${pelerAppVersion}";
+          public static final String pelerDisplayName = "${pelerDisplayName}";
 
           // JRE info
           public static final String jvm_version =
