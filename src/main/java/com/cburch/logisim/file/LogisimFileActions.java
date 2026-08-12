@@ -367,6 +367,10 @@ public final class LogisimFileActions {
     private final Set<String> baseLibsToEnable = new HashSet<>();
 
     LoadLibraries(Library[] libs, LogisimFile source) {
+      this(libs, source, true);
+    }
+
+    LoadLibraries(Library[] libs, LogisimFile source, boolean interactiveErrors) {
       final var libNames = new HashMap<String, Library>();
       final var toolList = new HashSet<String>();
       final var errors = new HashMap<String, String>();
@@ -394,9 +398,11 @@ public final class LogisimFileActions {
       LibraryTools.buildToolList(source, toolList);
       for (final var lib : libs) {
         if (libNames.containsKey(lib.getName().toUpperCase())) {
+          final var message = "\"" + lib.getName() + "\": " + S.get("LibraryAlreadyLoaded");
+          if (!interactiveErrors) throw new IllegalArgumentException(message);
           OptionPane.showMessageDialog(
               null,
-              "\"" + lib.getName() + "\": " + S.get("LibraryAlreadyLoaded"),
+              message,
               S.get("LibLoadErrors") + " " + lib.getName() + " !",
               OptionPane.WARNING_MESSAGE);
         } else {
@@ -412,11 +418,14 @@ public final class LogisimFileActions {
               toolList.addAll(addedToolList);
               mergedLibs.add(lib);
             } else {
+              if (!interactiveErrors) throw new IllegalArgumentException(errors.toString());
               LibraryTools.showErrors(lib.getName(), errors);
               baseLibsToEnable.clear();
             }
-          } else
+          } else {
+            if (!interactiveErrors) throw new IllegalArgumentException(errors.toString());
             LibraryTools.showErrors(lib.getName(), errors);
+          }
         }
       }
     }
@@ -728,6 +737,11 @@ public final class LogisimFileActions {
 
   public static Action loadLibrary(Library lib, LogisimFile source) {
     return new LoadLibraries(new Library[] {lib}, source);
+  }
+
+  /** Creates the normal load action but reports conflicts to a non-interactive caller. */
+  public static Action loadLibraryQuiet(Library lib, LogisimFile source) {
+    return new LoadLibraries(new Library[] {lib}, source, false);
   }
 
   public static Action moveCircuit(AddTool tool, int toIndex) {

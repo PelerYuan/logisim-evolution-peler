@@ -401,11 +401,17 @@ public class Loader implements LibraryLoader {
   }
 
   public LogisimFile openLogisimFile(File file) throws LoadFailedException {
+    return openLogisimFile(file, true);
+  }
+
+  /** Opens a project while allowing non-interactive callers to suppress informational messages. */
+  public LogisimFile openLogisimFile(File file, boolean showFileMessages)
+      throws LoadFailedException {
     try {
       final var ret = loadLogisimFile(file);
       if (ret != null) setMainFile(file);
       else throw new LoadFailedException("File could not be opened");
-      showMessages(ret);
+      if (showFileMessages) showMessages(ret);
       return ret;
     } catch (LoaderException e) {
       throw new LoadFailedException(e.getMessage(), e.isShown());
