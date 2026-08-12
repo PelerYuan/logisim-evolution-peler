@@ -170,8 +170,16 @@ The fork's own package version is `pelerAppVersion`, resolved in `.github/workfl
 | Settings isolation | `prefs/PelerPreferences.java`, `prefs/AppPreferences.java`, `Main.java` |
 | Fork's About window | `gui/start/AboutPelerEdition.java` |
 | Interactive HTML export (experimental) | `gui/htmlexport/`, `gui/generic/TikZInfo.java`, `resources/logisim/html/` |
+| This edition's settings page | `gui/prefs/PelerOptions.java`, `tools/ContinuousPlacement.java` |
 
 New user-visible strings need all 12 locales, in `src/main/resources/resources/logisim/strings/`.
+
+**A new preference needs a control, not just a field.** `WIRE_AUTO_SNAP` sat in `AppPreferences`
+for four days being read by `WiringTool` and written by nothing, while the README said it could be
+turned off in preferences. Everything compiled and every test passed.
+`PelerOptionsTest.testEveryPelerPreferenceIsReachableFromThePreferencesWindow` now fails the build
+for any preference this edition declares that no panel under `gui/prefs/` mentions; add genuinely
+internal ones to its exemption list with the reason rather than deleting the check.
 
 ## Open items
 

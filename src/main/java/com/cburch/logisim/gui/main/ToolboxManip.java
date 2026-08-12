@@ -29,6 +29,7 @@ import com.cburch.logisim.proj.ProjectListener;
 import com.cburch.logisim.std.base.BaseLibrary;
 import com.cburch.logisim.tools.AbstractAnnotateTool;
 import com.cburch.logisim.tools.AddTool;
+import com.cburch.logisim.tools.ContinuousPlacement;
 import com.cburch.logisim.tools.EditTool;
 import com.cburch.logisim.tools.Library;
 import com.cburch.logisim.tools.PokeTool;
@@ -97,15 +98,14 @@ class ToolboxManip implements ProjectExplorer.Listener {
           proj.setCurrentHdlModel(vhdl.getContent());
         } else {
           // Plain component (not a subcircuit/VHDL entity): arm continuous placement mode so
-          // repeated clicks on the canvas keep placing this component (Peler Edition Feature 1).
-          proj.setTool(tool);
-          tool.setStickyPlace(true);
+          // repeated clicks on the canvas keep placing this component (Peler Edition Feature 1),
+          // unless the user has moved that off the double-click (Feature 10).
+          ContinuousPlacement.arm(proj, tool, ContinuousPlacement.armedByDoubleClick());
         }
       } else if (baseTool instanceof AbstractAnnotateTool annotateTool) {
         // Same gesture, same meaning for the annotate tools: double-click keeps the tool armed so
         // you can annotate several things in a row instead of re-picking the tool each time.
-        proj.setTool(annotateTool);
-        annotateTool.setStickyAnnotate(true);
+        ContinuousPlacement.arm(proj, annotateTool, ContinuousPlacement.armedByDoubleClick());
       }
     }
   }
@@ -169,7 +169,10 @@ class ToolboxManip implements ProjectExplorer.Listener {
           }
         }
       }
-      proj.setTool(tool);
+      // Peler Edition Feature 10: with continuous placement moved onto the single click, arming
+      // happens here rather than in doubleClicked. arm() falls back to a plain setTool otherwise,
+      // so the default and "always place once" modes reach exactly the call this line used to be.
+      ContinuousPlacement.arm(proj, tool, ContinuousPlacement.armedByClick());
       proj.getFrame().viewAttributes(tool);
     }
   }

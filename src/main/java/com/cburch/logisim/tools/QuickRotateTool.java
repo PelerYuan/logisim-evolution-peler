@@ -20,6 +20,7 @@ import com.cburch.logisim.data.Location;
 import com.cburch.logisim.gui.main.Canvas;
 import com.cburch.logisim.instance.StdAttr;
 import com.cburch.logisim.prefs.AppPreferences;
+import com.cburch.logisim.std.base.BaseLibrary;
 import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.event.MouseEvent;
@@ -71,6 +72,29 @@ public class QuickRotateTool extends Tool {
     return S.get("quickRotateTool");
   }
 
+  /**
+   * Peler Edition Feature 10: hands the press back to the ordinary component menu when the user has
+   * turned quick rotation off.
+   *
+   * <p>Done here rather than by rewriting the mouse mapping because the mapping is not ours to
+   * rewrite: it comes from {@code default.templ} and is then stored in each project file, so a
+   * preference could only ever affect new projects, and every file made before the setting existed
+   * would keep right-clicking to rotate with no way to say otherwise.
+   *
+   * @return true if the press was dealt with as a menu request and this tool should stop
+   */
+  private boolean deferToMenu(Canvas canvas, Graphics g, MouseEvent e) {
+    if (!AppPreferences.QUICK_ROTATE_OFF.equals(AppPreferences.QUICK_ROTATE_MODE.get())) {
+      return false;
+    }
+    final var base = canvas.getProject().getLogisimFile().getLibrary(BaseLibrary._ID);
+    final var menu = (base == null) ? null : base.getTool(MenuTool._ID);
+    if (menu != null) menu.mousePressed(canvas, g, e);
+    // True either way: with rotation off, a right-click must never rotate, even if the menu tool
+    // could not be found for some reason.
+    return true;
+  }
+
   @Override
   public void mousePressed(Canvas canvas, Graphics g, MouseEvent e) {
     final var proj = canvas.getProject();
@@ -89,6 +113,12 @@ public class QuickRotateTool extends Tool {
     if (curTool instanceof AbstractAnnotateTool annotateTool && annotateTool.stopAnnotating(canvas)) {
       return;
     }
+
+    // Checked after those two, not before: turning quick rotation off restores the component menu,
+    // but it does not take away the escape hatch out of placement. "Esc, Enter or a right-click
+    // stops" is what this edition documents, and it has to keep being true in every mode -- the
+    // setting is about what a right-click does when nothing is armed.
+    if (deferToMenu(canvas, g, e)) return;
 
     final Circuit circ = canvas.getCircuit();
     if (!proj.getLogisimFile().contains(circ)) {
@@ -119,7 +149,11 @@ public class QuickRotateTool extends Tool {
     final var oldAttrs = comp.getAttributeSet();
     final var newAttrs = (AttributeSet) oldAttrs.clone();
     final var facing = oldAttrs.getValue(StdAttr.FACING);
-    newAttrs.setValue(StdAttr.FACING, facing.getRight());
+    // Feature 10: which way a right-click turns things. Everything below -- the re-pivot, the
+    // replace, the undo entry -- is direction-agnostic, so this is the whole of the difference.
+    final var anticlockwise =
+        AppPreferences.QUICK_ROTATE_CCW.equals(AppPreferences.QUICK_ROTATE_MODE.get());
+    newAttrs.setValue(StdAttr.FACING, anticlockwise ? facing.getLeft() : facing.getRight());
 
     // Pivot around the component's visual center rather than upstream's default of leaving the
     // anchor location untouched (which, for most components, sits at/near a pin rather than the
@@ -157,15 +191,24 @@ public class QuickRotateTool extends Tool {
 
   @Override
   public void paintIcon(ComponentDrawContext c, int x, int y) {
-    // Minimal placeholder icon: a curved arrow suggesting clockwise rotation, drawn with simple
-    // line segments in the style of WiringTool.paintIcon (no image resources needed).
+    // Minimal placeholder icon: a curved arrow suggesting the direction of rotation, drawn with
+    // simple line segments in the style of WiringTool.paintIcon (no image resources needed).
+    // Mirrored horizontally about x + 8 when the setting turns rotation the other way, so the
+    // icon in the mouse-mapping list is not quietly telling the opposite of what a click does.
     final var g = c.getGraphics();
     final var oldColor = g.getColor();
+    final var anticlockwise =
+        AppPreferences.QUICK_ROTATE_CCW.equals(AppPreferences.QUICK_ROTATE_MODE.get());
     g.setColor(Color.BLACK);
-    g.drawArc(x + 2, y + 2, 12, 12, 45, 270);
-    // Arrowhead at the end of the arc (pointing clockwise).
-    g.drawLine(x + 13, y + 3, x + 15, y + 5);
-    g.drawLine(x + 13, y + 3, x + 11, y + 6);
+    if (anticlockwise) {
+      g.drawArc(x + 2, y + 2, 12, 12, 135, -270);
+      g.drawLine(x + 3, y + 3, x + 1, y + 5);
+      g.drawLine(x + 3, y + 3, x + 5, y + 6);
+    } else {
+      g.drawArc(x + 2, y + 2, 12, 12, 45, 270);
+      g.drawLine(x + 13, y + 3, x + 15, y + 5);
+      g.drawLine(x + 13, y + 3, x + 11, y + 6);
+    }
     g.setColor(oldColor);
   }
 }

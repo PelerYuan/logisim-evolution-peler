@@ -10,15 +10,12 @@ package com.cburch.logisim.gui.find;
 
 import static com.cburch.logisim.gui.Strings.S;
 
-import com.cburch.logisim.circuit.SubcircuitFactory;
 import com.cburch.logisim.comp.ComponentDrawContext;
 import com.cburch.logisim.gui.main.Frame;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.proj.Project;
-import com.cburch.logisim.tools.AbstractAnnotateTool;
-import com.cburch.logisim.tools.AddTool;
+import com.cburch.logisim.tools.ContinuousPlacement;
 import com.cburch.logisim.tools.Tool;
-import com.cburch.logisim.vhdl.base.VhdlEntity;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -26,6 +23,7 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.event.ActionEvent;
+import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -132,9 +130,13 @@ public final class FindToolDialog extends JDialog {
             final var index = results.locationToIndex(e.getPoint());
             if (index < 0) return;
             results.setSelectedIndex(index);
-            // Double-click means "keep placing", the same gesture with the same meaning as
-            // double-clicking in the toolbox tree or on a toolbar button.
-            if (e.getClickCount() >= 2) chooseSelected(true);
+            // Double-clicking a match is the mouse's Enter, so it means whatever Enter means, and
+            // Shift reverses it the same way. Hardcoding "keep placing" here would leave the
+            // setting looking ignored for anyone who picks with the mouse.
+            if (e.getClickCount() >= 2) {
+              final var shifted = (e.getModifiersEx() & InputEvent.SHIFT_DOWN_MASK) != 0;
+              chooseSelected(continuousUnlessShifted() != shifted);
+            }
           }
         });
 
@@ -183,12 +185,23 @@ public final class FindToolDialog extends JDialog {
     inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, 0), "find.previous");
     actionMap.put("find.previous", new MoveAction(-1));
 
+    // Which of these keeps placing is Preferences -> Peler's Features (Feature 10); Shift always
+    // means the other one, so both behaviours stay one keystroke away whichever way it is set.
     inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "find.accept");
     actionMap.put("find.accept", new AcceptAction(false));
     inputMap.put(
         KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, java.awt.event.InputEvent.SHIFT_DOWN_MASK),
-        "find.acceptSticky");
-    actionMap.put("find.acceptSticky", new AcceptAction(true));
+        "find.acceptSwapped");
+    actionMap.put("find.acceptSwapped", new AcceptAction(true));
+  }
+
+  /**
+   * Whether accepting a match without Shift should keep the tool armed. Read at the moment the key
+   * is pressed rather than when the dialog was built, so changing the setting takes effect on the
+   * next search rather than the next launch.
+   */
+  private static boolean continuousUnlessShifted() {
+    return AppPreferences.FINDER_CONTINUOUS.equals(AppPreferences.FINDER_PLACEMENT.get());
   }
 
   private void refresh() {
@@ -228,19 +241,9 @@ public final class FindToolDialog extends JDialog {
     final var tool = entry.tool();
     close();
 
-    proj.setTool(tool);
-    if (sticky) {
-      if (tool instanceof AddTool addTool) {
-        // Subcircuits and VHDL entities open for editing on a double-click elsewhere rather than
-        // arming placement, so continuous mode does not apply to them.
-        final var source = addTool.getFactory();
-        if (!(source instanceof SubcircuitFactory) && !(source instanceof VhdlEntity)) {
-          addTool.setStickyPlace(true);
-        }
-      } else if (tool instanceof AbstractAnnotateTool annotateTool) {
-        annotateTool.setStickyAnnotate(true);
-      }
-    }
+    // Subcircuits and VHDL entities are excluded from continuous mode inside arm(), which is also
+    // what the toolbox tree and the toolbar go through, so all three stay in step by construction.
+    ContinuousPlacement.arm(proj, tool, sticky);
     // Without this the canvas has no keyboard focus, so the tool is armed but the first click is
     // spent just focusing the canvas again.
     SwingUtilities.invokeLater(() -> frame.getCanvas().requestFocus());
@@ -268,15 +271,17 @@ public final class FindToolDialog extends JDialog {
 
   private final class AcceptAction extends AbstractAction {
     private static final long serialVersionUID = 1L;
-    private final boolean sticky;
 
-    AcceptAction(boolean sticky) {
-      this.sticky = sticky;
+    /** Whether Shift was held, not whether to keep placing -- the setting decides which is which. */
+    private final boolean shifted;
+
+    AcceptAction(boolean shifted) {
+      this.shifted = shifted;
     }
 
     @Override
     public void actionPerformed(ActionEvent e) {
-      chooseSelected(sticky);
+      chooseSelected(continuousUnlessShifted() != shifted);
     }
   }
 

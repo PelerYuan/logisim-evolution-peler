@@ -48,12 +48,21 @@ public class WiringTool extends Tool {
   private static final int HORIZONTAL = 1;
   private static final int VERTICAL = 2;
 
-  // Peler Edition Feature 3: max distance (pixels) from a component pin at which a wire endpoint
-  // snaps to that pin instead of the drawing grid. Two grid units: verified hands-on (2026-08-07)
-  // that one grid unit (10px) technically worked but felt too tight to be noticeable/useful in
-  // practice -- widened so the snap actually feels "magnetic" rather than requiring the cursor to
-  // already be almost exactly on the pin.
-  private static final int PIN_SNAP_RADIUS = 20;
+  /**
+   * Peler Edition Feature 3: max distance (circuit units) from a component pin at which a wire
+   * endpoint snaps to that pin instead of the drawing grid. Two grid units by default: verified
+   * hands-on (2026-08-07) that one grid unit (10) technically worked but felt too tight to be
+   * noticeable in practice -- widened so the snap actually feels "magnetic" rather than requiring
+   * the cursor to already be almost exactly on the pin. Configurable since Feature 10, because how
+   * magnetic is too magnetic depends on how densely the person builds.
+   *
+   * <p>Read per call rather than cached: a preference panel is open while a circuit is being
+   * drawn, and a snap radius that only takes effect after a restart is a setting people conclude
+   * is broken.
+   */
+  private static int pinSnapRadius() {
+    return AppPreferences.WIRE_SNAP_RADIUS.get();
+  }
 
   private boolean exists = false;
   private boolean inCanvas = false;
@@ -411,9 +420,9 @@ public class WiringTool extends Tool {
 
   /**
    * Peler Edition Feature 3: snaps {@code e} to the nearest component pin within
-   * {@link #PIN_SNAP_RADIUS} pixels, if {@link AppPreferences#WIRE_AUTO_SNAP} is on and one
-   * exists; otherwise falls back to the normal drawing-grid snap. Updates {@link #snappedPin} for
-   * the hover highlight either way.
+   * {@link #pinSnapRadius()}, if {@link AppPreferences#WIRE_AUTO_SNAP} is on and one exists;
+   * otherwise falls back to the normal drawing-grid snap. Updates {@link #snappedPin} for the
+   * hover highlight either way.
    *
    * <p>Pin-snap is skipped whenever the plain grid-snapped cursor position already coincides with
    * an existing wire endpoint ({@link #nearsExistingWireEndpoint}) -- otherwise, in a dense
@@ -449,17 +458,19 @@ public class WiringTool extends Tool {
 
   /**
    * Finds the closest component pin to raw cursor position {@code (x, y)}, considering only pins
-   * belonging to components whose bounds (expanded by {@link #PIN_SNAP_RADIUS}, a cheap
+   * belonging to components whose bounds (expanded by {@link #pinSnapRadius()}, a cheap
    * broad-phase filter) contain the cursor, then only returning it if it's genuinely within
-   * {@link #PIN_SNAP_RADIUS} pixels. Returns {@code null} if nothing qualifies. Wires themselves
+   * that radius. Returns {@code null} if nothing qualifies. Wires themselves
    * are deliberately excluded -- this snaps to component pins specifically, per the original
    * request (see docs/peler-edition/ROADMAP.md, Feature 3).
    */
   private Location findNearestPin(Canvas canvas, int x, int y) {
+    final var radius = pinSnapRadius();
+    if (radius <= 0) return null;
     Location best = null;
     var bestDistSq = Long.MAX_VALUE;
     for (final var comp : canvas.getCircuit().getNonWires()) {
-      final var bds = comp.getBounds().expand(PIN_SNAP_RADIUS);
+      final var bds = comp.getBounds().expand(radius);
       if (!bds.contains(x, y)) continue;
       for (final var end : comp.getEnds()) {
         final var loc = end.getLocation();
@@ -472,7 +483,7 @@ public class WiringTool extends Tool {
         }
       }
     }
-    final var radiusSq = (long) PIN_SNAP_RADIUS * PIN_SNAP_RADIUS;
+    final var radiusSq = (long) radius * radius;
     return (best != null && bestDistSq <= radiusSq) ? best : null;
   }
 

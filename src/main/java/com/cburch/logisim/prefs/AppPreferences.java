@@ -584,6 +584,13 @@ public class AppPreferences {
   public static final int DEFAULT_COMPONENT_GHOST_COLOR = 0x99999999;
   public static final int DEFAULT_COMPONENT_ICON_COLOR = 0x00000000;
 
+  /**
+   * Peler Edition: the muted slate grey a new annotation is written in -- RGB(90, 100, 115), not
+   * black, because black is what the schematic itself is drawn in and a black note then reads as
+   * part of the circuit rather than a remark about it. See {@code AnnotationAttributes}.
+   */
+  public static final int DEFAULT_ANNOTATION_COLOR = 0xFF5A6473;
+
   // restores default grid colors
   public static void setDefaultGridColors() {
     CANVAS_BG_COLOR.set(DEFAULT_CANVAS_BG_COLOR);
@@ -634,10 +641,125 @@ public class AppPreferences {
   public static final PrefMonitor<Boolean> SHOWN_QUICK_ROTATE_HINT =
       create(new PrefMonitorBoolean("shownQuickRotateHint", false));
   // Peler Edition Feature 3: whether WiringTool should snap a wire endpoint to the nearest
-  // component pin when the cursor is within WiringTool.PIN_SNAP_RADIUS of one, instead of only
-  // snapping to the drawing grid. Opt-out, defaults on.
+  // component pin when the cursor is within WIRE_SNAP_RADIUS of one, instead of only snapping to
+  // the drawing grid. Opt-out, defaults on. Surfaced in Preferences -> Peler's Features.
   public static final PrefMonitor<Boolean> WIRE_AUTO_SNAP =
       create(new PrefMonitorBoolean("wireAutoSnap", true));
+
+  // ---------------------------------------------------------------------------------------------
+  // Peler Edition Feature 10: the settings this edition's own features need, all of them shown on
+  // one Preferences panel (gui/prefs/PelerOptions.java) rather than sprinkled through upstream's.
+  // ---------------------------------------------------------------------------------------------
+
+  /** Click a toolbox entry or a toolbar button to place once; double-click to keep placing. */
+  public static final String PLACE_DOUBLE_STICKY = "doubleSticky";
+
+  /** A single click already keeps placing; there is no one-shot gesture. */
+  public static final String PLACE_SINGLE_STICKY = "singleSticky";
+
+  /**
+   * No gesture arms continuous placement.
+   *
+   * <p>Note what this does not promise. Whether the tool stays selected after one component lands
+   * is upstream's {@link #ADD_AFTER}, which defaults to switching to the Edit Tool but can be set
+   * to keep the component tool. This setting only decides whether a double-click additionally
+   * pins the tool down regardless of that -- so with {@link #ADD_AFTER_UNCHANGED} chosen, clicks
+   * keep placing here too, and rightly: the user asked for that in the Layout panel.
+   */
+  public static final String PLACE_NEVER_STICKY = "neverSticky";
+
+  /**
+   * What picking a component from the toolbox tree or the layout toolbar arms.
+   *
+   * <p>{@link #PLACE_NEVER_STICKY} exists because continuous placement is entered by a gesture
+   * people perform by accident: a habitual double-click leaves the tool armed with no visible
+   * difference from a single click until the second component lands.
+   */
+  public static final PrefMonitor<String> PLACEMENT_MODE =
+      create(
+          new PrefMonitorStringOpts(
+              "pelerPlacementMode",
+              new String[] {PLACE_DOUBLE_STICKY, PLACE_SINGLE_STICKY, PLACE_NEVER_STICKY},
+              PLACE_DOUBLE_STICKY));
+
+  /** Enter in the component finder keeps placing; Shift+Enter places once. */
+  public static final String FINDER_CONTINUOUS = "continuous";
+
+  /** Enter in the component finder places once; Shift+Enter keeps placing. */
+  public static final String FINDER_ONCE = "once";
+
+  /**
+   * Which way round the finder's two accept keys work. Both gestures always exist -- this only
+   * decides which one Enter is, so neither behaviour is ever out of reach.
+   */
+  public static final PrefMonitor<String> FINDER_PLACEMENT =
+      create(
+          new PrefMonitorStringOpts(
+              "pelerFinderPlacement",
+              new String[] {FINDER_CONTINUOUS, FINDER_ONCE},
+              FINDER_CONTINUOUS));
+
+  /**
+   * How near a pin a wire end has to come before it snaps to it, in circuit units -- so a value of
+   * 20 is two grid squares, at every zoom level. Was hardcoded in WiringTool.
+   */
+  public static final PrefMonitor<Integer> WIRE_SNAP_RADIUS =
+      create(new PrefMonitorInt("wireSnapRadius", 20));
+
+  /** Right-click rotates the component under the cursor 90 degrees clockwise. */
+  public static final String QUICK_ROTATE_CW = "clockwise";
+
+  /** Right-click rotates the component under the cursor 90 degrees anticlockwise. */
+  public static final String QUICK_ROTATE_CCW = "counterclockwise";
+
+  /** Right-click opens the component menu, as it does in official Logisim-evolution. */
+  public static final String QUICK_ROTATE_OFF = "off";
+
+  /**
+   * What a right-click on the canvas does. Off is worth having because taking the context menu off
+   * the right mouse button is the largest thing this edition changes about a standard gesture, and
+   * until now there was no way back: the menu had moved to Ctrl+left-click and stayed there.
+   */
+  public static final PrefMonitor<String> QUICK_ROTATE_MODE =
+      create(
+          new PrefMonitorStringOpts(
+              "pelerQuickRotateMode",
+              new String[] {QUICK_ROTATE_CW, QUICK_ROTATE_CCW, QUICK_ROTATE_OFF},
+              QUICK_ROTATE_CW));
+
+  /** Family a new annotation is written in. Empty means the platform's own sans-serif face. */
+  public static final PrefMonitor<String> ANNOTATION_FONT_FAMILY =
+      create(new PrefMonitorString("annotationFontFamily", ""));
+
+  /** Point size a new annotation is written at. */
+  public static final PrefMonitor<Integer> ANNOTATION_FONT_SIZE =
+      create(new PrefMonitorInt("annotationFontSize", 12));
+
+  /** Colour a new annotation is written in, as {@link java.awt.Color#getRGB()}. */
+  public static final PrefMonitor<Integer> ANNOTATION_COLOR =
+      create(new PrefMonitorInt("annotationColor", DEFAULT_ANNOTATION_COLOR));
+
+  /** Warn every time a save would drop annotations. */
+  public static final String LOSSY_WARN_ALWAYS = "always";
+
+  /** Warn the first time each file is saved lossily in a session, then take the answer as given. */
+  public static final String LOSSY_WARN_ONCE = "once";
+
+  /** Never warn; write the compatible file and drop what it cannot hold. */
+  public static final String LOSSY_WARN_NEVER = "never";
+
+  /**
+   * How often saving to {@code .circ} warns that annotations will not survive it. Never is a real
+   * choice for someone who only ever hands work to people running the official release, and who
+   * has stopped needing to be told what they already decided.
+   */
+  public static final PrefMonitor<String> LOSSY_SAVE_WARNING =
+      create(
+          new PrefMonitorStringOpts(
+              "pelerLossySaveWarning",
+              new String[] {LOSSY_WARN_ALWAYS, LOSSY_WARN_ONCE, LOSSY_WARN_NEVER},
+              LOSSY_WARN_ONCE));
+
   public static final PrefMonitor<String> DefaultAppearance =
       create(
           new PrefMonitorStringOpts(

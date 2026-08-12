@@ -912,7 +912,102 @@ The twelve locales already carried this feature's strings from phase 1.
 - **A pin wider than about nine bits** falls back to a value box drawn by the page rather than by
   Logisim.
 
+## Feature 10 — The fork's own settings page (2026-08-12)
+
+One Preferences tab, **Peler's Features**, holding the settings every earlier feature needs.
+
+### Why a tab of its own
+
+The alternative was to file each setting under the upstream panel it belongs to — placement under
+Layout, the save warning under Template, and so on. That reads tidier and is worse in both
+directions. Someone hunting for a setting this edition added has nowhere to start, because no
+panel's title says whether the fork touched it; and someone comparing this build against the
+official one cannot see what has been added, because the additions would be interleaved with
+upstream's. A single tab answers both questions, and the tab's contents are a readable summary of
+what this fork actually changes about the editor.
+
+### What is on it
+
+| Setting | Default | Reaches |
+| --- | --- | --- |
+| Picking a component | click places one, double-click keeps placing | `ToolboxManip`, `LayoutToolbarModel` |
+| Component finder's Enter | keeps placing | `FindToolDialog` |
+| Wire auto-snap, and its distance | on, 20 circuit units | `WiringTool` |
+| Right-clicking a component | rotates clockwise | `QuickRotateTool` |
+| New annotation font, size, colour | platform sans, 12, RGB(90,100,115) | `AnnotationAttributes` |
+| Warning when saving as `.circ` | once per file each session | `ProjectActions` |
+
+Two of these changed a default rather than only exposing one. The finder now keeps placing on
+<kbd>Enter</kbd>, at the maintainer's request, with <kbd>Shift</kbd>+<kbd>Enter</kbd> for a single
+placement; the pair is resolved at keypress time so the setting only decides which key is which and
+neither behaviour is ever out of reach.
+
+### A preference that had no way to reach it
+
+`WIRE_AUTO_SNAP` shipped with Feature 3 and the README said from that same commit that auto-snap
+"can be turned off in preferences". It could not. The preference was read by `WiringTool` and
+written by nothing: no panel referenced it, so the only way to change it was to edit the preference
+store by hand. Nothing failed to compile and no test noticed, because a dead preference behaves
+exactly like a live one right up until someone tries to change it.
+
+`PelerOptionsTest.testEveryPelerPreferenceIsReachableFromThePreferencesWindow` now scans this
+edition's block of `AppPreferences` and requires every declared preference to be named by some file
+under `gui/prefs/`, with an explicit exemption list for the ones that are internal bookkeeping
+(currently only `SHOWN_QUICK_ROTATE_HINT`, which records that a one-time hint has been shown).
+
+### Decisions worth keeping
+
+**Turning quick rotation off is done in the tool, not in the mouse mapping.** Right-click is bound
+to Quick Rotate by `default.templ`, which means the binding is copied into every project file as it
+is created. A preference could therefore only ever affect new projects, and every file made before
+the setting existed would keep right-clicking to rotate with no way to say otherwise. So
+`QuickRotateTool.mousePressed` consults the setting and hands the press to `MenuTool` instead --
+which also means an existing project changes behaviour the moment the setting does.
+
+**The check sits after the stop-placement checks, not before.** "Esc, Enter or a right-click stops"
+is what this edition documents about continuous placement, and it has to stay true in every mode.
+The setting is about what a right-click does when nothing is armed.
+
+**"Double-click does not keep placing" is named for the gesture, not the outcome.** It was first
+written as "always place just one", which is a promise it cannot keep: whether the tool stays
+selected after one component lands is upstream's Layout -> "After adding component", which can be
+set to keep the component tool. This setting only decides whether a double-click additionally pins
+the tool down regardless of that.
+
+**Annotation defaults reach new notes only.** Every annotation writes its own font and colour to
+the file -- `XmlWriter`'s skip-the-default shortcut applies to library defaults, not to components
+-- so changing the setting cannot restyle notes that already exist.
+
+**A titled border cannot go straight on a `TableLayout` panel.** `TableLayout` ignores its
+container's insets in both `preferredLayoutSize` and `layoutContainer`, so the title is drawn
+through the first row of controls. It is upstream's layout manager, used by upstream's own panels,
+so `PelerOptions` wraps each group in a `BorderLayout` panel and puts the border there rather than
+changing the manager underneath them.
+
+### Testing
+
+`PelerOptionsTest` reads sources and bundles rather than constructing the panel: `AppPreferences`'s
+static initialiser reads the real preference store, and reading it headless writes wrong defaults
+back (see CLAUDE.md). It checks that every string the panel asks for exists and is non-empty in all
+twelve bundles, that the twelve agree on which `peler*` keys they carry, that every fork preference
+is reachable from Preferences, and that the panel is registered in the tab list. Both string checks
+were mutation-verified by deleting one Polish key, and the reachability check by unwiring the
+auto-snap checkbox; each failed as intended and passed again once restored.
+
+Driven by hand on the real X display: the panel renders with all five groups and correct defaults;
+"click keeps placing" places three gates from one toolbox click and three canvas clicks; right-click
+with rotation off opens the component menu; right-click set to anticlockwise turns an east-facing
+gate to north while leaving its neighbour alone; and the finder's new default places three gates
+from one <kbd>Enter</kbd>.
+
 ## Known open items
+
+- **The Preferences window will not reopen once it has been closed.** File -> Preferences does
+  nothing afterwards, with no exception logged, until the application is restarted. Found while
+  testing Feature 10 and **not caused by it**: reproduced on a clean worktree at `3c6f3ca4f` with
+  no local changes. The code involved is upstream's (`PreferencesFrame.WindowMenuManager` caches
+  the frame; `WindowMenuItemManager.windowClosed` unregisters it), so this is an upstream v4.1.0
+  defect and worth confirming against the official build before reporting there.
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the
   user's instruction (2026-08-09). FlatLaf supplies UI fonts as composites with a CJK fallback;

@@ -41,6 +41,10 @@ public class PreferencesFrame extends LFrame.Dialog {
           new WindowOptions(this),
           new LayoutOptions(this),
           new SimOptions(this),
+          // Peler Edition Feature 10: this edition's own settings, kept together rather than
+          // interleaved with upstream's. Placed after Layout because that is the panel most of
+          // them would otherwise have belonged to.
+          new PelerOptions(this),
           new ExperimentalOptions(this),
           new SoftwaresOptions(this),
           new FpgaOptions(this),

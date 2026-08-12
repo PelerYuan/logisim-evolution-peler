@@ -12,7 +12,6 @@ package com.cburch.logisim.gui.main;
 import com.cburch.draw.toolbar.AbstractToolbarModel;
 import com.cburch.draw.toolbar.ToolbarItem;
 import com.cburch.draw.toolbar.ToolbarSeparator;
-import com.cburch.logisim.circuit.SubcircuitFactory;
 import com.cburch.logisim.comp.ComponentDrawContext;
 import com.cburch.logisim.data.AttributeEvent;
 import com.cburch.logisim.data.AttributeListener;
@@ -22,11 +21,9 @@ import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.proj.ProjectEvent;
 import com.cburch.logisim.proj.ProjectListener;
-import com.cburch.logisim.tools.AbstractAnnotateTool;
-import com.cburch.logisim.tools.AddTool;
+import com.cburch.logisim.tools.ContinuousPlacement;
 import com.cburch.logisim.tools.Tool;
 import com.cburch.logisim.util.InputEventUtil;
-import com.cburch.logisim.vhdl.base.VhdlEntity;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -103,7 +100,9 @@ class LayoutToolbarModel extends AbstractToolbarModel {
   @Override
   public void itemSelected(ToolbarItem item) {
     if (item instanceof ToolItem toolItem) {
-      proj.setTool(toolItem.tool);
+      // Peler Edition Feature 10: same rule as the toolbox tree -- if continuous placement has
+      // been moved onto the single click, it is armed here; otherwise this is a plain setTool.
+      ContinuousPlacement.arm(proj, toolItem.tool, ContinuousPlacement.armedByClick());
     }
   }
 
@@ -116,18 +115,11 @@ class LayoutToolbarModel extends AbstractToolbarModel {
   @Override
   public void itemDoubleClicked(ToolbarItem item) {
     if (!(item instanceof ToolItem toolItem)) return;
-    if (toolItem.tool instanceof AddTool addTool) {
-      // Subcircuits and VHDL entities open for editing on double-click in the toolbox rather than
-      // arming placement; the toolbar holds neither, but guard anyway so behaviour matches if it
-      // ever does.
-      final var source = addTool.getFactory();
-      if (source instanceof SubcircuitFactory || source instanceof VhdlEntity) return;
-      proj.setTool(addTool);
-      addTool.setStickyPlace(true);
-    } else if (toolItem.tool instanceof AbstractAnnotateTool annotateTool) {
-      proj.setTool(annotateTool);
-      annotateTool.setStickyAnnotate(true);
-    }
+    if (!ContinuousPlacement.armedByDoubleClick()) return;
+    // Subcircuits and VHDL entities open for editing on double-click in the toolbox rather than
+    // arming placement; the toolbar holds neither, but arm() guards anyway so behaviour matches
+    // if it ever does.
+    ContinuousPlacement.arm(proj, toolItem.tool, true);
   }
 
   public void setHaloedTool(Tool t) {

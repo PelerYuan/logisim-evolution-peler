@@ -391,11 +391,12 @@ public final class ProjectActions {
     if (f == null) return doSaveAs(proj);
 
     // Peler Edition: plain Save over an official .circ silently degrades any annotations in it, so
-    // say so -- once per file per session, since this would otherwise fire on every Ctrl+S. Files
-    // written by earlier versions of this edition are all .circ, which is exactly the case worth
-    // catching. Answering "keep .circ" is remembered; switching to .pcirc retargets the project,
-    // so the question does not come back either way.
-    if (PelerCompat.isCompatTarget(f) && compatSaveAccepted.add(proj.getLogisimFile())) {
+    // say so -- by default once per file per session, since this would otherwise fire on every
+    // Ctrl+S. Files written by earlier versions of this edition are all .circ, which is exactly
+    // the case worth catching. Answering "keep .circ" is remembered; switching to .pcirc retargets
+    // the project, so the question does not come back either way. Feature 10 makes the frequency
+    // a setting: "always" skips the remembering, "never" skips the question.
+    if (PelerCompat.isCompatTarget(f) && askAgainThisSession(proj)) {
       final var dest = resolveCompatSave(proj, f);
       if (dest == null) {
         compatSaveAccepted.remove(proj.getLogisimFile());
@@ -404,6 +405,19 @@ public final class ProjectActions {
       return doSave(proj, dest);
     }
     return doSave(proj, f);
+  }
+
+  /**
+   * Peler Edition Feature 10: whether a plain Save over a {@code .circ} should raise the lossy-save
+   * question again. Only the default mode remembers an answer; "always" asks every time and "never"
+   * never does. Has a side effect on the remembered set, so it must be called exactly once per
+   * save attempt -- which is why the caller inlines nothing.
+   */
+  private static boolean askAgainThisSession(Project proj) {
+    final var mode = AppPreferences.LOSSY_SAVE_WARNING.get();
+    if (AppPreferences.LOSSY_WARN_NEVER.equals(mode)) return false;
+    if (AppPreferences.LOSSY_WARN_ALWAYS.equals(mode)) return true;
+    return compatSaveAccepted.add(proj.getLogisimFile());
   }
 
   /**
@@ -437,6 +451,11 @@ public final class ProjectActions {
   private static File resolveCompatSave(Project proj, File dest) {
     if (!PelerCompat.isCompatTarget(dest)) return dest;
     if (!PelerCompat.hasAnnotations(proj.getLogisimFile())) return dest;
+    // Feature 10: checked here as well as in doSave, because Save As reaches this directly and
+    // "never warn me" has to mean never, not "never unless you used the other menu item".
+    if (AppPreferences.LOSSY_WARN_NEVER.equals(AppPreferences.LOSSY_SAVE_WARNING.get())) {
+      return dest;
+    }
 
     final Object[] options = {
       S.get("compatSaveSwitchOpt", Loader.PELER_EXTENSION),

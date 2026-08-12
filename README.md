@@ -49,7 +49,8 @@ Right-click a component to rotate it 90° clockwise. The original right-click me
 
 **Wire auto-snap**
 While drawing a wire, endpoints snap to a nearby component pin, with a green ring marking the pin it
-will attach to. Can be turned off in preferences.
+will attach to. How near counts, and whether it happens at all, is under **Preferences → Peler's
+Features**.
 
 ![A wire end snapping onto a highlighted component pin](docs/img/peler-edition/AutoSwap.gif)
 
@@ -63,9 +64,10 @@ it is moved, rotated, or deleted. Double-click an annotate tool to keep annotati
 **Component finder**
 <kbd>Ctrl</kbd>+<kbd>F</kbd> opens a floating search box. Type part of a name — in the interface
 language or in English, so `and` finds 与门 in a Chinese interface — and pick from the matches,
-shown with their real component icons. <kbd>Enter</kbd> selects it ready to place,
-<kbd>Shift</kbd>+<kbd>Enter</kbd> keeps placing. It closes on <kbd>Esc</kbd> or as soon as it loses
-focus. The shortcut is listed under **Preferences → Hotkeys** and can be rebound.
+shown with their real component icons. <kbd>Enter</kbd> selects it and keeps placing it,
+<kbd>Shift</kbd>+<kbd>Enter</kbd> places just one — which way round is a setting. It closes on
+<kbd>Esc</kbd> or as soon as it loses focus. The shortcut is listed under **Preferences → Hotkeys**
+and can be rebound.
 
 ![Searching for a gate by name and placing it straight from the results](docs/img/peler-edition/ComponentFinder.gif)
 
@@ -117,6 +119,25 @@ component delays, so a circuit that depends on gate delay — a pulse made from 
 say — will not behave as it does here. And the export refuses, naming what it found, rather than
 writing a page for a circuit containing a component it cannot simulate: RAM, ROM, shift registers
 and the divider are not supported yet.
+
+**Its own settings page**
+**Preferences → Peler's Features** holds the settings for everything above, in one place rather
+than scattered through upstream's panels — so what this fork lets you change is also the list of
+what it changed:
+
+* **Picking a component** — click to place one and double-click to keep placing (the default),
+  click to keep placing straight away, or never let a double-click start continuous placement.
+* **The component finder** — whether <kbd>Enter</kbd> keeps placing or places one.
+  <kbd>Shift</kbd>+<kbd>Enter</kbd> always does the other.
+* **Wire auto-snap** — on or off, and how near a pin an endpoint has to come. The distance is in
+  circuit units, so ten is one grid square at every zoom level.
+* **Right-click** — rotate clockwise (the default), rotate anticlockwise, or open the component
+  menu as official Logisim-evolution does. That last one puts the right mouse button back exactly
+  where someone coming from the official release expects it.
+* **New annotations** — the font, size and colour a new note starts with. Existing notes keep
+  theirs; each one saves its own.
+* **Saving as `.circ`** — how often you are warned that the compatible format drops annotations:
+  every time, once per file each session (the default), or never.
 
 The in-application **Help → About** window is left exactly as upstream ships it, crediting
 upstream; this fork's own changes are described under **Help → About Peler's Edition**.

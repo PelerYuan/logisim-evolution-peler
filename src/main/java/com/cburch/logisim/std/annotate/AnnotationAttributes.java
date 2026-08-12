@@ -16,6 +16,7 @@ import com.cburch.logisim.data.Attribute;
 import com.cburch.logisim.data.AttributeOption;
 import com.cburch.logisim.data.Bounds;
 import com.cburch.logisim.data.Location;
+import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.std.base.Text;
 import java.awt.Color;
 import java.awt.Font;
@@ -113,15 +114,28 @@ public class AnnotationAttributes extends AbstractAttributeSet {
    * NOT {@code StdAttr.DEFAULT_LABEL_FONT} (SansSerif BOLD 16), which a label wants because a
    * label names a real signal -- at that weight and size a note shouts over the circuit it is
    * annotating. Plain and smaller instead.
+   *
+   * <p>Feature 10 made the family and size a preference. Only new annotations are affected: every
+   * annotation saves its own font, because {@code XmlWriter}'s skip-the-default shortcut applies to
+   * library defaults rather than to components, so changing the setting cannot reach back and
+   * restyle notes that already exist.
    */
-  private static final Font DEFAULT_ANNOTATION_FONT = new Font("SansSerif", Font.PLAIN, 12);
+  private static Font defaultAnnotationFont() {
+    final var family = AppPreferences.ANNOTATION_FONT_FAMILY.get();
+    final var size = AppPreferences.ANNOTATION_FONT_SIZE.get();
+    return new Font(
+        (family == null || family.isEmpty()) ? "SansSerif" : family, Font.PLAIN, size);
+  }
 
   /**
    * A muted slate grey rather than black, for the same reason: black is what the schematic itself
    * is drawn in, so a black note reads as part of the circuit instead of a remark about it. Dark
    * enough to stay legible against the canvas, light enough to recede behind the gates and wires.
+   * Configurable since Feature 10; see {@link AppPreferences#DEFAULT_ANNOTATION_COLOR}.
    */
-  private static final Color DEFAULT_ANNOTATION_COLOR = new Color(90, 100, 115);
+  private static Color defaultAnnotationColor() {
+    return new Color(AppPreferences.ANNOTATION_COLOR.get());
+  }
 
   private String text;
   private Font font;
@@ -134,8 +148,8 @@ public class AnnotationAttributes extends AbstractAttributeSet {
 
   public AnnotationAttributes() {
     text = "";
-    font = DEFAULT_ANNOTATION_FONT;
-    color = DEFAULT_ANNOTATION_COLOR;
+    font = defaultAnnotationFont();
+    color = defaultAnnotationColor();
     halign = Text.ATTR_HALIGN.parse("center");
     valign = Text.ATTR_VALIGN.parse("base");
     anchorLoc = null;
