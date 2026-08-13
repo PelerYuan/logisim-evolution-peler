@@ -1094,13 +1094,30 @@ the live token -- read from the running configuration, not from preferences, sin
 overrides the stored value exactly when it matters. Entry timestamps are zeroed so two exports of
 one configuration are byte-identical.
 
-The menu itself is new: **MCP**, between Window and Help, disabled while the server is not running,
-holding Copy MCP Configuration and Export MCP Bundle. Disabled rather than hidden, and driven by a
-new `McpServerManager` listener rather than by the preference -- the preference changes first and
-the bind can still fail, so following the preference would show an enabled menu for a server that
-never started. Listeners are held weakly, in the manner of `PropertyChangeWeakSupport`: this
-manager outlives every window, and a menu registered strongly would pin its whole frame for the
-session.
+The menu itself is new: **MCP**, between Window and Help, holding Copy MCP Configuration and Export
+MCP Bundle.
+
+It was first written to grey itself out while the server was off, following a new
+`McpServerManager` listener rather than the preference -- the preference changes first and the bind
+can still fail, so following the preference would enable the menu for a server that never started.
+The maintainer reversed it (2026-08-13), and the reasoning holds: a greyed-out menu is the one
+thing that cannot say why it is greyed out, and this one is greyed out precisely on a first run,
+which is when someone is looking for the feature. Both entries now open a dialog that says what an
+AI client could do with this application, that it is off until switched on, and that it then
+listens on this computer only and requires a token -- with a button that opens the settings page.
+
+The button is what makes it worth a dialog rather than a sentence. Naming the path in prose means
+writing "Preferences -> Peler's Features" in twelve languages and keeping all twelve in step with
+the menus they name; `PreferencesFrame.showPelerPreferences()` is the same instruction, correct by
+construction. The message is laid out as HTML at a fixed width, because a dialog given a plain
+string breaks it only where the string does -- survivable in English, where the translator can
+place the breaks, and not in Chinese or Japanese, where a paragraph carries no spaces at all and
+would come back as one line thousands of pixels wide. Checked by rendering the Chinese strings.
+
+The listener the first version needed went with it: nothing else wanted one. The preferences panel
+already updates its own status line after starting or stopping the server, so the manager is back
+to being asked rather than telling. What stayed is the lock discipline that came out of building
+it, below.
 
 ### Two deadlocks, one shape, both invisible to a thread dump
 
@@ -1111,16 +1128,17 @@ that monitor while waiting for the event dispatch thread; the event dispatch thr
 `windowOpened` delivering to a project-list listener, waited for the monitor. Every later tool call
 queued behind the same monitor forever.
 
-The second was mine, and it stopped the application from opening a window at all: `startLocked`
-held the manager's lock while constructing `McpProjectService`, whose constructor hops to the event
-dispatch thread -- and the event dispatch thread was in `LogisimMenuBar`, building the new MCP menu,
-calling `isRunning()`, which wants that lock. Enabling the checkbox launched a process with no
-interface and no error.
+The second was mine, and it stopped the application from opening a window at all: `start` held the
+manager's lock while constructing `McpProjectService`, whose constructor hops to the event dispatch
+thread -- and the event dispatch thread was in `LogisimMenuBar`, building the MCP menu, which in
+that first version asked `isRunning()` to decide whether to grey itself out, and so wanted that
+same lock. Enabling the checkbox launched a process with no interface and no error. The menu no
+longer asks, but that is not what makes it safe: anything on that thread may ask.
 
 The same rule fixes both: **do not hold a lock across a hop to the event dispatch thread.** The
 executor's monitor was deleted outright; the manager now builds outside the lock and takes it only
-to publish, re-checking for a racing starter and closing what it built if it lost. `closeLocked`
-got the same treatment -- it captures the service, clears the fields, and closes outside the lock.
+to publish, re-checking for a racing starter and closing what it built if it lost. `close` got the
+same treatment -- it captures the service, clears the fields, and closes outside the lock.
 
 Worth recording because `jstack` reports **no deadlock** for either: one edge is `invokeAndWait`'s
 wait/notify, which the detector does not graph. What found the second one was a temporary print of

@@ -131,8 +131,9 @@ the loopback interface only and requires a token that is generated for you. Noth
 can reach it without that token, and file access stays inside the open project's directory unless
 you name other locations with `-Dlogisim.mcp.allowedPaths`.
 
-An **MCP** menu appears next to Help once the server is running — greyed out until then — with the
-two ways to connect a client:
+The **MCP** menu, next to Help, holds the two ways to connect a client. While the server is off it
+still opens, and says what MCP is and what turning it on would allow, with a button that takes you
+to the setting:
 
 * **Copy MCP Configuration** puts the whole client configuration, token included, on the clipboard,
   for a client that takes an HTTP endpoint (Claude Code, Codex, VS Code).

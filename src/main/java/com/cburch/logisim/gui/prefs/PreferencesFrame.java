@@ -30,6 +30,7 @@ public class PreferencesFrame extends LFrame.Dialog {
   private final OptionsPanel[] panels;
   private final JTabbedPane tabbedPane;
   private int fpgaTabIdx = -1;
+  private int pelerTabIdx = -1;
 
   private PreferencesFrame() {
     super(null);
@@ -58,6 +59,7 @@ public class PreferencesFrame extends LFrame.Dialog {
       tabbedPane.addTab(panel.getTitle(), null, panel, panel.getToolTipText());
       if (panel instanceof IntlOptions) intlIndex = index;
       if (panel instanceof FpgaOptions) fpgaTabIdx = index;
+      if (panel instanceof PelerOptions) pelerTabIdx = index;
     }
 
     final var contents = getContentPane();
@@ -85,9 +87,27 @@ public class PreferencesFrame extends LFrame.Dialog {
     frame.setVisible(true);
   }
 
+  /**
+   * Peler Edition: opens the window on this edition's own settings.
+   *
+   * <p>For anywhere that has just told someone a setting is where to go -- the MCP menu, when the
+   * server it is for is switched off. Naming the path in prose instead would mean naming it in
+   * twelve languages and keeping all twelve true.
+   */
+  public static void showPelerPreferences() {
+    final var frame = (PreferencesFrame) MENU_MANAGER.getJFrame(true, null);
+    frame.setPelerTab();
+    frame.setVisible(true);
+  }
+
   public void setFpgaTab() {
     if (fpgaTabIdx < 0) return;
     tabbedPane.setSelectedIndex(fpgaTabIdx);
+  }
+
+  public void setPelerTab() {
+    if (pelerTabIdx < 0) return;
+    tabbedPane.setSelectedIndex(pelerTabIdx);
   }
 
   private static class WindowMenuManager extends WindowMenuItemManager implements LocaleListener {

@@ -11,6 +11,7 @@ package com.cburch.logisim.gui.menu;
 import static com.cburch.logisim.gui.Strings.S;
 
 import com.cburch.logisim.gui.generic.OptionPane;
+import com.cburch.logisim.gui.prefs.PreferencesFrame;
 import com.cburch.logisim.mcp.McpBundleWriter;
 import com.cburch.logisim.mcp.McpServerManager;
 import com.cburch.logisim.util.JFileChoosers;
@@ -26,18 +27,18 @@ import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
-import javax.swing.SwingUtilities;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
 /**
  * Peler Edition Feature 11. Everything about handing this application to an AI client.
  *
  * <p>Its own menu rather than more entries under Help, because these are not documentation: they
- * hand out an access token and write an installable bundle. The whole menu is disabled while the
- * server is not running, which is most of the time -- it is off until switched on in Preferences.
+ * hand out an access token and write an installable bundle.
  *
- * <p>Being disabled means it also cannot explain itself, so the discoverable path stays Preferences
- * -> Peler's Features, where the checkbox and the endpoint are.
+ * <p>Stays enabled while the server is switched off, which is most of the time -- it is off until
+ * asked for. A greyed-out menu is the one thing that cannot say why it is greyed out, and this one
+ * would be greyed out on a first run, which is exactly when someone is looking for the feature.
+ * Both entries instead explain what MCP is and offer to open the settings page that turns it on.
  */
 class MenuMcp extends JMenu implements ActionListener {
 
@@ -46,7 +47,6 @@ class MenuMcp extends JMenu implements ActionListener {
   private final LogisimMenuBar menubar;
   private final JMenuItem copyConfig = new JMenuItem();
   private final JMenuItem exportBundle = new JMenuItem();
-  private final Runnable serverStateListener;
 
   MenuMcp(LogisimMenuBar menubar) {
     this.menubar = menubar;
@@ -55,16 +55,6 @@ class MenuMcp extends JMenu implements ActionListener {
     exportBundle.addActionListener(this);
     add(copyConfig);
     add(exportBundle);
-
-    // A field, not an inline lambda: the manager holds its listeners weakly, so this reference is
-    // the only thing keeping the registration alive, and it has to live as long as the menu does.
-    serverStateListener = () -> SwingUtilities.invokeLater(this::syncToServerState);
-    McpServerManager.addStateListener(serverStateListener);
-    syncToServerState();
-  }
-
-  private void syncToServerState() {
-    setEnabled(McpServerManager.getInstance().isRunning());
   }
 
   @Override
@@ -150,12 +140,42 @@ class MenuMcp extends JMenu implements ActionListener {
         menubar.getParentFrame(), message, S.get("mcpBundleTitle"), OptionPane.INFORMATION_MESSAGE);
   }
 
+  /**
+   * Explains what the menu is for, and offers to open the settings page that switches it on.
+   *
+   * <p>The button is what makes this worth a dialog. Telling someone to go to Preferences -> Peler's
+   * Features means writing that path in twelve languages and keeping all twelve in step with the
+   * menus they name; opening the page is the same instruction, correct by construction.
+   */
   private void notRunning() {
-    OptionPane.showMessageDialog(
-        menubar.getParentFrame(),
-        S.get("mcpConfigNotRunning"),
-        S.get("mcpConfigTitle"),
-        OptionPane.INFORMATION_MESSAGE);
+    final var options =
+        new Object[] {S.get("mcpNotRunningOpenPrefs"), S.get("mcpNotRunningDismiss")};
+    final var answer =
+        OptionPane.showOptionDialog(
+            menubar.getParentFrame(),
+            wrapped(S.get("mcpNotRunningMessage")),
+            S.get("mcpNotRunningTitle"),
+            OptionPane.YES_NO_OPTION,
+            OptionPane.INFORMATION_MESSAGE,
+            null,
+            options,
+            options[0]);
+    if (answer == OptionPane.YES_OPTION) PreferencesFrame.showPelerPreferences();
+  }
+
+  /**
+   * Lays a paragraph of prose out at a fixed width, as HTML.
+   *
+   * <p>A dialog given a plain string breaks it only where the string does. That is survivable in
+   * English, where a translator can put the line breaks in, and not in Chinese or Japanese, where a
+   * paragraph carries no spaces and would come back as one line a few thousand pixels wide. So the
+   * width is set here and the wrapping is left to Swing's HTML view, which knows where each script
+   * may break.
+   */
+  private static String wrapped(String text) {
+    final var escaped =
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>");
+    return "<html><body style='width:380px'>" + escaped + "</body></html>";
   }
 
   /** The bound port, used only to name the file so two exports are told apart. */

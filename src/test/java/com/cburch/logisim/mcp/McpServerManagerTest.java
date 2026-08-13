@@ -50,8 +50,9 @@ class McpServerManagerTest {
    * <p>This is how the application came to launch without ever showing a window. Starting builds
    * the project service, whose constructor hops to the event dispatch thread; the manager held its
    * lock across that hop; and the event dispatch thread was inside {@code LogisimMenuBar}, building
-   * the MCP menu, which asks {@code isRunning()} and so wanted that same lock. Both waited, the
+   * the MCP menu, which asked {@code isRunning()} and so wanted that same lock. Both waited, the
    * main window was never finished, and the process sat there with no interface and no message.
+   * The menu no longer asks while it is being built, but anything on that thread may.
    *
    * <p>Same forced interleaving as {@link McpModelExecutorTest}: park the event dispatch thread,
    * let the starter get inside, then release it. With the lock held only around the fields, no
@@ -125,23 +126,15 @@ class McpServerManagerTest {
   }
 
   @Test
-  void tellsListenersWhenItStartsAndStops() throws Exception {
+  void closingTwiceIsHarmless() throws Exception {
     final var manager = McpServerManager.getInstance();
-    final var changes = new AtomicInteger();
-    // Held in a local, not passed inline: the manager keeps listeners weakly.
-    final Runnable listener = changes::incrementAndGet;
-    McpServerManager.addStateListener(listener);
-    try {
-      manager.start(enabledOnAnyPort());
-      assertEquals(1, changes.get(), "starting did not notify");
+    manager.start(enabledOnAnyPort());
+    assertTrue(manager.isRunning());
 
-      manager.close();
-      assertEquals(2, changes.get(), "stopping did not notify");
+    manager.close();
+    manager.close();
 
-      manager.close();
-      assertEquals(2, changes.get(), "closing an already stopped server notified again");
-    } finally {
-      McpServerManager.removeStateListener(listener);
-    }
+    assertFalse(manager.isRunning());
+    assertEquals(null, manager.endpoint());
   }
 }

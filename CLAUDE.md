@@ -198,7 +198,7 @@ and Feature 11 in the roadmap.
 
 **Never hold a lock across a hop to the event dispatch thread.** Two separate freezes in the MCP
 code had exactly this shape: `McpModelExecutor.call` held a monitor across `invokeAndWait`, and
-`McpServerManager.startLocked` held its lock while constructing a service whose constructor hops to
+`McpServerManager.start` held its lock while constructing a service whose constructor hops to
 that thread. Each deadlocked against an event dispatch thread that wanted the same lock — the first
 hung every tool call, the second launched the application with no window and no message. **Neither
 is reported as a deadlock by `jstack`**, because one edge is `invokeAndWait`'s wait/notify rather
