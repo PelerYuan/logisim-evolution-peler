@@ -1119,7 +1119,7 @@ already updates its own status line after starting or stopping the server, so th
 to being asked rather than telling. What stayed is the lock discipline that came out of building
 it, below.
 
-### Two deadlocks, one shape, both invisible to a thread dump
+### Three deadlocks, one shape, none of them visible to a thread dump
 
 The first was in the contributed code and had been there since it was merged: `tools/call
 list_projects` never returned. `McpModelExecutor.call` held a monitor across
@@ -1140,15 +1140,42 @@ executor's monitor was deleted outright; the manager now builds outside the lock
 to publish, re-checking for a racing starter and closing what it built if it lost. `close` got the
 same treatment -- it captures the service, clears the fields, and closes outside the lock.
 
-Worth recording because `jstack` reports **no deadlock** for either: one edge is `invokeAndWait`'s
-wait/notify, which the detector does not graph. What found the second one was a temporary print of
-the actual state (`pref=true ... running=false`) after several turns of theorising about preference
-event ordering, which is the general lesson.
+The third arrived from the other end of the application's life, reported as the Mac freezing when
+quit from the Dock, and it showed that rule to be a special case of a larger one. Quitting calls
+`System.exit` from the event dispatch thread -- `ProjectActions.doQuit` always has, upstream code
+this fork never touched, and on macOS the Dock's Quit is the ordinary way in, because
+`Projects.java` deliberately does not quit on closing the last window when the screen menu bar is
+in use. That thread is then inside `Shutdown.runHooks`, joining the MCP shutdown hook, while the
+hook is inside `McpProjectService.close` asking that same thread to detach some listeners. No lock
+anywhere. The window stayed on screen, nothing responded, and a terminate signal did nothing
+either, shutdown having already begun, so it took a kill -- which is what "completely frozen" meant.
+The `closed` flag did not save it: `McpServerManager.close` closes the service before the executor,
+so the guard was still open when the hop was made.
 
-Both have regression tests that force the interleaving rather than hoping for it, each validated in
-both directions against the broken version, and each interrupting its helper thread in a `finally`
-so a future regression fails one test instead of wedging the shared event dispatch thread for the
-rest of the run.
+The rule is therefore the wider one: **before hopping to the event dispatch thread, ask whether that
+thread can still serve you.** `McpModelExecutor.canReachModel()` answers it -- false once the
+executor is stopped, and false while the JVM is shutting down, detected by offering the runtime a
+shutdown hook and taking it straight back out, since it refuses both once shutdown has started (a
+flag set by a hook of our own would depend on hook ordering, which is unspecified). `close` asks
+before detaching and skips it when the answer is no, which loses nothing: the listeners and
+everything holding them go with the process. Cancelling the running jobs stays outside the guard,
+because those own threads. `call` refuses the hop outright in the same condition, so any future
+caller gets an exception instead of a hang.
+
+Worth recording because `jstack` reports **no deadlock** for any of the three: one edge is
+`invokeAndWait`'s wait/notify, which the detector does not graph. It printed the two halves of the
+third one plainly -- the hook in `invokeAndWait`, the event dispatch thread in
+`ApplicationShutdownHooks.runHooks` at `Thread.join` -- and still counted zero. What found the
+second one was a temporary print of the actual state (`pref=true ... running=false`) after several
+turns of theorising about preference event ordering, which is the general lesson.
+
+All three have regression tests validated in both directions against the broken version. The first
+two force the interleaving rather than hoping for it, and interrupt their helper thread in a
+`finally` so a future regression fails one test instead of wedging the shared event dispatch thread
+for the rest of the run. The third cannot be done that way at all: a shutdown that has begun cannot
+be called off, so there is no state left to assert on. It forks a JVM
+(`McpShutdownHookProbe`) and asks only whether the process ends -- and on the unfixed code the whole
+application was confirmed to hang this way too, not just the probe.
 
 ### Considered and declined
 

@@ -196,15 +196,31 @@ VHDL. Its own test asserted that as the safe default. A `confirm=true` parameter
 not a safety control -- it stops a careless client, not a hostile one. See `AppPreferences.MCP_*`
 and Feature 11 in the roadmap.
 
-**Never hold a lock across a hop to the event dispatch thread.** Two separate freezes in the MCP
-code had exactly this shape: `McpModelExecutor.call` held a monitor across `invokeAndWait`, and
-`McpServerManager.start` held its lock while constructing a service whose constructor hops to
-that thread. Each deadlocked against an event dispatch thread that wanted the same lock — the first
-hung every tool call, the second launched the application with no window and no message. **Neither
-is reported as a deadlock by `jstack`**, because one edge is `invokeAndWait`'s wait/notify rather
-than a monitor the detector can graph, so the symptom is a process that simply sits there. Build
-outside the lock and take it only to publish; notify listeners outside it too. When something hangs
-with nothing in the thread dump, print the actual state before theorising about it.
+**Before hopping to the event dispatch thread, ask whether that thread can still serve you.**
+Three separate freezes in the MCP code have now had this shape, and only the first two were about
+locks:
+
+- `McpModelExecutor.call` held a monitor across `invokeAndWait`, and the event dispatch thread
+  reached the same monitor from `windowOpened`. Every tool call hung.
+- `McpServerManager.start` held its lock while constructing a service whose constructor hops to that
+  thread, while that thread was building the MCP menu and asking `isRunning()`. The application
+  launched with no window and no message.
+- `McpProjectService.close` hopped from a **JVM shutdown hook**. Quitting calls `System.exit` from
+  the event dispatch thread — `ProjectActions.doQuit` always has, and on macOS the Dock's Quit is
+  the ordinary way in — so that thread was inside the shutdown sequence and could never run the
+  task. No lock was involved anywhere. The window stayed on screen, nothing responded, and a
+  terminate signal did nothing either, shutdown having already begun, so it took a kill.
+
+So: build outside the lock and take it only to publish, notify listeners outside it too, and at
+teardown ask `McpModelExecutor.canReachModel()` first — during shutdown it says no, and work that
+only tidies state an exiting process is about to drop should simply be skipped.
+
+**None of the three is reported as a deadlock by `jstack`**, because one edge is `invokeAndWait`'s
+wait/notify rather than a monitor the detector can graph, so the symptom is a process that simply
+sits there. When something hangs with nothing in the thread dump, print the actual state before
+theorising about it. A hang that only happens at shutdown cannot be caught from inside the same
+JVM — `McpModelExecutorTest.shutdownHooksDoNotWaitForTheEventDispatchThread` forks a process and
+asks only whether it ends.
 
 **A new preference needs a control, not just a field.** `WIRE_AUTO_SNAP` sat in `AppPreferences`
 for four days being read by `WiringTool` and written by nothing, while the README said it could be

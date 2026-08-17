@@ -117,30 +117,38 @@ public final class McpProjectService
   @Override
   public void close() {
     Projects.removePropertyChangeListener(Projects.PROJECT_LIST_PROPERTY, projectListListener);
-    executor.run(
-        () -> {
-          for (final var entry : listeners.entrySet()) {
-            entry.getKey().removeProjectListener(entry.getValue());
-          }
-          for (final var entry : circuitListeners.entrySet()) {
-            entry.getKey().removeCircuitListener(entry.getValue());
-          }
-          for (final var entry : libraryListeners.entrySet()) {
-            entry.getKey().removeLibraryListener(entry.getValue());
-          }
-          for (final var entry : simulatorListeners.entrySet()) {
-            entry.getKey().getSimulator().removeSimulatorListener(entry.getValue());
-          }
-          listeners.clear();
-          circuitListeners.clear();
-          circuitOwners.clear();
-          libraryListeners.clear();
-          simulatorListeners.clear();
-          activeOperationIds.clear();
-          libraryIds.clear();
-          ownedActions.clear();
-          pendingCircuitUris.clear();
-        });
+    // Detaching hops to the event dispatch thread, so it is only possible while that thread is
+    // still taking events. At JVM shutdown it is not: quitting calls System.exit from it, and this
+    // runs from a shutdown hook, so the hop would wait for the very thread that is waiting for the
+    // hook. Nothing is lost by skipping it either -- the listeners and everything holding them go
+    // with the process. Cancelling the jobs below is not skippable in the same way, because those
+    // own threads of their own, so it stays outside the guard.
+    if (executor.canReachModel()) {
+      executor.run(
+          () -> {
+            for (final var entry : listeners.entrySet()) {
+              entry.getKey().removeProjectListener(entry.getValue());
+            }
+            for (final var entry : circuitListeners.entrySet()) {
+              entry.getKey().removeCircuitListener(entry.getValue());
+            }
+            for (final var entry : libraryListeners.entrySet()) {
+              entry.getKey().removeLibraryListener(entry.getValue());
+            }
+            for (final var entry : simulatorListeners.entrySet()) {
+              entry.getKey().getSimulator().removeSimulatorListener(entry.getValue());
+            }
+            listeners.clear();
+            circuitListeners.clear();
+            circuitOwners.clear();
+            libraryListeners.clear();
+            simulatorListeners.clear();
+            activeOperationIds.clear();
+            libraryIds.clear();
+            ownedActions.clear();
+            pendingCircuitUris.clear();
+          });
+    }
     vectorJobService.close();
   }
 
