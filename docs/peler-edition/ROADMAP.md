@@ -1374,13 +1374,13 @@ alone, that the attribute still reaches the file, that the supply pins are untou
 change reaches tools the toolbox is already holding. The last one was mutation-verified by replacing
 the push with a call that does nothing.
 
-`PelerCompatSaveTest` covers the compatible save in six tests: the chips and their library are
-absent from a `.circ`, both are present in a `.pcirc`, upstream's own DIP chips still go through
-untouched, a project holding symbols is reported lossy, a symbol tool is edition-only, and all
-twelve bundles carry the new warning. Four mutations were checked and each was caught by the test
-that should catch it. The last of those reads the twelve `.properties` files rather than asking
-`ResourceBundle`, which falls back to the base bundle for a missing key and would therefore pass for
-a language with no translation at all.
+`PelerCompatSaveTest` covers the compatible save: the chips and their library are absent from a
+`.circ`, both are present in a `.pcirc`, upstream's own DIP chips still go through untouched, a
+project holding symbols is reported lossy, a symbol tool is edition-only, and all twelve bundles
+carry the new warning. Four mutations were checked and each was caught by the test that should catch
+it. The bundle check reads the twelve `.properties` files rather than asking `ResourceBundle`, which
+falls back to the base bundle for a missing key and would therefore pass for a language with no
+translation at all. Feature 13 turned each of these into a sweep over both symbol families.
 
 Preference-mutating tests are safe here because the `test` task already redirects
 `java.util.prefs.userRoot` and `systemRoot` into `build/test-prefs/`, added earlier to stop headless
@@ -1390,6 +1390,123 @@ store is byte-identical across a full test run.
 Driven by hand on the real X display: all sixty-one symbols inspected as rendered, which is how the
 eight polarity bugs were found; and the setting exercised in both directions, placing chips before
 and after each change and confirming that chips already on the canvas kept their drawing.
+
+## Feature 13 — The BFH converters as logic symbols (2026-08-23)
+
+A third toolbox category, **BFH Symbols**, holding the two BFH-Praktika converters -- BCD to seven
+segment, and binary to BCD -- drawn the same way the 74xx symbols are. Plus the extraction that made
+it a small job rather than a second copy of Feature 12.
+
+### Why these two and not something else
+
+The question asked was which other components are drawn in the shape of the thing they drive rather
+than in the shape of what they compute. Going through the libraries, these two are the whole answer:
+
+- `BcdToSevenSegmentDisplay` places its seven outputs where the segments sit on a display -- a and b
+  along the top, f and g also along the top, c, d and e along the bottom, and the BCD input
+  underneath -- inside an outline drawn to look like a numeral display. Reading it means holding the
+  segment map in your head, and the picture rewards you for it only if you are wiring an actual
+  display.
+- `BinToBcd` is a wide, short box whose digit outputs run along the top edge, left to right, most
+  significant first, with the binary input on the left face. It is a picture of a decimal readout.
+
+Everything else already draws its function. The gates have ANSI and IEC shapes; the memory family
+has classic and evolution appearances; the plexers, arithmetic and wiring components are all
+function-shaped already. The I/O components are pictures of hardware on purpose -- an LED that did
+not look like an LED would be worse -- and the SoC and TCL components are boxes with named ports,
+which is already the symbol.
+
+### What was extracted, and why not copy
+
+`BinToBcd`'s port count follows an attribute: four to thirteen input bits give two to four BCD
+digits. `TtlSymbolGate` fixes its labels, kinds and box size in the constructor, because a 74xx chip
+has one shape forever, so the converter could not have used it as it stood. The choice was to
+duplicate about a hundred and fifty lines of drawing code or to lift them out.
+
+Lifting won on the second reason rather than the first: the two families appear on the same canvas.
+Two copies of the painter drift, and a symbol drawn with a slightly different caption height or
+label inset next to one drawn the old way looks like a bug in both.
+
+So `std/symbol/` now holds what a logic symbol *is*, and knows nothing about what any of them are
+symbols of:
+
+| Type | Holds |
+| --- | --- |
+| `SymbolRow` | one row: a port index, an optional label, a bubble and a clock flag |
+| `SymbolLayout` | one built symbol: caption, two columns, per-port label/kind/polarity, measured box |
+| `SymbolGate` | the `InstanceFactory`: bounds, rotation, ports, painting |
+| `SymbolLibrary` | a marker for a toolbox category holding nothing but symbols |
+
+`SymbolGate` asks a subclass for a layout **per attribute set**, keyed by whatever the subclass says
+the shape depends on (`layoutKey`), so a symbol that never changes is still built once and cached,
+while the converter gets one layout per input width. `portWidth` defaults to one bit, which is right
+for a 74xx pin and wrong for everything in BFH, and is overridden there.
+
+The move was checked two ways. All 650 TTL tests pass unchanged, which covers the geometry -- box
+size, port positions in all four facings, grid alignment, labels, polarity. And the three methods
+that no test can see the inside of were diffed token by token against the pre-refactor file:
+`paintSymbol`, `rotate` and `computeTextField` are verbatim once the field reads are renamed to
+layout accessors, and `updatePorts` differs only in the intended places (the layout lookup, named
+constants replacing the magic 1 and 2, and the hard-coded one-bit port becoming `portWidth`).
+
+### Decisions
+
+**The port array is never rearranged, only redrawn.** The same property that made Feature 12 safe
+holds here: both `propagate` methods address a port by index and never by position, so the symbol
+delegates and there is no second copy of either conversion. It also settles the bus question without
+a new decision -- the BCD digits are four-bit ports upstream, so they are four-bit ports on the
+symbol. Feature 12's "grouped single-bit rows" was never a preference for single bits; it was the
+same rule, applied to a chip whose pins are single wires.
+
+**The digits read top to bottom, most significant first.** Which is both the reading order and the
+order the original box already uses along its top edge, so the two pictures agree.
+
+**Labels are the powers of ten, as upstream writes them.** `1000`, `100`, `10`, `1` -- the same text
+the original draws above each pin, so nothing has to be learned to move between the two.
+
+**One new user-visible string,** `bfhSymbolLibrary`, in all twelve bundles. Both symbols reuse
+upstream's own `Bin2BCD` and `BCD2SevenSegment` display names, already translated.
+
+### `SymbolLibrary` exists so the next family cannot repeat the bug
+
+Feature 12 shipped with a defect found only while auditing an unrelated open question: a compatible
+save wrote the symbol library into a file upstream reports as unavailable, because `XmlWriter`'s
+compatibility mode named the libraries it lowers one at a time. Adding a second family by hand would
+have reproduced it exactly.
+
+`PelerCompat.isPelerOnly`, `PelerCompat.hasSymbolChips` and both `XmlWriter` guards now match on
+`SymbolGate` and `SymbolLibrary` rather than naming a class, so a family that extends them is covered
+the day it is written. The save warning was reworded in all twelve languages to say "logic symbols"
+rather than "TTL logic symbols", since it now covers both.
+
+Mutation-verified: reverting the library guard to name `TtlSymbolLibrary` fails
+`PelerCompatSaveTest`, which sweeps both families.
+
+### Testing
+
+Three new layers over the BFH symbols, 102 tests, plus the compat sweep:
+
+| Test | Covers | Blind to |
+| --- | --- | --- |
+| `BfhSymbolEquivalenceTest` | symbol and component agree index for index, every input value, every width | which index is which name |
+| `BfhSymbolLayoutTest` | ports complete, unique, correctly sided, bus-width, on the grid, on the box in every facing; the digit count per width; the layout cache | behaviour |
+| `BfhSymbolSemanticsTest` | vectors addressed by the labels drawn on the symbol | breadth |
+
+The semantics layer states its expectations from outside: the seven-segment patterns are the standard
+ones for a numeral display and a decimal digit is a decimal digit, neither read out of the component.
+That is what makes a label beside the wrong index fail rather than agree.
+
+`SymbolFixture` (was `TtlFixture`) moved into the shared test package with the rest, and gained two
+things the 74xx chips never needed: a pin as wide as the port it sits on, since a bus driven by a
+one-bit pin reads as an error on every port, and the component's attributes written into the file, so
+a converter loads back with the width the test asked for rather than the factory default.
+
+Five mutations were made and each was caught by the layer that should catch it: dropping the bus-width
+override, keying the layout cache on a constant, reversing the digit column, narrowing the compat
+guard back to one class, and transposing two segment labels.
+
+Driven by hand on the real X display: both symbols placed beside the components they redraw, the
+converter at four, nine and thirteen bits, and both turned to check the rotated drawing.
 
 ## Known open items
 
@@ -1405,18 +1522,19 @@ and after each change and confirming that chips already on the canvas kept their
   based on jpackage's documented default; confirming it needs a real macOS build and a look at
   `Info.plist`.
 - **The exported project bundle's inner file is still named `.circ`.**
-- **Two questions about the symbol library are still open.** Ports are drawn as grouped single-bit
-  rows rather than as real 4-bit buses -- confirmed by the maintainer on 2026-08-22 and effectively
-  locked in from the first release, since changing the port count invalidates the wires in every
-  file already saved. And HDL export does not support them: `TtlSymbolGate` is constructed without a
-  generator, so `isHDLSupportedComponent` is false and the FPGA flow reports them as unsupported
-  rather than failing. Reusing upstream's `Ttl*HdlGenerator` should be possible, since the port
-  order is unchanged, but `getHDLName` would become `Sym74283` and that has not been tried.
-- **The interactive HTML export cannot draw or simulate any 74xx chip, in either library.**
-  `HtmlExporter.supportedKinds()` is a 38-name allowlist and no TTL chip has ever been on it, so
-  this is not a regression from Feature 12 -- the symbols simply join a family that was already
-  refused by name. Supporting them means writing a JavaScript model per chip, which is why they are
-  not there.
+- **HDL export does not support any of the symbols.** `SymbolGate` subclasses are constructed
+  without a generator, so `isHDLSupportedComponent` is false and the FPGA flow reports them as
+  unsupported rather than failing. Reusing the delegate's own generator should be possible, since
+  the port order is unchanged, but `getHDLName` would become `Sym74283` and that has not been tried.
+  Settled alongside it: a symbol's ports are exactly the delegate's ports, so the 74xx symbols draw
+  grouped single-bit rows and the BFH ones draw four-bit buses, both for the same reason. Confirmed
+  by the maintainer on 2026-08-22 and locked in from the first release either way, since changing a
+  port count invalidates the wires in every file already saved.
+- **The interactive HTML export cannot draw or simulate any 74xx or BFH component, in any library.**
+  `HtmlExporter.supportedKinds()` is a 38-name allowlist and neither family has ever been on it, so
+  this is not a regression from Feature 12 or 13 -- the symbols simply join components that were
+  already refused by name. Supporting them means writing a JavaScript model per component, which is
+  why they are not there.
 - **Roughly 372 upstream commits are in this fork but not in v4.1.0.** Only the red-highlight one has
   been reverted. A full rebase onto the release tag was raised with the user and not undertaken, since
   it would drop upstream bug fixes and require re-applying every Peler feature.

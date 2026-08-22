@@ -17,6 +17,7 @@ import com.cburch.logisim.std.arith.ArithmeticLibrary;
 import com.cburch.logisim.std.arith.floating.FPArithmeticLibrary;
 import com.cburch.logisim.std.base.BaseLibrary;
 import com.cburch.logisim.std.bfh.BfhLibrary;
+import com.cburch.logisim.std.bfhsymbol.BfhSymbolLibrary;
 import com.cburch.logisim.std.gates.GatesLibrary;
 import com.cburch.logisim.std.hdl.HdlLibrary;
 import com.cburch.logisim.std.io.IoLibrary;
@@ -66,6 +67,9 @@ public class Builtin extends Library {
             new HdlLibrary(),
             new TclLibrary(),
             new BfhLibrary(),
+            // Peler Edition: the two BFH converters drawn as logic symbols. Same reasoning as
+            // TtlSymbolLibrary above -- a second toolbox entry needs a library of its own.
+            new BfhSymbolLibrary(),
             new ExtraIoLibrary(),
             new Soc());
   }

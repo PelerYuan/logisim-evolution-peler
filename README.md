@@ -75,7 +75,7 @@ and can be rebound.
 This fork saves `.pcirc`, and `.circ` is left to official Logisim-evolution. A `.pcirc` file keeps
 everything; **Save As** also offers `.circ` for handing work to someone running the official
 release, which writes what upstream can read — annotations become plain text labels there, and the
-note's link to its component is not preserved; TTL logic symbols are left out altogether, since
+note's link to its component is not preserved; logic symbols are left out altogether, since
 official Logisim-evolution has no such component to put them in. You are told which of the two you
 are about to lose before the file is written. Opening works either way round: this fork reads an
 official `.circ` exactly as upstream does.
@@ -146,13 +146,20 @@ to the setting:
   standard input to this window. It needs Node.js available to the client, and it is written for
   the port and token in force when you export it: export a fresh one if either changes.
 
-**74xx chips as logic symbols**
+**Components as logic symbols**
 A **TTL Symbols** category holding the same sixty-one 74xx chips, drawn the way a datasheet's logic
 diagram draws them — a rectangle with the inputs down the left and the outputs down the right,
 grouped by function, active-low pins carrying an inversion circle — rather than as a numbered DIP
 package with its pins in pin order. Both are in the toolbox; the DIP chips are untouched and behave
 exactly as before. The symbols simulate through the same code the DIP chips do, so the two are the
 same chip in two pictures, not two models to keep in step.
+
+A **BFH Symbols** category does the same for the two BFH-Praktika converters. Upstream draws the BCD
+to seven segment decoder with its outputs where the segments sit on a display, and the binary to BCD
+converter as a wide box with the digits along its top edge; both are pictures of the thing being
+driven rather than of the function. Here the input is on the left and the outputs run down the right
+in order — a to g for the decoder, and the powers of ten most significant first for the converter,
+which redraws itself as the input width changes.
 
 For the DIP chips themselves, **Preferences → Peler's Features** can make **show the gates inside
 the chip** the default for newly placed ones, instead of setting it by hand on each. Chips already
