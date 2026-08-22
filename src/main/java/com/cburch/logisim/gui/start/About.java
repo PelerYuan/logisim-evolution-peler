@@ -17,6 +17,7 @@ import com.cburch.logisim.util.UniquelyNamedThread;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
+import java.awt.Image;
 import java.awt.Toolkit;
 import javax.swing.BorderFactory;
 import javax.swing.ImageIcon;
@@ -40,10 +41,21 @@ public class About {
 
   private static final String LOGO_IMG = "resources/logisim/img/logisim-evolution-logo.png";
 
+  /**
+   * Peler Edition: the logo the splash screen shows, so the first window to appear already says
+   * which edition is starting rather than looking exactly like official Logisim-evolution.
+   *
+   * <p>The About dialog below deliberately keeps upstream's logo: it is upstream's credits and
+   * copyright screen, and this edition has its own under Help.
+   */
+  private static final String SPLASH_LOGO_IMG =
+      "resources/logisim/img/logisim-evolution-peler-logo.png";
+
   private About() {}
 
+  /** The panel the splash screen shows. Only the splash uses it, hence the edition's logo. */
   public static AboutPanel getImagePanel() {
-    return new AboutPanel();
+    return new AboutPanel(false, SPLASH_LOGO_IMG);
   }
 
   public static void showAboutDialog(JFrame owner) {
@@ -52,7 +64,7 @@ public class About {
     }
 
     final var content = new JPanel(new BorderLayout());
-    content.add(new AboutPanel(true));
+    content.add(new AboutPanel(true, LOGO_IMG));
     content.setBorder(BorderFactory.createLineBorder(Color.BLACK, 2));
 
     final var dialog = new JDialog(owner, S.get("aboutDialogTitle"), true);
@@ -95,11 +107,7 @@ public class About {
     private AboutCredits credits = null;
     private PanelThread thread = null;
 
-    public AboutPanel() {
-      this(false);
-    }
-
-    public AboutPanel(boolean includeCredits) {
+    public AboutPanel(boolean includeCredits, String logoImg) {
       setLayout(null);
 
       final var prefWidth = PANEL_WIDTH + 2 * PADDING;
@@ -112,7 +120,16 @@ public class About {
       setBackground(Color.WHITE);
       addAncestorListener(this);
 
-      final var logo = new JLabel(new ImageIcon(getClass().getClassLoader().getResource(LOGO_IMG)));
+      // Scaled to the panel's height, aspect ratio kept, so the resource can stay exactly the
+      // image the README shows instead of a second copy cut to size and drifting from it. An
+      // image that is already the right height is used as it is, which is upstream's logo.
+      final var source =
+          new ImageIcon(getClass().getClassLoader().getResource(logoImg)).getImage();
+      final var scaled =
+          source.getHeight(null) == LOGO_HEIGHT
+              ? source
+              : source.getScaledInstance(-1, LOGO_HEIGHT, Image.SCALE_SMOOTH);
+      final var logo = new JLabel(new ImageIcon(scaled));
       logo.setBounds(0, 20, prefWidth, LOGO_HEIGHT);
       add(logo);
 
