@@ -390,8 +390,9 @@ public final class ProjectActions {
     final var f = loader.getMainFile();
     if (f == null) return doSaveAs(proj);
 
-    // Peler Edition: plain Save over an official .circ silently degrades any annotations in it, so
-    // say so -- by default once per file per session, since this would otherwise fire on every
+    // Peler Edition: plain Save over an official .circ silently degrades any annotations in it and
+    // drops any TTL logic symbols outright, so say so -- by default once per file per session,
+    // since this would otherwise fire on every
     // Ctrl+S. Files written by earlier versions of this edition are all .circ, which is exactly
     // the case worth catching. Answering "keep .circ" is remembered; switching to .pcirc retargets
     // the project, so the question does not come back either way. Feature 10 makes the frequency
@@ -442,15 +443,27 @@ public final class ProjectActions {
   }
 
   /**
+   * Peler Edition: what a compatible save is about to cost, one paragraph per kind of loss, or null
+   * if it costs nothing. The mouse mappings and toolbar entries such a file also drops are
+   * interface preferences rather than the user's work, and are deliberately not mentioned.
+   */
+  private static String compatSaveLosses(LogisimFile file) {
+    final var parts = new ArrayList<String>();
+    if (PelerCompat.hasAnnotations(file)) parts.add(S.get("compatSaveMessage"));
+    if (PelerCompat.hasSymbolChips(file)) parts.add(S.get("compatSaveSymbolMessage"));
+    return parts.isEmpty() ? null : String.join("\n\n", parts);
+  }
+
+  /**
    * Peler Edition: last stop before writing a lossy file. Only interrupts when the project actually
-   * holds annotations -- the mouse mappings and toolbar entries a compatible file also drops are
-   * interface preferences, not the user's work, and are not worth a dialog.
+   * holds something the compatible dialect cannot keep.
    *
    * @return where to save, possibly switched to {@code .pcirc}, or null if the user cancelled
    */
   private static File resolveCompatSave(Project proj, File dest) {
     if (!PelerCompat.isCompatTarget(dest)) return dest;
-    if (!PelerCompat.hasAnnotations(proj.getLogisimFile())) return dest;
+    final var losses = compatSaveLosses(proj.getLogisimFile());
+    if (losses == null) return dest;
     // Feature 10: checked here as well as in doSave, because Save As reaches this directly and
     // "never warn me" has to mean never, not "never unless you used the other menu item".
     if (AppPreferences.LOSSY_WARN_NEVER.equals(AppPreferences.LOSSY_SAVE_WARNING.get())) {
@@ -462,7 +475,7 @@ public final class ProjectActions {
       S.get("compatSaveKeepOpt", Loader.LOGISIM_EXTENSION),
       S.get("compatSaveCancelOpt")
     };
-    final var dlog = new JOptionPane(S.get("compatSaveMessage"));
+    final var dlog = new JOptionPane(losses);
     dlog.setMessageType(OptionPane.WARNING_MESSAGE);
     dlog.setOptions(options);
     dlog.createDialog(proj.getFrame(), S.get("compatSaveTitle")).setVisible(true);

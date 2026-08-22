@@ -27,6 +27,8 @@ import com.cburch.logisim.std.annotate.AnnotationAttributes;
 import com.cburch.logisim.std.annotate.AnnotationLibrary;
 import com.cburch.logisim.std.base.BaseLibrary;
 import com.cburch.logisim.std.base.Text;
+import com.cburch.logisim.std.ttlsymbol.TtlSymbolGate;
+import com.cburch.logisim.std.ttlsymbol.TtlSymbolLibrary;
 import com.cburch.logisim.std.wiring.ProbeAttributes;
 import com.cburch.logisim.tools.Library;
 import com.cburch.logisim.tools.Tool;
@@ -433,6 +435,10 @@ final class XmlWriter {
   Element fromComponent(Component comp) {
     final var source = comp.getFactory();
     if (compatMode && source instanceof Annotation) return fromAnnotationAsText(comp);
+    // Feature 12: a TTL logic symbol is left out rather than lowered to the DIP chip it delegates
+    // to. See PelerCompat.hasSymbolChips for why lowering would be the more dangerous choice; the
+    // save dialog has already told the user this is about to happen.
+    if (compatMode && source instanceof TtlSymbolGate) return null;
 
     final var lib = findLibrary(source);
     String libName;
@@ -469,6 +475,9 @@ final class XmlWriter {
     // from the new-project template and `removeUnusedLibs` is off by default, so every file this
     // edition saved used to carry it, and upstream complained about every single one.
     if (compatMode && lib instanceof AnnotationLibrary) return null;
+    // Feature 12: the same, for the TTL symbol library. Its entry also comes from the new-project
+    // template, so it would otherwise appear in every compatible file this edition wrote.
+    if (compatMode && lib instanceof TtlSymbolLibrary) return null;
 
     final var ret = doc.createElement("lib");
     if (libs.containsKey(lib)) return null;

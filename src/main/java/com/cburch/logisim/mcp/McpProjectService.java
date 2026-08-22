@@ -1684,10 +1684,11 @@ public final class McpProjectService
     if (LibraryManager.instance.findReference(project.getLogisimFile(), target) != null) {
       throw rpc(-32006, "Project cannot be saved over a referenced library");
     }
-    if (PelerCompat.isCompatTarget(target) && PelerCompat.hasAnnotations(project.getLogisimFile())) {
+    if (PelerCompat.isCompatTarget(target) && PelerCompat.isLossy(project.getLogisimFile())) {
       throw rpc(
           -32006,
-          ".circ would discard Peler annotation metadata; use an explicit .pcirc target");
+          ".circ would discard this edition's own content (annotations, TTL logic symbols);"
+              + " use an explicit .pcirc target");
     }
   }
 

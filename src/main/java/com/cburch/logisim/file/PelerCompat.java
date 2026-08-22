@@ -9,7 +9,9 @@
 package com.cburch.logisim.file;
 
 import com.cburch.logisim.std.annotate.Annotation;
+import com.cburch.logisim.std.ttlsymbol.TtlSymbolGate;
 import com.cburch.logisim.tools.AbstractAnnotateTool;
+import com.cburch.logisim.tools.AddTool;
 import com.cburch.logisim.tools.QuickRotateTool;
 import com.cburch.logisim.tools.TidyWiresTool;
 import com.cburch.logisim.tools.Tool;
@@ -58,7 +60,8 @@ public final class PelerCompat {
   public static boolean isPelerOnly(Tool tool) {
     return tool instanceof QuickRotateTool
         || tool instanceof TidyWiresTool
-        || tool instanceof AbstractAnnotateTool;
+        || tool instanceof AbstractAnnotateTool
+        || (tool instanceof AddTool add && add.getFactory() instanceof TtlSymbolGate);
   }
 
   /**
@@ -74,5 +77,29 @@ public final class PelerCompat {
       }
     }
     return false;
+  }
+
+  /**
+   * True if this project uses any of the TTL logic symbols (Feature 12). They are dropped outright
+   * from a compatible file, components and library both, so this is content loss of a harsher kind
+   * than an annotation's and is worth interrupting the user about.
+   *
+   * <p>Not lowered to the DIP chip they delegate to, tempting as that looks. The two draw the same
+   * ports in different places, so every wire reaching a lowered chip would land on the wrong port
+   * or on none -- a circuit that opens over there and quietly computes something else. Losing the
+   * chip leaves visibly dangling wires instead, which is a worse-looking and much safer failure.
+   */
+  public static boolean hasSymbolChips(LogisimFile file) {
+    for (final var circuit : file.getCircuits()) {
+      for (final var comp : circuit.getNonWires()) {
+        if (comp.getFactory() instanceof TtlSymbolGate) return true;
+      }
+    }
+    return false;
+  }
+
+  /** True if a compatible save would drop any of the user's actual work. */
+  public static boolean isLossy(LogisimFile file) {
+    return hasAnnotations(file) || hasSymbolChips(file);
   }
 }
