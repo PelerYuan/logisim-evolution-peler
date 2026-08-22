@@ -11,7 +11,8 @@ package com.cburch.logisim.std.ttlsymbol;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.cburch.logisim.data.Value;
-import com.cburch.logisim.std.ttlsymbol.TtlSymbolSpec.Row;
+import com.cburch.logisim.std.symbol.SymbolFixture;
+import com.cburch.logisim.std.symbol.SymbolRow;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -29,9 +30,9 @@ final class TtlSymbolProbe {
 
   private final TtlSymbolSpec spec;
   private final TtlSymbolGate gate;
-  private final TtlFixture fixture;
+  private final SymbolFixture fixture;
 
-  private TtlSymbolProbe(TtlSymbolSpec spec, TtlSymbolGate gate, TtlFixture fixture) {
+  private TtlSymbolProbe(TtlSymbolSpec spec, TtlSymbolGate gate, SymbolFixture fixture) {
     this.spec = spec;
     this.gate = gate;
     this.fixture = fixture;
@@ -45,7 +46,7 @@ final class TtlSymbolProbe {
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException("no symbol for " + chip));
     final var gate = new TtlSymbolGate(spec);
-    return new TtlSymbolProbe(spec, gate, TtlFixture.open(gate, "TTL Symbols", workDir));
+    return new TtlSymbolProbe(spec, gate, SymbolFixture.open(gate, "TTL Symbols", workDir));
   }
 
   String chip() {
@@ -106,7 +107,7 @@ final class TtlSymbolProbe {
    * consulted when the name alone is ambiguous, which happens on a flip-flop: it writes Q1 twice
    * down its right-hand side, once with the circle that says it is the complement.
    */
-  private int find(List<Row> column, String label, boolean inverted) {
+  private int find(List<SymbolRow> column, String label, boolean inverted) {
     final var matches = new ArrayList<Integer>();
     for (final var row : column) {
       if (!row.isGap() && gate.label(row.index()).equals(label)) matches.add(row.index());

@@ -6,11 +6,14 @@
  * This is free software released under GNU GPLv3 license
  */
 
-package com.cburch.logisim.std.ttlsymbol;
+package com.cburch.logisim.std.symbol;
 
 import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.CircuitState;
 import com.cburch.logisim.comp.ComponentFactory;
+import com.cburch.logisim.data.Attribute;
+import com.cburch.logisim.data.AttributeSet;
+import com.cburch.logisim.data.BitWidth;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.data.Value;
 import com.cburch.logisim.file.LoadFailedException;
@@ -28,17 +31,17 @@ import java.util.List;
 import java.util.TreeMap;
 
 /**
- * Peler Edition. One 74xx chip in a project of its own, with a pin sitting on each of its ports and
+ * Peler Edition. One component in a project of its own, with a pin sitting on each of its ports and
  * everything addressed by port index.
  *
  * <p>Nothing here is wired by hand. The port locations are asked of the factory and a pin is
  * dropped on each -- in Logisim two ports at one location are one node -- so the same code builds a
- * fixture for the DIP package and for the logic symbol even though their pins are nowhere near each
- * other. Position cannot be the correspondence between the two, and the port index is; the index is
- * carried through the file in each pin's label, which is the only thing about a pin that survives
- * the round trip.
+ * fixture for a component and for the logic symbol that redraws it, even though their pins are
+ * nowhere near each other. Position cannot be the correspondence between the two, and the port
+ * index is; the index is carried through the file in each pin's label, which is the only thing
+ * about a pin that survives the round trip.
  */
-final class TtlFixture {
+public final class SymbolFixture {
 
   private final Project project;
   private final CircuitState state;
@@ -47,7 +50,7 @@ final class TtlFixture {
   private final List<Integer> inputs = new ArrayList<>();
   private final List<Integer> outputs = new ArrayList<>();
 
-  private TtlFixture(Project project, Circuit circuit) {
+  private SymbolFixture(Project project, Circuit circuit) {
     this.project = project;
     this.driven = pinsLabelled(circuit, 'p');
     this.probed = pinsLabelled(circuit, 'q');
@@ -59,11 +62,22 @@ final class TtlFixture {
     outputs.addAll(probed.keySet());
   }
 
-  /** Builds and opens a fixture for one chip, writing the project under {@code workDir}. */
-  static TtlFixture open(ComponentFactory factory, String libraryId, Path workDir)
+  /** Builds and opens a fixture for one component, writing the project under {@code workDir}. */
+  public static SymbolFixture open(ComponentFactory factory, String libraryId, Path workDir)
+      throws IOException, LoadFailedException {
+    return open(factory, libraryId, workDir, factory.createAttributeSet());
+  }
+
+  /**
+   * As {@link #open}, for a component whose shape follows its attributes. The attribute set is
+   * written into the file, so what is loaded back has the ports the caller asked for rather than
+   * the factory's defaults.
+   */
+  public static SymbolFixture open(
+      ComponentFactory factory, String libraryId, Path workDir, AttributeSet attrs)
       throws IOException, LoadFailedException {
     final var anchor = Location.create(400, 400, true);
-    final var probe = factory.createComponent(anchor, factory.createAttributeSet());
+    final var probe = factory.createComponent(anchor, attrs);
 
     final var xml = new StringBuilder();
     xml.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
@@ -75,13 +89,25 @@ final class TtlFixture {
         .append(" <circuit name=\"main\">\n")
         .append("  <a name=\"circuit\" val=\"main\" />\n")
         .append("  <comp lib=\"1\" loc=\"").append(anchor).append("\" name=\"")
-        .append(factory.getName()).append("\" />\n");
+        .append(factory.getName()).append("\">\n");
+    for (final var attr : attrs.getAttributes()) {
+      final var value = attrs.getValue(attr);
+      if (value == null || attr.isHidden() || !attr.isToSave()) continue;
+      xml.append("   <a name=\"").append(attr.getName()).append("\" val=\"")
+          .append(escape(castValue(attr, value))).append("\" />\n");
+    }
+    xml.append("  </comp>\n");
 
     final var ends = probe.getEnds();
     for (var i = 0; i < ends.size(); i++) {
       final var end = ends.get(i);
       final var bidirectional = end.isInput() && end.isOutput();
-      pin(xml, end.getLocation().toString(), "p" + i, end.isOutput() && !bidirectional);
+      pin(
+          xml,
+          end.getLocation().toString(),
+          "p" + i,
+          end.isOutput() && !bidirectional,
+          end.getWidth().getWidth());
       if (!bidirectional) continue;
       // A bidirectional port needs two pins: one to drive the node and one to watch it, since a
       // Logisim pin does only one of the two. The 74245 transceiver is the whole reason -- without
@@ -89,25 +115,27 @@ final class TtlFixture {
       // watching pin cannot share the port's spot, because two pins there are one component twice
       // over and the file will not load, so it sits one step outside the chip on a wire.
       final var outside = justOutside(end.getLocation(), probe.getBounds());
-      pin(xml, outside.toString(), "q" + i, true);
+      pin(xml, outside.toString(), "q" + i, true, end.getWidth().getWidth());
       xml.append("  <wire from=\"").append(end.getLocation())
           .append("\" to=\"").append(outside).append("\" />\n");
     }
     xml.append(" </circuit>\n</project>\n");
 
-    final var target = workDir.resolve(factory.getName() + "-" + libraryId.hashCode() + ".circ");
+    final var target =
+        workDir.resolve(
+            factory.getName() + "-" + libraryId.hashCode() + "-" + xml.length() + ".circ");
     Files.writeString(target, xml.toString(), StandardCharsets.UTF_8);
 
     final var loader = new Loader(null);
     final var opened = new Project(loader.openLogisimFile(target.toFile()));
-    return new TtlFixture(opened, opened.getLogisimFile().getMainCircuit());
+    return new SymbolFixture(opened, opened.getLogisimFile().getMainCircuit());
   }
 
-  List<Integer> inputPorts() {
+  public List<Integer> inputPorts() {
     return inputs;
   }
 
-  List<Integer> outputPorts() {
+  public List<Integer> outputPorts() {
     return outputs;
   }
 
@@ -121,26 +149,32 @@ final class TtlFixture {
    * built -- and then quietly stops responding to its own inputs, which is exactly the kind of
    * sweep that reports agreement it never actually measured.
    */
-  void drive(int portIndex, Value value) {
+  public void drive(int portIndex, Value value) {
     final var pin = driven.get(portIndex);
     Pin.FACTORY.driveInputPin(state.getInstanceState(pin), value);
     pin.fireInvalidated();
   }
 
-  void settle() {
+  public void settle() {
     state.getPropagator().propagate();
   }
 
-  boolean oscillating() {
+  public boolean oscillating() {
     return state.getPropagator().isOscillating();
   }
 
-  Value read(int portIndex) {
+  /** How wide the pin on this port is, so a caller can build a value of the right size. */
+  public BitWidth widthOf(int portIndex) {
+    final var pin = driven.containsKey(portIndex) ? driven.get(portIndex) : probed.get(portIndex);
+    return pin.getAttributeValue(StdAttr.WIDTH);
+  }
+
+  public Value read(int portIndex) {
     return Pin.FACTORY.getValue(state.getInstanceState(probed.get(portIndex)));
   }
 
   /** Every output port after one settle, as a comma-separated row. */
-  String outputRow() {
+  public String outputRow() {
     final var row = new ArrayList<String>();
     for (final var index : outputs) row.add(oscillating() ? "E" : read(index).toString());
     return String.join(",", row);
@@ -154,11 +188,26 @@ final class TtlFixture {
     return port.translate(0, 10);
   }
 
-  private static void pin(StringBuilder xml, String location, String label, boolean readOnly) {
+  private static void pin(
+      StringBuilder xml, String location, String label, boolean readOnly, int width) {
     xml.append("  <comp lib=\"0\" loc=\"").append(location).append("\" name=\"Pin\">\n")
         .append("   <a name=\"label\" val=\"").append(label).append("\" />\n");
+    // A pin defaults to one bit, so a port carrying a bus has to say so or the node is in error
+    // and every reading off it comes back E. The 74xx chips never needed this; the BFH converters
+    // are all bus.
+    if (width != 1) xml.append("   <a name=\"width\" val=\"").append(width).append("\" />\n");
     if (readOnly) xml.append("   <a name=\"output\" val=\"true\" />\n");
     xml.append("  </comp>\n");
+  }
+
+  /** {@code Attribute.toStandardString} is generic; the attribute knows its own value's type. */
+  @SuppressWarnings("unchecked")
+  private static <V> String castValue(Attribute<V> attr, Object value) {
+    return attr.toStandardString((V) value);
+  }
+
+  private static String escape(String raw) {
+    return raw.replace("&", "&amp;").replace("<", "&lt;").replace("\"", "&quot;");
   }
 
   /**
@@ -177,7 +226,7 @@ final class TtlFixture {
     return found;
   }
 
-  Project getProject() {
+  public Project getProject() {
     return project;
   }
 }

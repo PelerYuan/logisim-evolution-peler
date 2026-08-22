@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.cburch.logisim.comp.ComponentFactory;
 import com.cburch.logisim.data.Value;
+import com.cburch.logisim.std.symbol.SymbolFixture;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -98,7 +99,7 @@ public class TtlSymbolEquivalenceTest {
    * settle correctly if every step started from scratch.
    */
   private List<String> sweep(ComponentFactory factory, String libraryId) throws Exception {
-    final var fixture = TtlFixture.open(factory, libraryId, workDir);
+    final var fixture = SymbolFixture.open(factory, libraryId, workDir);
     final var inputs = fixture.inputPorts();
     assertFalse(inputs.isEmpty(), libraryId + " fixture has no inputs");
     assertFalse(fixture.outputPorts().isEmpty(), libraryId + " fixture has no outputs");

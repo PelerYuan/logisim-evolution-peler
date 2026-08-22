@@ -10,8 +10,8 @@ package com.cburch.logisim.std.ttlsymbol;
 
 import static com.cburch.logisim.std.Strings.S;
 
+import com.cburch.logisim.std.symbol.SymbolLibrary;
 import com.cburch.logisim.tools.AddTool;
-import com.cburch.logisim.tools.Library;
 import com.cburch.logisim.tools.Tool;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,7 +28,7 @@ import java.util.List;
  * list there and nothing else: the id, the name in the toolbox and the caption on the box all come
  * from the chip it delegates to.
  */
-public class TtlSymbolLibrary extends Library {
+public class TtlSymbolLibrary extends SymbolLibrary {
   /**
    * Unique identifier of the library, used as reference in project files. Do NOT change as it will
    * prevent project files from loading.

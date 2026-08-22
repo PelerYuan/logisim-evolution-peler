@@ -8,14 +8,14 @@
 
 package com.cburch.logisim.std.ttlsymbol;
 
-import static com.cburch.logisim.std.ttlsymbol.TtlSymbolSpec.Row.clock;
-import static com.cburch.logisim.std.ttlsymbol.TtlSymbolSpec.Row.inverted;
-import static com.cburch.logisim.std.ttlsymbol.TtlSymbolSpec.Row.named;
-import static com.cburch.logisim.std.ttlsymbol.TtlSymbolSpec.Row.namedInverted;
-import static com.cburch.logisim.std.ttlsymbol.TtlSymbolSpec.Row.of;
-import static com.cburch.logisim.std.ttlsymbol.TtlSymbolSpec.Row.renamed;
-import static com.cburch.logisim.std.ttlsymbol.TtlSymbolSpec.Row.renamedClock;
-import static com.cburch.logisim.std.ttlsymbol.TtlSymbolSpec.Row.renamedInverted;
+import static com.cburch.logisim.std.symbol.SymbolRow.clock;
+import static com.cburch.logisim.std.symbol.SymbolRow.inverted;
+import static com.cburch.logisim.std.symbol.SymbolRow.named;
+import static com.cburch.logisim.std.symbol.SymbolRow.namedInverted;
+import static com.cburch.logisim.std.symbol.SymbolRow.of;
+import static com.cburch.logisim.std.symbol.SymbolRow.renamed;
+import static com.cburch.logisim.std.symbol.SymbolRow.renamedClock;
+import static com.cburch.logisim.std.symbol.SymbolRow.renamedInverted;
 
 import com.cburch.logisim.std.ttl.AbstractTtlGate;
 import com.cburch.logisim.std.ttl.Ttl7400;
@@ -79,7 +79,7 @@ import com.cburch.logisim.std.ttl.Ttl747266;
 import com.cburch.logisim.std.ttl.Ttl7485;
 import com.cburch.logisim.std.ttl.Ttl7486;
 import com.cburch.logisim.std.ttl.Ttl7487;
-import com.cburch.logisim.std.ttlsymbol.TtlSymbolSpec.Row;
+import com.cburch.logisim.std.symbol.SymbolRow;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
@@ -116,41 +116,41 @@ final class TtlSymbolLayouts {
    * shared control pins.
    */
   private static final class Layout {
-    private final List<Row> left = new ArrayList<>();
-    private final List<Row> right = new ArrayList<>();
+    private final List<SymbolRow> left = new ArrayList<>();
+    private final List<SymbolRow> right = new ArrayList<>();
 
     /** One gate: its inputs down the left, its output level with the middle of them. */
-    Layout gate(Row out, Row... ins) {
+    Layout gate(SymbolRow out, SymbolRow... ins) {
       // An even number of rows has no middle one, so a blank is slipped in to make one.
       final var even = ins.length % 2 == 0;
       final var middle = ins.length / 2;
       final var slots = even ? ins.length + 1 : ins.length;
       var taken = 0;
       for (var row = 0; row < slots; row++) {
-        left.add(even && row == middle ? Row.gap() : ins[taken++]);
-        right.add(row == middle ? out : Row.gap());
+        left.add(even && row == middle ? SymbolRow.gap() : ins[taken++]);
+        right.add(row == middle ? out : SymbolRow.gap());
       }
       return this;
     }
 
     /** Rows down the left of the box. */
-    Layout in(Row... rows) {
+    Layout in(SymbolRow... rows) {
       left.addAll(List.of(rows));
       return this;
     }
 
     /** Rows down the right of the box. */
-    Layout out(Row... rows) {
+    Layout out(SymbolRow... rows) {
       right.addAll(List.of(rows));
       return this;
     }
 
     /** A blank row in both columns, after squaring them up. */
     Layout blank() {
-      while (left.size() < right.size()) left.add(Row.gap());
-      while (right.size() < left.size()) right.add(Row.gap());
-      left.add(Row.gap());
-      right.add(Row.gap());
+      while (left.size() < right.size()) left.add(SymbolRow.gap());
+      while (right.size() < left.size()) right.add(SymbolRow.gap());
+      left.add(SymbolRow.gap());
+      right.add(SymbolRow.gap());
       return this;
     }
 
@@ -206,7 +206,7 @@ final class TtlSymbolLayouts {
         .gate(output(6, "3Y", invertingOutput), named(7, "3A"), named(8, "3B"), named(9, "3C"));
   }
 
-  private static Row output(int index, String label, boolean inverting) {
+  private static SymbolRow output(int index, String label, boolean inverting) {
     return inverting ? namedInverted(index, label) : named(index, label);
   }
 
@@ -313,9 +313,9 @@ final class TtlSymbolLayouts {
           // 7451 dual 2-wide 2-input AND-OR-invert.
           // 0 A1  1 A2  2 B2  3 C2  4 D2  5 Y2  6 Y1  7 C1  8 D1  9 B1
           symbol()
-              .gate(inverted(6), of(0), of(9), Row.gap(), of(7), of(8))
+              .gate(inverted(6), of(0), of(9), SymbolRow.gap(), of(7), of(8))
               .blank()
-              .gate(inverted(5), of(1), of(2), Row.gap(), of(3), of(4))
+              .gate(inverted(5), of(1), of(2), SymbolRow.gap(), of(3), of(4))
               .of(Ttl7451::new),
 
           // 7454 4-wide 2-input AND-OR-invert.
@@ -323,18 +323,18 @@ final class TtlSymbolLayouts {
           symbol()
               .gate(
                   inverted(5),
-                  of(0), of(8), Row.gap(),
-                  of(1), of(2), Row.gap(),
-                  of(3), of(4), Row.gap(),
+                  of(0), of(8), SymbolRow.gap(),
+                  of(1), of(2), SymbolRow.gap(),
+                  of(3), of(4), SymbolRow.gap(),
                   of(6), of(7))
               .of(Ttl7454::new),
 
           // 7458 2-wide 3-input and 2-wide 2-input AND-OR. Upstream numbers the gates from zero.
           // 0 A0  1 A1  2 B1  3 C1  4 D1  5 Y1  6 Y0  7 D0  8 E0  9 F0  10 B0  11 C0
           symbol()
-              .gate(of(6), of(0), of(10), of(11), Row.gap(), of(7), of(8), of(9))
+              .gate(of(6), of(0), of(10), of(11), SymbolRow.gap(), of(7), of(8), of(9))
               .blank()
-              .gate(of(5), of(1), of(2), Row.gap(), of(3), of(4))
+              .gate(of(5), of(1), of(2), SymbolRow.gap(), of(3), of(4))
               .of(Ttl7458::new),
 
           // 7464 4-2-3-2-input AND-OR-invert.
@@ -342,9 +342,9 @@ final class TtlSymbolLayouts {
           symbol()
               .gate(
                   inverted(6),
-                  of(0), of(9), of(10), of(11), Row.gap(),
-                  of(1), of(2), Row.gap(),
-                  of(3), of(4), of(5), Row.gap(),
+                  of(0), of(9), of(10), of(11), SymbolRow.gap(),
+                  of(1), of(2), SymbolRow.gap(),
+                  of(3), of(4), of(5), SymbolRow.gap(),
                   of(7), of(8))
               .of(Ttl7464::new),
 
@@ -435,9 +435,9 @@ final class TtlSymbolLayouts {
           // 0 n1E  1 S1  2 1D3  3 1D2  4 1D1  5 1D0  6 1Y  7 2Y  8 2D0  9 2D1  10 2D2  11 2D3
           // 12 S0  13 n2E
           symbol()
-              .gate(of(6), of(5), of(4), of(3), of(2), Row.gap(), of(0))
+              .gate(of(6), of(5), of(4), of(3), of(2), SymbolRow.gap(), of(0))
               .blank()
-              .gate(of(7), of(8), of(9), of(10), of(11), Row.gap(), of(13))
+              .gate(of(7), of(8), of(9), of(10), of(11), SymbolRow.gap(), of(13))
               .blank()
               .in(of(12), of(1))
               .of(Ttl74153::new),
