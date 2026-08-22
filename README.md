@@ -75,7 +75,9 @@ and can be rebound.
 This fork saves `.pcirc`, and `.circ` is left to official Logisim-evolution. A `.pcirc` file keeps
 everything; **Save As** also offers `.circ` for handing work to someone running the official
 release, which writes what upstream can read — annotations become plain text labels there, and the
-note's link to its component is not preserved. Opening works either way round: this fork reads an
+note's link to its component is not preserved; TTL logic symbols are left out altogether, since
+official Logisim-evolution has no such component to put them in. You are told which of the two you
+are about to lose before the file is written. Opening works either way round: this fork reads an
 official `.circ` exactly as upstream does.
 
 The reason for two formats is that annotations are this fork's own idea. Official Logisim-evolution
@@ -117,8 +119,10 @@ working whole.
 Two limits worth knowing. The page models propagation as a settling process rather than with per
 component delays, so a circuit that depends on gate delay — a pulse made from a chain of inverters,
 say — will not behave as it does here. And the export refuses, naming what it found, rather than
-writing a page for a circuit containing a component it cannot simulate: RAM, ROM, shift registers
-and the divider are not supported yet.
+writing a page for a circuit containing a component it cannot simulate. What it does support is a
+fixed list — pins, gates, wiring, flip-flops, registers and counters, the displays and input
+components, multiplexers and the arithmetic blocks — and everything outside it is refused by name,
+including RAM, ROM, shift registers, the divider, and the 74xx chips in either drawing.
 
 **AI clients over MCP (experimental)**
 An embedded [Model Context Protocol](https://modelcontextprotocol.io) server lets an AI client —
@@ -142,6 +146,18 @@ to the setting:
   standard input to this window. It needs Node.js available to the client, and it is written for
   the port and token in force when you export it: export a fresh one if either changes.
 
+**74xx chips as logic symbols**
+A **TTL Symbols** category holding the same sixty-one 74xx chips, drawn the way a datasheet's logic
+diagram draws them — a rectangle with the inputs down the left and the outputs down the right,
+grouped by function, active-low pins carrying an inversion circle — rather than as a numbered DIP
+package with its pins in pin order. Both are in the toolbox; the DIP chips are untouched and behave
+exactly as before. The symbols simulate through the same code the DIP chips do, so the two are the
+same chip in two pictures, not two models to keep in step.
+
+For the DIP chips themselves, **Preferences → Peler's Features** can make **show the gates inside
+the chip** the default for newly placed ones, instead of setting it by hand on each. Chips already
+in a circuit keep the drawing they were placed with.
+
 **Its own settings page**
 **Preferences → Peler's Features** holds the settings for everything above, in one place rather
 than scattered through upstream's panels — so what this fork lets you change is also the list of
@@ -158,6 +174,8 @@ what it changed:
   where someone coming from the official release expects it.
 * **New annotations** — the font, size and colour a new note starts with. Existing notes keep
   theirs; each one saves its own.
+* **TTL chips** — whether a newly placed 74xx chip shows the gates inside it or the numbered
+  package. Chips already in a circuit keep what they were placed with.
 * **Saving as `.circ`** — how often you are warned that the compatible format drops annotations:
   every time, once per file each session (the default), or never.
 * **AI clients (MCP server)** — whether it runs at all (off by default), and which port.

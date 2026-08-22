@@ -1196,6 +1196,201 @@ root at all. So there is no way to grant, say, a fixed export directory without 
 arguments. Deliberately left until real use shows whether it matters: this is the only boundary
 `load_library` has, and `load_library` puts a JAR on the classpath.
 
+## Feature 12 — 74xx chips as logic symbols (2026-08-22)
+
+A second toolbox category, **TTL Symbols**, holding the same sixty-one 74xx chips upstream ships,
+each drawn as a rectangle with its inputs down the left and its outputs down the right instead of as
+a DIP package. Plus one settings-page default, for upstream's own "show the gates inside the chip"
+attribute on the DIP ones.
+
+### Why
+
+Upstream draws a 74xx chip the way it is packaged: pins down two sides in pin order, numbered,
+which is exactly what you need in front of a breadboard and is not what a datasheet's logic diagram
+or a lecture slide draws. Pin order interleaves what a symbol wants grouped -- a quad gate package
+runs A1 B1 Y1 A2 B2 Y2 down the sides, so the four gates are four scattered triples rather than four
+rows -- and a reader following the logic has to hold the pinout in their head to see the function.
+Both pictures are correct and they are for different tasks, so this adds the second one rather than
+replacing the first.
+
+The chips themselves are untouched. `AbstractTtlGate` already decides a port's index from its pin
+number alone and never from where the port sits, so a symbol is the same port array in a different
+arrangement: `TtlSymbolGate.propagate` hands straight to `delegate.propagateTtl(state)` and there is
+no second copy of any chip's logic to keep in step.
+
+### A separate library, not an attribute on the existing chips
+
+The obvious shape was one more attribute on the sixty-one factories already there, and it does not
+work. Two toolbox entries pointing at one factory are indistinguishable everywhere downstream:
+`AddTool.equals` compares factories, and `XmlWriter.findLibrary` hands a component to whichever
+library claims it first. The second entry would exist on screen and nowhere else -- picked, saved
+and reloaded as the first.
+
+So `std/ttlsymbol/` is its own library with its own sixty-one factories, each holding a
+`TtlSymbolSpec` naming the delegate and the two columns of rows.
+
+### What one chip costs
+
+One entry in `TtlSymbolLayouts.SPECS`, and nothing else. The id, the name in the toolbox and the
+caption on the box are all derived from the delegate: `id = "Sym" + delegate.getName()`, and the
+toolbox string is upstream's own `"TTL" + name` key, already translated into all twelve languages
+for the DIP entry. The whole feature adds exactly one new user-visible string, the library's name.
+
+**A row carries a port index, not a name.** The name is looked up in the delegate's `getPortNames`,
+so the pinout is stated once, in upstream's file. An index typed wrong here therefore shows the
+wrong name on screen rather than quietly renaming a correct port. The two cases that must spell a
+label out keep the protection: a gate array declares no names at all, and `TtlSymbolLayoutTest`
+checks its factory really declares none; a chip whose upstream name is a sentence rather than a pin
+symbol (`"MR/CLR (Reset, active LOW)"`) carries the upstream name alongside the short one, and the
+test asserts the two still belong to the same index.
+
+What genuinely cannot be derived, and so is written by hand: which side a port belongs on, the order
+down a side, where the blank rows go between groups, and which ports are active low or are clocks.
+
+### Decisions worth keeping
+
+**The box is measured in characters, never with `FontMetrics`.** Width decides the x coordinate of
+every right-hand port, and a `.circ` file stores wire endpoints as absolute coordinates. A width
+measured from the actual font would put the same circuit's wires in different places on machines
+with different fonts installed. Labels count 6px per character, the caption 8px, rounded up to a
+multiple of ten with a floor of 60.
+
+**The inversion circle means two different things and cannot have one oracle.** On a gate array it
+means inverting relative to the named function -- a NOR carries one although its output is high in
+only one input combination of four -- and on a system chip it means active low. Any single
+automatic rule breaks on one family or the other, which is why the polarity test approaches it from
+three sides instead of one.
+
+**Polarity has three sources, and only the first is automatic.** Upstream's `n` prefix (`nCLR`,
+`nOE1`, and the group-numbered `1nY0`) or the words "active LOW" in the name are detected in
+production code, so the layout table stays silent. Upstream's *trailing* `n` (`Pn`, `Gn`, `Q7n`) is
+deliberately not automatic: the 74182's `Cn` is the datasheet's subscript C(n) and is an active-high
+carry in, so a suffix rule would invert it. Those are renamed explicitly. And 7442/7443/7444's ten
+decoder outputs are called `O0`..`O9` upstream with no polarity information anywhere in the name,
+though the model does pull the selected one low; those are written out by hand.
+
+### Eight chips that a green build could not have caught
+
+The first version of the layout table got the inversion circles wrong on eight chips, and **the
+full suite passed before and after the fix**. 7413, 7418 and 7420 drew their four-input NAND outputs
+without a circle (7421 is an AND and correctly had none, which made the three stand out); 7442,
+7443 and 7444 drew none on any of their ten active-low outputs; 74181 and 74381 displayed upstream's
+`Pn` and `Gn` as literal pin names, neither shortened nor circled. They were found by looking at the
+rendered chips one at a time.
+
+Nothing was wrong with the tests. There were four layers of them and none looked at what was drawn:
+equivalence compared truth tables, layout checked port geometry, the gate-array and datasheet layers
+checked behaviour. A fifth layer, `TtlSymbolPolarityTest`, now holds the circles in place, and each
+of its three checks was verified by restoring the old bug and watching a different one of the three
+catch it.
+
+### The setting: "Show the gates inside new TTL chips"
+
+Upstream's `ShowInternalStructure` attribute draws a chip's gates inside its outline instead of a
+numbered box. It is per-component and defaults off, so anyone who prefers it sets it by hand on
+every chip they place. `pelerTtlInternalStructure` on **Preferences → Peler's Features** makes it
+the default for newly placed ones.
+
+| Setting | Default | Reaches |
+| --- | --- | --- |
+| Show the gates inside new TTL chips | off, as upstream | `AbstractTtlGate.createAttributeSet`, `TtlLibrary` |
+
+**Scoped to the drawing, not to `VccGndPorts`.** The other attribute in the same group adds two
+ports to the chip. A default for it would mean a chip placed today has pins a chip placed yesterday
+does not, and the port indices behind existing wires would shift; `theSupplyPinsAreLeftAlone` holds
+that line.
+
+**The registered factory default stays at upstream's `false`.** `XmlWriter.addAttributeSetContent`
+omits any attribute equal to the factory's default, so raising the default to follow the setting
+would make a chip placed with the box ticked write nothing into the file -- and then open as a plain
+box for anyone whose setting is off, including the same person on another machine. Keeping the
+registered default where upstream has it is what makes those files self-describing.
+Mutation-verified by making `getDefaultAttributeValue` follow the setting and watching the attribute
+vanish from the saved XML.
+
+**It reaches new chips only.** A chip already on the canvas keeps the drawing it was placed with,
+for the same reason annotations keep their own font: the value is in the file.
+
+### A checkbox that appeared to do nothing
+
+Setting the value in `createAttributeSet` passed every unit test and had no effect in the running
+application: tick the box, place a 7420, get a plain DIP package.
+
+`AddTool`'s constructor asks whether its attribute set contains `StdAttr.APPEARANCE`, and asking
+builds the set. Every one of the sixty-one is therefore built and cached before the window is on
+screen, so a preference read only in `createAttributeSet` would first be read on the next launch --
+which from the outside is indistinguishable from a broken checkbox.
+
+`TtlLibrary` now keeps a **weak** set of its own instances -- `Loader` builds a `Builtin` per open
+project, so there are several, and the static listener outlives them all -- and pushes the new value
+into the tools each one is holding. The push is `SwingUtilities.invokeLater`, never `invokeAndWait`:
+the change arrives on `java.util.prefs`' own thread, what it touches is watched by the toolbox, and
+a settings change must not be able to block on the event thread.
+
+### Saving to official `.circ`
+
+Decided 2026-08-22, after the rest of the feature was already working, because until then a
+compatible save wrote `<lib name="F" desc="#TTL Symbols" />` and one `<comp name="Sym…">` per chip
+into a file upstream cannot read -- the same failure the Annotation library had been fixed for, and
+missed here because `XmlWriter`'s compatibility mode names the libraries it lowers one at a time.
+
+**The chips are dropped, not lowered to their DIP delegate.** Lowering is the obvious move and is
+the dangerous one: the two drawings put the same ports in different places, so every wire reaching a
+lowered chip would land on the wrong port or on none, and the circuit would open over there and
+quietly compute something else. Dropping leaves visibly dangling wires, which looks worse and is far
+safer. `PelerCompat.hasSymbolChips` carries that reasoning.
+
+**The user is told first, in their own language.** `compatSaveSymbolMessage` joins
+`compatSaveMessage` in all twelve bundles, and the save dialog now composes one paragraph per kind
+of loss, so a project holding both annotations and symbols is warned about both rather than about
+whichever was checked first. The `never warn me` setting from Feature 10 still applies.
+
+**The library goes too, whether or not the project uses it.** Its entry comes from the new-project
+template, so without this every compatible file this edition wrote would carry a reference upstream
+reports as unavailable -- again exactly what happened to the Annotation library. A symbol tool is
+also `isPelerOnly`, so it cannot be named in a lowered file's mouse mappings or toolbar.
+
+### Testing
+
+Five layers over the symbols, 650 tests, each one covering something no other layer can see:
+
+| Test | Covers | Blind to |
+| --- | --- | --- |
+| `TtlSymbolEquivalenceTest` | symbol and DIP agree index for index, all 61 | which index is which name; anything drawn |
+| `TtlSymbolLayoutTest` | ports complete, unique, on the grid, on the box in every facing | grouping; polarity |
+| `TtlSymbolGateArrayTest` | full truth table per gate on the 17 chips with no pin names | chips that have names |
+| `TtlSymbolDatasheetTest` | hand-written datasheet vectors | breadth |
+| `TtlSymbolPolarityTest` | the inversion circles | -- |
+
+`TtlSymbolPolarityTest` never re-checks a judgement the layout table already made. Anything upstream
+marks active low must carry a circle. Pure gate chips are checked against a truth table written into
+the test, with the circle read from the same field the table is. And for a one-hot decoder the
+asserted level is read out of the chip rather than out of a table -- whichever level appears exactly
+once across the ten outputs is the active one, and the circle must agree with it -- so 7443's
+excess-3 and 7444's excess-3 Gray coding need no encoding table of their own.
+
+`TtlDefaultDrawingTest` covers the setting in five tests, including that an existing chip is left
+alone, that the attribute still reaches the file, that the supply pins are untouched, and that a
+change reaches tools the toolbox is already holding. The last one was mutation-verified by replacing
+the push with a call that does nothing.
+
+`PelerCompatSaveTest` covers the compatible save in six tests: the chips and their library are
+absent from a `.circ`, both are present in a `.pcirc`, upstream's own DIP chips still go through
+untouched, a project holding symbols is reported lossy, a symbol tool is edition-only, and all
+twelve bundles carry the new warning. Four mutations were checked and each was caught by the test
+that should catch it. The last of those reads the twelve `.properties` files rather than asking
+`ResourceBundle`, which falls back to the base bundle for a missing key and would therefore pass for
+a language with no translation at all.
+
+Preference-mutating tests are safe here because the `test` task already redirects
+`java.util.prefs.userRoot` and `systemRoot` into `build/test-prefs/`, added earlier to stop headless
+runs persisting a degraded `hotkeyMenuMask`. Confirmed empirically: the developer's real preference
+store is byte-identical across a full test run.
+
+Driven by hand on the real X display: all sixty-one symbols inspected as rendered, which is how the
+eight polarity bugs were found; and the setting exercised in both directions, placing chips before
+and after each change and confirming that chips already on the canvas kept their drawing.
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the
@@ -1210,6 +1405,18 @@ arguments. Deliberately left until real use shows whether it matters: this is th
   based on jpackage's documented default; confirming it needs a real macOS build and a look at
   `Info.plist`.
 - **The exported project bundle's inner file is still named `.circ`.**
+- **Two questions about the symbol library are still open.** Ports are drawn as grouped single-bit
+  rows rather than as real 4-bit buses -- confirmed by the maintainer on 2026-08-22 and effectively
+  locked in from the first release, since changing the port count invalidates the wires in every
+  file already saved. And HDL export does not support them: `TtlSymbolGate` is constructed without a
+  generator, so `isHDLSupportedComponent` is false and the FPGA flow reports them as unsupported
+  rather than failing. Reusing upstream's `Ttl*HdlGenerator` should be possible, since the port
+  order is unchanged, but `getHDLName` would become `Sym74283` and that has not been tried.
+- **The interactive HTML export cannot draw or simulate any 74xx chip, in either library.**
+  `HtmlExporter.supportedKinds()` is a 38-name allowlist and no TTL chip has ever been on it, so
+  this is not a regression from Feature 12 -- the symbols simply join a family that was already
+  refused by name. Supporting them means writing a JavaScript model per chip, which is why they are
+  not there.
 - **Roughly 372 upstream commits are in this fork but not in v4.1.0.** Only the red-highlight one has
   been reverted. A full rebase onto the release tag was raised with the user and not undertaken, since
   it would drop upstream bug fixes and require re-applying every Peler feature.
