@@ -25,6 +25,7 @@ import com.cburch.logisim.std.memory.MemoryLibrary;
 import com.cburch.logisim.std.plexers.PlexersLibrary;
 import com.cburch.logisim.std.tcl.TclLibrary;
 import com.cburch.logisim.std.ttl.TtlLibrary;
+import com.cburch.logisim.std.ttlsymbol.TtlSymbolLibrary;
 import com.cburch.logisim.std.wiring.WiringLibrary;
 import com.cburch.logisim.tools.Library;
 import com.cburch.logisim.tools.Tool;
@@ -59,6 +60,9 @@ public class Builtin extends Library {
             new MemoryLibrary(),
             new IoLibrary(),
             new TtlLibrary(),
+            // Peler Edition: the same 74xx chips drawn as logic symbols rather than DIP packages.
+            // Its own category rather than an attribute on the chips above; see TtlSymbolLibrary.
+            new TtlSymbolLibrary(),
             new HdlLibrary(),
             new TclLibrary(),
             new BfhLibrary(),

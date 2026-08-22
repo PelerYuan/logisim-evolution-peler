@@ -139,6 +139,41 @@ public abstract class AbstractTtlGate extends InstanceFactory {
     this(name, pins, outputPorts, null, null, ttlPortNames, false, height, generator);
   }
 
+  /**
+   * The datasheet name of each port, indexed exactly as the port array is, or null for a chip that
+   * declares none. Same array {@link #updatePorts} builds the tooltips from.
+   */
+  public String[] getPortNames() {
+    return portNames == null ? null : portNames.clone();
+  }
+
+  /** Total number of pins, supply pins included. */
+  public byte getPinCount() {
+    return pinNumber;
+  }
+
+  /**
+   * Peler Edition Feature 12: a fresh chip starts with the drawing the settings page asks for.
+   *
+   * <p>Done here rather than in the {@code setAttributes} defaults above because those are a fixed
+   * array read once when the factory is built, and this has to follow a setting the user can change
+   * while the application runs. {@link InstanceFactory#createAttributeSet()} is called each time an
+   * attribute set is needed, so the value is current whenever a chip is placed.
+   *
+   * <p>The default left registered above stays upstream's {@code false}, and that is what decides
+   * whether the attribute reaches the saved file: with the setting on, a placed chip differs from
+   * the registered default and so saves {@code ShowInternalStructure} explicitly, which is what
+   * makes such a file look the same on a machine that has the setting off. See
+   * {@link AppPreferences#TTL_DRAW_INTERNAL_STRUCTURE} for what this deliberately does not cover.
+   */
+  @Override
+  public AttributeSet createAttributeSet() {
+    final var attrs = super.createAttributeSet();
+    attrs.setValue(
+        TtlLibrary.DRAW_INTERNAL_STRUCTURE, AppPreferences.TTL_DRAW_INTERNAL_STRUCTURE.getBoolean());
+    return attrs;
+  }
+
   private void computeTextField(Instance instance) {
     final var bds = instance.getBounds();
     final var dir = instance.getAttributeValue(StdAttr.FACING);

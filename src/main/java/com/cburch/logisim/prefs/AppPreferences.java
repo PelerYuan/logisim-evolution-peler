@@ -761,6 +761,26 @@ public class AppPreferences {
               LOSSY_WARN_ONCE));
 
   /**
+   * Whether a TTL chip is drawn showing the gates inside its package instead of as a plain DIP
+   * outline. This is upstream's per-component {@code ShowInternalStructure} attribute; the setting
+   * only supplies the value a newly placed chip starts with.
+   *
+   * <p>Two limits worth knowing, both deliberate. It reaches new components only -- chips already
+   * on a canvas keep whatever they were given, because an attribute default is consulted when an
+   * attribute set is built and never again. And it is offered for the drawing alone, not for
+   * upstream's {@code VccGndPorts} beside it: that attribute adds two ports to the package, so a
+   * settings-dependent default would change how many pins an existing circuit's chips have and
+   * leave its wires attached to nothing.
+   *
+   * <p>Because the stored default here is upstream's own, a chip placed with the setting off saves
+   * no attribute at all, and opening that file with the setting on draws it with its gates showing.
+   * That is a view of the same circuit rather than a different circuit, which is why it is left
+   * alone rather than forced into every file.
+   */
+  public static final PrefMonitor<Boolean> TTL_DRAW_INTERNAL_STRUCTURE =
+      create(new PrefMonitorBoolean("pelerTtlInternalStructure", false));
+
+  /**
    * Whether the embedded MCP server runs, letting an AI client drive this application.
    *
    * <p>Off by default, and deliberately a decision rather than a default. The endpoint accepts any

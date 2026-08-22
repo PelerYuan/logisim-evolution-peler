@@ -61,12 +61,14 @@ class PelerOptions extends OptionsPanel {
   private final PrefOptionList quickRotate;
   private final PrefOptionList lossySave;
   private final PrefBoolean wireAutoSnap;
+  private final PrefBoolean ttlInternalStructure;
   private final PrefBoolean mcpEnabled;
   private final JComboBox<String> annotationFont;
   private final TitledBorder placementBorder;
   private final TitledBorder wiringBorder;
   private final TitledBorder rotateBorder;
   private final TitledBorder annotationBorder;
+  private final TitledBorder ttlBorder;
   private final TitledBorder filesBorder;
   private final TitledBorder mcpBorder;
 
@@ -117,6 +119,9 @@ class PelerOptions extends OptionsPanel {
               new PrefOption(AppPreferences.LOSSY_WARN_NEVER, S.getter("pelerLossyNever")),
             });
     wireAutoSnap = new PrefBoolean(AppPreferences.WIRE_AUTO_SNAP, S.getter("pelerWireAutoSnap"));
+    ttlInternalStructure =
+        new PrefBoolean(
+            AppPreferences.TTL_DRAW_INTERNAL_STRUCTURE, S.getter("pelerTtlInternalStructure"));
     mcpEnabled = new PrefBoolean(AppPreferences.MCP_ENABLED, S.getter("pelerMcpEnabled"));
 
     annotationFont = new JComboBox<>();
@@ -184,6 +189,15 @@ class PelerOptions extends OptionsPanel {
     annotationPanel.add(annotationColorLabel);
     annotationPanel.add(new ColorChooserButton(window, AppPreferences.ANNOTATION_COLOR));
     annotationBorder = section(annotationPanel, "pelerAnnotationSection", gbc);
+
+    // BoxLayout with an explicit left alignment, matching the other two lone checkboxes on this
+    // page; a one-column TableLayout centres its only control and the tick would not line up with
+    // them.
+    final var ttlPanel = new JPanel();
+    ttlPanel.setLayout(new BoxLayout(ttlPanel, BoxLayout.PAGE_AXIS));
+    ttlInternalStructure.setAlignmentX(LEFT_ALIGNMENT);
+    ttlPanel.add(ttlInternalStructure);
+    ttlBorder = section(ttlPanel, "pelerTtlSection", gbc);
 
     final var filesPanel = new JPanel(new TableLayout(2));
     filesPanel.add(lossySave.getJLabel());
@@ -305,6 +319,7 @@ class PelerOptions extends OptionsPanel {
     quickRotate.localeChanged();
     lossySave.localeChanged();
     wireAutoSnap.localeChanged();
+    ttlInternalStructure.localeChanged();
     mcpEnabled.localeChanged();
     snapRadiusLabel.setText(S.get("pelerWireSnapRadius"));
     mcpPortLabel.setText(S.get("pelerMcpPort"));
@@ -317,6 +332,7 @@ class PelerOptions extends OptionsPanel {
     wiringBorder.setTitle(S.get("pelerWiringSection"));
     rotateBorder.setTitle(S.get("pelerRotateSection"));
     annotationBorder.setTitle(S.get("pelerAnnotationSection"));
+    ttlBorder.setTitle(S.get("pelerTtlSection"));
     filesBorder.setTitle(S.get("pelerFilesSection"));
     // The default entry is the only item whose text is translated; rebuilding the whole family
     // list on a locale change would lose the selection for no gain.

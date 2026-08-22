@@ -13,10 +13,16 @@ import static com.cburch.logisim.std.Strings.S;
 
 import com.cburch.logisim.data.Attribute;
 import com.cburch.logisim.data.Attributes;
+import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.tools.FactoryDescription;
 import com.cburch.logisim.tools.Library;
 import com.cburch.logisim.tools.Tool;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.WeakHashMap;
+import javax.swing.SwingUtilities;
 
 public class TtlLibrary extends Library {
   /**
@@ -97,6 +103,57 @@ public class TtlLibrary extends Library {
       Attributes.forBoolean("ShowInternalStructure", S.getter("ShowInternalStructure"));
 
   private List<Tool> tools = null;
+
+  /**
+   * Peler Edition Feature 12: every library instance that might have tools to update.
+   *
+   * <p>Weak, because there is one of these per open project -- {@code Loader} builds its own
+   * {@code Builtin} -- and the listener below outlives them all.
+   */
+  private static final Set<TtlLibrary> INSTANCES =
+      Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
+
+  static {
+    AppPreferences.TTL_DRAW_INTERNAL_STRUCTURE.addPropertyChangeListener(
+        event -> {
+          if (!AppPreferences.TTL_DRAW_INTERNAL_STRUCTURE.isSource(event)) return;
+          final List<TtlLibrary> live;
+          synchronized (INSTANCES) {
+            live = new ArrayList<>(INSTANCES);
+          }
+          // The preference change arrives on java.util.prefs' own thread, and what this touches is
+          // watched by the toolbox. invokeLater, never invokeAndWait: nothing here is waiting on
+          // the result, and a settings change must not be able to block on the event thread.
+          SwingUtilities.invokeLater(() -> {
+            for (final var library : live) library.applyDefaultDrawing();
+          });
+        });
+  }
+
+  public TtlLibrary() {
+    INSTANCES.add(this);
+  }
+
+  /**
+   * Pushes the settings-page default into the tools the toolbox is already holding.
+   *
+   * <p>{@link AbstractTtlGate#createAttributeSet()} is enough at startup but not afterwards:
+   * {@code AddTool}'s constructor asks whether its attribute set contains {@code StdAttr.APPEARANCE}
+   * and that question builds the set, so all sixty-one are fixed before the user has seen the
+   * window. Without this the setting would appear to do nothing until the next launch, which is
+   * indistinguishable from a broken checkbox.
+   */
+  private void applyDefaultDrawing() {
+    final var current = tools;
+    if (current == null) return; // Not built yet, so createAttributeSet will supply the value.
+    final var wanted = AppPreferences.TTL_DRAW_INTERNAL_STRUCTURE.getBoolean();
+    for (final var tool : current) {
+      final var attrs = tool.getAttributeSet();
+      if (attrs != null && attrs.containsAttribute(DRAW_INTERNAL_STRUCTURE)) {
+        attrs.setValue(DRAW_INTERNAL_STRUCTURE, wanted);
+      }
+    }
+  }
 
   @Override
   public List<? extends Tool> getTools() {
