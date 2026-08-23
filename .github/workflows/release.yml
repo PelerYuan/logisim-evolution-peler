@@ -234,12 +234,14 @@ jobs:
       - name: "Checkout sources"
         uses: actions/checkout@v7
 
-      # Same as nightly.yml's build_linux job -- a plain local Snap build (no store publish, that
-      # step is commented out upstream too since it needs SNAPCRAFT_STORE_CREDENTIALS we don't have).
-      - name: "Build Snap package"
-        uses: snapcore/action-build@v1
-        id: snapcraft
-
+      # Peler Edition: no Snap step here, deliberately. `snap/snapcraft.yaml` builds from
+      # https://github.com/MarcinOrlowski/logisim-evolution.git at branch `snap-packages-test-1` --
+      # an upstream maintainer's personal fork, not this repository -- so the snap it produced never
+      # contained this edition's code. Nothing was ever published from it either: no release from
+      # v1.1.0 onward carries a .snap. That repository started returning 404 on 2026-08-23 and took
+      # the whole Linux job down with it, losing the DEB and RPM that this job exists to build,
+      # because the step ran ahead of them. The file is upstream's and is left untouched; if this
+      # fork ever wants a snap, it needs a source of its own first.
       - name: Set up JDK ${{ env.JDK_VERSION }} ${{ env.JDK_DISTRO }}
         uses: actions/setup-java@v5
         with:
