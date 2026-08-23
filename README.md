@@ -4,12 +4,22 @@
 
 # Logisim-evolution — Peler's Edition #
 
+[![Latest release](https://img.shields.io/github/v/release/PelerYuan/logisim-evolution-peler?label=release)](https://github.com/PelerYuan/logisim-evolution-peler/releases/latest)
+[![Based on Logisim-evolution](https://img.shields.io/badge/based%20on-Logisim--evolution%20v4.1.0-informational)](https://github.com/logisim-evolution/logisim-evolution/releases/tag/v4.1.0)
+[![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0-blue)](https://www.gnu.org/licenses/gpl-3.0.en.html)
+[![Java 21](https://img.shields.io/badge/Java-21-orange)](https://adoptium.net/temurin/releases/)
+
+A personal fork of the digital logic designer and simulator
+[Logisim-evolution](https://github.com/logisim-evolution/logisim-evolution), carrying a handful of
+workflow conveniences for one person's coursework. Everything else behaves as the official release
+does.
+
 > ## This is an unofficial personal fork. ##
 >
 > **Essentially all of this software is the work of the
 > [Logisim-evolution](https://github.com/logisim-evolution/logisim-evolution) developers and its
 > contributors**, built on decades of effort by many people. This fork adds a handful of small
-> workflow conveniences for one person's coursework, and nothing more.
+> workflow conveniences, and nothing more.
 >
 > It is **not affiliated with, endorsed by, or supported by** the Logisim-evolution project.
 >
@@ -21,227 +31,186 @@
 ---
 
 * **Table of contents**
-  * [What this fork changes](#what-this-fork-changes)
+  * [Install](#install)
+  * [What this fork adds](#what-this-fork-adds)
+    * [Drawing a circuit faster](#drawing-a-circuit-faster)
+    * [Making a circuit readable](#making-a-circuit-readable)
+    * [Handing a circuit to someone else](#handing-a-circuit-to-someone-else)
+    * [One page for all of it](#one-page-for-all-of-it)
+    * [AI clients over MCP](#ai-clients-over-mcp-experimental)
   * [Relationship to the upstream project](#relationship-to-the-upstream-project)
-  * [Downloads](#downloads)
-  * [Requirements](#requirements)
   * [Reporting problems](#reporting-problems)
+  * [Building from source](#building-from-source)
   * [License and credits](#license-and-credits)
 
 ---
 
-## What this fork changes ##
+## Install ##
 
-Based on the official Logisim-evolution **v4.1.0** release. Everything else behaves as upstream
-does; the additions below are the entire difference.
+Installable packages are on the
+[releases page](https://github.com/PelerYuan/logisim-evolution-peler/releases/latest). Each bundles
+its own [Java 21](https://adoptium.net/temurin/releases/) runtime, so Java does not need to be
+installed separately.
 
-**Continuous placement**
-Double-click a component — in the toolbox or the toolbar — to keep placing it instead of re-picking
-it each time. <kbd>Esc</kbd>, <kbd>Enter</kbd> or a right-click stops.
+| Platform | File |
+| --- | --- |
+| Windows (installer) | `logisim-evolution-peler-<version>-amd64.msi` |
+| Windows (portable) | `logisim-evolution-peler-<version>-windows-amd64.zip` |
+| macOS (Apple silicon) | `logisim-evolution-peler-<version>-aarch64.dmg` |
+| macOS (Intel) | `logisim-evolution-peler-<version>-x86_64.dmg` |
+| Debian/Ubuntu | `logisim-evolution-peler_<version>_amd64.deb` · `_arm64.deb` |
+| Fedora/RHEL/SUSE | `logisim-evolution-peler-<version>-1.x86_64.rpm` · `-1.aarch64.rpm` |
+
+Releases marked *pre-release* are rolling development builds kept only for testing; use the latest
+normal release.
+
+**macOS**: these packages are not signed with an Apple certificate. On first launch, right-click
+(or <kbd>Ctrl</kbd>+click) the application icon in Finder and choose **Open**, then confirm. See
+[Safely open apps on your Mac](https://support.apple.com/en-us/HT202491).
+
+**Installing alongside the official release** is the intended arrangement. This edition is packaged
+as `logisim-evolution-peler`, its icon carries a red **P**, it saves `.pcirc` rather than `.circ`,
+and its settings, file associations and FPGA workspace are its own — so it sits beside an official
+install rather than taking it over. On first launch it offers to copy your existing
+Logisim-evolution settings across.
+
+---
+
+## What this fork adds ##
+
+Based on the official Logisim-evolution **v4.1.0** release. No upstream functionality is removed or
+altered; the list below is the entire difference.
+
+| | |
+| --- | --- |
+| **Drawing** | continuous placement · right-click to rotate · wire auto-snap · <kbd>Ctrl</kbd>+<kbd>F</kbd> component finder |
+| **Reading** | 74xx chips as logic symbols · switch every chip's drawing at once · schematic annotations |
+| **Sharing** | its own `.pcirc` format · interactive HTML export |
+| **Other** | one settings page for all of it · an MCP server for AI clients, off by default |
+
+### Drawing a circuit faster ###
+
+**Continuous placement.** Double-click a component — in the toolbox or the toolbar — to keep placing
+it instead of re-picking it each time. <kbd>Esc</kbd>, <kbd>Enter</kbd> or a right-click stops.
 
 ![Placing several gates in a row after one double-click](docs/img/peler-edition/ContinuousPlacement.gif)
 
-**Quick Rotate**
-Right-click a component to rotate it 90° clockwise. The original right-click menu moved to
-<kbd>Ctrl</kbd>+left-click.
+**Quick Rotate.** Right-click a component to rotate it 90° clockwise. The original right-click menu
+moves to <kbd>Ctrl</kbd>+left-click.
 
 ![Right-clicking a gate to rotate it in place](docs/img/peler-edition/QuickRotation.gif)
 
-**Wire auto-snap**
-While drawing a wire, endpoints snap to a nearby component pin, with a green ring marking the pin it
-will attach to. How near counts, and whether it happens at all, is under **Preferences → Peler's
-Features**.
+**Wire auto-snap.** While drawing a wire, endpoints snap to a nearby component pin, with a green
+ring marking the pin they will attach to.
 
 ![A wire end snapping onto a highlighted component pin](docs/img/peler-edition/AutoSwap.gif)
 
-**Schematic annotations**
-A new **Annotate** category for attaching free-text notes to a component, or to a wire endpoint
-where it meets a component. Notes take multiple lines and follow whatever they are attached to when
-it is moved, rotated, or deleted. Double-click an annotate tool to keep annotating.
-
-![Adding a note above a gate with the annotate tool](docs/img/peler-edition/Annotation.gif)
-
-**Component finder**
-<kbd>Ctrl</kbd>+<kbd>F</kbd> opens a floating search box. Type part of a name — in the interface
-language or in English, so `and` finds 与门 in a Chinese interface — and pick from the matches,
-shown with their real component icons. <kbd>Enter</kbd> selects it and keeps placing it,
-<kbd>Shift</kbd>+<kbd>Enter</kbd> places just one — which way round is a setting. It closes on
-<kbd>Esc</kbd> or as soon as it loses focus. The shortcut is listed under **Preferences → Hotkeys**
-and can be rebound.
+**Component finder.** <kbd>Ctrl</kbd>+<kbd>F</kbd> opens a floating search box. Type part of a name,
+in the interface language or in English — so `and` finds 与门 in a Chinese interface — and pick from
+the matches, shown with their real component icons. <kbd>Enter</kbd> places and keeps placing,
+<kbd>Shift</kbd>+<kbd>Enter</kbd> places one; which way round is a setting.
 
 ![Searching for a gate by name and placing it straight from the results](docs/img/peler-edition/ComponentFinder.gif)
 
-**Its own file format**
-This fork saves `.pcirc`, and `.circ` is left to official Logisim-evolution. A `.pcirc` file keeps
-everything; **Save As** also offers `.circ` for handing work to someone running the official
-release, which writes what upstream can read — annotations become plain text labels there, and the
-note's link to its component is not preserved; logic symbols are left out altogether, since
-official Logisim-evolution has no such component to put them in. You are told which of the two you
-are about to lose before the file is written. Opening works either way round: this fork reads an
-official `.circ` exactly as upstream does.
+### Making a circuit readable ###
 
-The reason for two formats is that annotations are this fork's own idea. Official Logisim-evolution
-rebuilds a file from its own model when it saves, so anything it cannot represent is gone the first
-time it saves — silently. A separate extension means that can only happen to a copy you exported on
-purpose, never to the file you work in.
+**Components as logic symbols.** A **TTL Symbols** category holding the same sixty-one 74xx chips
+upstream ships, drawn the way a datasheet's logic diagram draws them — a rectangle with the inputs
+down the left and the outputs down the right, grouped by function, active-low pins carrying an
+inversion circle — rather than as a numbered DIP package with its pins in pin order.
 
-The application is packaged as `logisim-evolution-peler`, its icon carries a red **P**, and its
-installer registers `.pcirc` and its own MIME type — so it sits alongside an official
-Logisim-evolution install rather than taking over its files. The two also keep their **settings**
-apart: language, window layout, recent files, keyboard shortcuts and the rest live in this
-edition's own store, not the one upstream uses. On first launch it offers to copy the existing
-settings across, and **File → Import Settings from Logisim-evolution…** does the same later. The
-FPGA workspace is separate for the same reason — each edition regenerates and clears its own
-project directories, so this one defaults to `~/logisim_evolution_peler_workspace`; **FPGA →
-Options** still points it anywhere you like.
+![The TTL Symbols category in the toolbox, with a 7408 placed and wired as a logic symbol](docs/img/peler-edition/LogicSymbols.png)
 
-**Interactive HTML export (experimental)**
-**File → Export as interactive HTML…** writes the current circuit as a single HTML file that still
-simulates. Open it in any browser, with no plugin and nothing to install: click an input pin to
-change it, press a button, flip a DIP switch, and values propagate through the circuit exactly as
-they do here. Clock circuits get tick, run and reset controls. Nothing can be moved, rewired or
-edited, which is the point — it is a circuit to hand to someone, not a copy of the editor.
+Both drawings are in the toolbox and the DIP chips are untouched. A symbol simulates through the
+same code the chip it redraws does, with the same pins in the same order, so the two are one chip in
+two pictures rather than two models to keep in step. A **BFH Symbols** category does the same for
+the two `BFH-Praktika` converters, which upstream draws in the shape of the seven-segment display
+they drive rather than in the shape of what they compute.
 
-![Exporting a circuit and then driving the exported page in a browser](docs/img/peler-edition/HtmlExport.gif)
-
-The page is a workspace rather than a document: the same white sheet and dot grid as the canvas
-here, filling the window, with one small control strip floating in the corner and nothing else. Drag to pan, <kbd>Ctrl</kbd>+scroll
-to zoom about the pointer, scroll to move up and down and <kbd>Shift</kbd>+scroll to move sideways,
-which is what the canvas in this application does with the same gestures. Pinch works on a
-trackpad or a touchscreen. It opens with the circuit fitted, and a zoom control sits in the corner
-the editor's own does.
-
-The picture is Logisim's own. Every component is drawn by the same paint code the editor uses, so
-gates, displays and buses look the same in the page as on screen, down to the colours you have set.
-Subcircuits are flattened into the page, so a design built out of your own blocks exports as one
-working whole.
-
-Two limits worth knowing. The page models propagation as a settling process rather than with per
-component delays, so a circuit that depends on gate delay — a pulse made from a chain of inverters,
-say — will not behave as it does here. And the export refuses, naming what it found, rather than
-writing a page for a circuit containing a component it cannot simulate. What it does support is a
-fixed list — pins, gates, wiring, flip-flops, registers and counters, the displays and input
-components, multiplexers and the arithmetic blocks — and everything outside it is refused by name,
-including RAM, ROM, shift registers, the divider, and the 74xx chips in either drawing.
-
-**AI clients over MCP (experimental)**
-An embedded [Model Context Protocol](https://modelcontextprotocol.io) server lets an AI client —
-Claude, Codex — drive the running application: create circuits, place components, draw wires, run
-the simulator, export. Every change goes through the same undo stack your own edits do, so it is
-one project being worked on rather than a file being rewritten behind your back.
-
-**Off unless you turn it on**, under **Preferences → Peler's Features**. When you do, it listens on
-the loopback interface only and requires a token that is generated for you. Nothing on the machine
-can reach it without that token, and file access stays inside the open project's directory unless
-you name other locations with `-Dlogisim.mcp.allowedPaths`.
-
-The **MCP** menu, next to Help, holds the two ways to connect a client. While the server is off it
-still opens, and says what MCP is and what turning it on would allow, with a button that takes you
-to the setting:
-
-* **Copy MCP Configuration** puts the whole client configuration, token included, on the clipboard,
-  for a client that takes an HTTP endpoint (Claude Code, Codex, VS Code).
-* **Export MCP Bundle** writes a `.mcpb` file. Claude Desktop installs one by double-click, and
-  takes no HTTP endpoint at all — so the bundle carries a small bridge script that relays its
-  standard input to this window. It needs Node.js available to the client, and it is written for
-  the port and token in force when you export it: export a fresh one if either changes.
-
-**Components as logic symbols**
-A **TTL Symbols** category holding the same sixty-one 74xx chips, drawn the way a datasheet's logic
-diagram draws them — a rectangle with the inputs down the left and the outputs down the right,
-grouped by function, active-low pins carrying an inversion circle — rather than as a numbered DIP
-package with its pins in pin order. Both are in the toolbox; the DIP chips are untouched and behave
-exactly as before. The symbols simulate through the same code the DIP chips do, so the two are the
-same chip in two pictures, not two models to keep in step.
-
-![The same 74xx chip drawn as a DIP package and as a logic symbol, side by side](docs/img/peler-edition/LogicSymbols.png)
-
-A **BFH Symbols** category does the same for the two BFH-Praktika converters. Upstream draws the BCD
-to seven segment decoder with its outputs where the segments sit on a display, and the binary to BCD
-converter as a wide box with the digits along its top edge; both are pictures of the thing being
-driven rather than of the function. Here the input is on the left and the outputs run down the right
-in order — a to g for the decoder, and the powers of ten most significant first for the converter,
-which redraws itself as the input width changes.
-
-For the DIP chips themselves, **Preferences → Peler's Features** can make **show the gates inside
-the chip** the default for newly placed ones, instead of setting it by hand on each. Chips already
-in a circuit keep the drawing they were placed with — to change those, **Project → TTL Chip
-Drawing** has one command for each direction, and either one covers the whole project, subcircuits
-included, in a single step you can undo. Nothing moves when the drawing changes, so it is safe on a
-fully wired sheet.
+**Switching every chip at once.** The 74xx DIP chips can show the gates inside the package instead
+of the numbered pins. **Preferences → Peler's Features** sets which drawing a newly placed chip
+starts with; **Project → TTL Chip Drawing** changes the ones already placed, covering the whole
+project including subcircuits in a single step you can undo. Nothing moves when the drawing changes,
+so it is safe on a fully wired sheet.
 
 ![Switching every chip in a project between the gate drawing and the package drawing from the Project menu](docs/img/peler-edition/TtlChipDrawing.gif)
 
-**Its own settings page**
-**Preferences → Peler's Features** holds the settings for everything above, in one place rather
-than scattered through upstream's panels — so what this fork lets you change is also the list of
-what it changed:
+**Schematic annotations.** An **Annotate** category for attaching free-text notes to a component, or
+to a wire endpoint where it meets a component. Notes take multiple lines and follow whatever they
+are attached to when it is moved, rotated or deleted.
 
-* **Picking a component** — click to place one and double-click to keep placing (the default),
-  click to keep placing straight away, or never let a double-click start continuous placement.
-* **The component finder** — whether <kbd>Enter</kbd> keeps placing or places one.
-  <kbd>Shift</kbd>+<kbd>Enter</kbd> always does the other.
-* **Wire auto-snap** — on or off, and how near a pin an endpoint has to come. The distance is in
-  circuit units, so ten is one grid square at every zoom level.
-* **Right-click** — rotate clockwise (the default), rotate anticlockwise, or open the component
-  menu as official Logisim-evolution does. That last one puts the right mouse button back exactly
-  where someone coming from the official release expects it.
-* **New annotations** — the font, size and colour a new note starts with. Existing notes keep
-  theirs; each one saves its own.
-* **TTL chips** — whether a newly placed 74xx chip shows the gates inside it or the numbered
-  package. Chips already in a circuit keep what they were placed with; **Project → TTL Chip
-  Drawing** changes those.
-* **Saving as `.circ`** — how often you are warned that the compatible format drops annotations:
-  every time, once per file each session (the default), or never.
-* **AI clients (MCP server)** — whether it runs at all (off by default), and which port.
+![Adding a note above a gate with the annotate tool](docs/img/peler-edition/Annotation.gif)
 
-The in-application **Help → About** window is left exactly as upstream ships it, crediting
-upstream; this fork's own changes are described under **Help → About Peler's Edition**.
+### Handing a circuit to someone else ###
+
+**Its own file format.** This fork saves `.pcirc` and leaves `.circ` to official Logisim-evolution.
+A `.pcirc` file keeps everything; **Save As** also offers `.circ` for handing work to someone running
+the official release, and tells you what that costs before writing — annotations become plain text
+labels and lose their link to a component, and logic symbols are left out altogether, since upstream
+has no such component to put them in. Opening works either way round: this fork reads an official
+`.circ` exactly as upstream does.
+
+The reason for two formats: official Logisim-evolution rebuilds a file from its own model when it
+saves, so anything it cannot represent is gone the first time it saves, silently. A separate
+extension means that can only happen to a copy you exported on purpose, never to the file you work
+in.
+
+**Interactive HTML export.** **File → Export as interactive HTML…** writes the current circuit as a
+single HTML file that still simulates. Open it in any browser, with no plugin and nothing to
+install: click an input pin, press a button, flip a DIP switch, and values propagate exactly as they
+do here. Clock circuits get tick, run and reset controls. Nothing can be moved, rewired or edited,
+which is the point — it is a circuit to hand to someone, not a copy of the editor.
+
+![Exporting a circuit and then driving the exported page in a browser](docs/img/peler-edition/HtmlExport.gif)
+
+Every component is drawn by the same paint code the editor uses, so the page looks like the canvas
+does, down to the colours you have set, and subcircuits are flattened so a design built from your
+own blocks exports as one working whole. Two limits: the page models propagation as a settling
+process rather than with per-component delays, so a circuit that depends on gate delay will not
+behave as it does here; and rather than write a broken page, the export refuses — naming what it
+found — for a circuit holding a component it cannot simulate, which includes RAM, ROM, shift
+registers, the divider and the 74xx chips in either drawing.
+
+### One page for all of it ###
+
+**Preferences → Peler's Features** collects the settings for everything above in one place, rather
+than scattering them through upstream's panels — so what this fork lets you change is also the list
+of what it changed. In every case, one of the choices is *behave the way official Logisim-evolution
+does*.
+
+![The Peler's Features preferences page](docs/img/peler-edition/preference.png)
+
+The in-application **Help → About** window is left exactly as upstream ships it, crediting upstream;
+this fork's own changes are described under **Help → About Peler's Edition**.
+
+### AI clients over MCP (experimental) ###
+
+An embedded [Model Context Protocol](https://modelcontextprotocol.io) server lets an AI client —
+Claude, Codex — drive the running application: create circuits, place components, draw wires, run the
+simulator, export. Every change goes through the same undo stack your own edits do, so it is one
+project being worked on rather than a file being rewritten behind your back.
+
+**It is off unless you turn it on.** When you do, it listens on the loopback interface only and
+requires a token generated for you; file access stays inside the open project's directory unless you
+name other locations with `-Dlogisim.mcp.allowedPaths`.
+
+The **MCP** menu holds the two ways to connect a client: **Copy MCP Configuration** for a client that
+takes an HTTP endpoint (Claude Code, Codex, VS Code), and **Export MCP Bundle** for Claude Desktop,
+which installs a `.mcpb` by double-click and needs Node.js available to relay its standard input to
+this window. A bundle is written for the port and token in force when you export it — export a fresh
+one if either changes.
+
+Treat this as experimental: it works and it is tested, but the set of operations it offers is still
+being redesigned.
 
 ---
 
 ## Relationship to the upstream project ##
 
-* This fork tracks official Logisim-evolution **releases**, not upstream's development branch, so
-  it does not ship unreleased upstream work.
-* No upstream functionality is removed or altered beyond the additions listed above.
-* Upstream's copyright notices, credits, and attribution are left intact.
-* Bug reports for **this build** belong in
-  [this fork's issue tracker](https://github.com/PelerYuan/logisim-evolution-peler/issues).
-  **Never report them to the upstream project** — they did not build this and cannot support it.
-  If you can reproduce a problem in the official Logisim-evolution release, report it upstream instead,
-  where it will actually get fixed for everyone.
-
----
-
-## Downloads ##
-
-Installable packages are on the
-[releases page](https://github.com/PelerYuan/logisim-evolution-peler/releases). Each bundles its
-own Java runtime, so Java does not need to be installed separately:
-
-* `logisim-evolution-peler-<version>-amd64.msi` — Windows installer (Intel/AMD)
-* `logisim-evolution-peler-<version>-windows-amd64.zip` — Windows, no installer
-* `logisim-evolution-peler-<version>-x86_64.dmg` — macOS (Intel)
-* `logisim-evolution-peler-<version>-aarch64.dmg` — macOS (Apple silicon)
-* `logisim-evolution-peler_<version>_amd64.deb` — Debian/Ubuntu (x86-64)
-* `logisim-evolution-peler_<version>_arm64.deb` — Debian/Ubuntu (ARM64)
-* `logisim-evolution-peler-<version>-1.x86_64.rpm` — Fedora/RHEL/SUSE (x86-64)
-* `logisim-evolution-peler-<version>-1.aarch64.rpm` — Fedora/RHEL/SUSE (ARM64)
-
-Releases marked *pre-release* are development builds kept only for history; use the latest normal
-release.
-
-**Note for macOS users**: these packages are not signed with an Apple certificate. On first launch,
-right-click (or <kbd>Ctrl</kbd>+click) the application icon in Finder and choose **Open**, then
-confirm. See [Safely open apps on your Mac](https://support.apple.com/en-us/HT202491).
-
----
-
-## Requirements ##
-
-A Java application, so it runs anywhere with a Java runtime. The packages above bundle
-[Java 21](https://adoptium.net/temurin/releases/); building from source requires it.
+* This fork tracks official Logisim-evolution **releases**, not upstream's development branch, so it
+  does not ship unreleased upstream work.
+* No upstream functionality is removed or altered beyond the additions above.
+* Upstream's copyright notices, credits and attribution are left intact.
 
 ---
 
@@ -255,6 +224,25 @@ Please check first whether the problem also happens in the
   everyone.
 * **Only happens here** → it is this fork's fault; report it in
   [this fork's issue tracker](https://github.com/PelerYuan/logisim-evolution-peler/issues).
+
+**Never report a problem with this build to the upstream project** — they did not build it and
+cannot support it.
+
+---
+
+## Building from source ##
+
+Requires [JDK 21](https://adoptium.net/temurin/releases/). The Gradle wrapper is included:
+
+```bash
+./gradlew shadowJar
+```
+
+The runnable jar lands in `build/libs/`. `./gradlew check` runs the tests and the style checks;
+`./gradlew createAll` builds the packages for the platform you are on. See
+[docs/developers.md](docs/developers.md) for the full developer's corner, and
+[docs/peler-edition/ROADMAP.md](docs/peler-edition/ROADMAP.md) for the design notes and reasoning
+behind each feature above.
 
 ---
 
