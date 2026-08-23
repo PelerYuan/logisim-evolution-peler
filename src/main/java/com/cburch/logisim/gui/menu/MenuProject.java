@@ -14,10 +14,15 @@ import static com.cburch.logisim.gui.Strings.S;
 import com.cburch.logisim.gui.find.FindToolDialog;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.prefs.PrefMonitorKeyStroke;
+import com.cburch.logisim.proj.Project;
+import com.cburch.logisim.proj.ProjectWideAttribute;
+import com.cburch.logisim.std.ttl.TtlLibrary;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
+import javax.swing.event.MenuEvent;
+import javax.swing.event.MenuListener;
 
 class MenuProject extends Menu {
   private static final long serialVersionUID = 1L;
@@ -53,6 +58,15 @@ class MenuProject extends Menu {
    * one handler for this one.
    */
   private final JMenuItem findTool = new JMenuItem();
+  /**
+   * Peler Edition Feature 14. Two commands rather than one checkbox: the chips in a project can be
+   * drawn either way at the same time, so there is no single current state for a checkbox to show
+   * and no honest answer to what a click on a half-ticked box should mean. Plain JMenuItems with
+   * their own listener, for the same reason as `findTool` above.
+   */
+  private final JMenu ttlDrawing = new JMenu();
+  private final JMenuItem ttlShowGates = new JMenuItem();
+  private final JMenuItem ttlShowPackage = new JMenuItem();
 
   MenuProject(LogisimMenuBar menubar) {
     this.menubar = menubar;
@@ -84,6 +98,10 @@ class MenuProject extends Menu {
     findTool.addActionListener(myListener);
     findTool.setAccelerator(
         ((PrefMonitorKeyStroke) AppPreferences.HOTKEY_FIND_TOOL).getWithMask(0));
+    ttlShowGates.addActionListener(myListener);
+    ttlShowPackage.addActionListener(myListener);
+    ttlDrawing.add(ttlShowGates);
+    ttlDrawing.add(ttlShowPackage);
 
     loadLibrary.add(loadBuiltin);
     loadLibrary.add(loadLogisim);
@@ -108,6 +126,7 @@ class MenuProject extends Menu {
     addSeparator();
     add(layout);
     add(appearance);
+    add(ttlDrawing);
     addSeparator();
     add(analyze);
     add(stats);
@@ -122,7 +141,63 @@ class MenuProject extends Menu {
     unload.setEnabled(known);
     options.setEnabled(known);
     findTool.setEnabled(known);
+    // Whether the project holds any TTL chip is only true until the next edit, so the answer is
+    // taken when the menu opens rather than kept up to date. That keeps this off the edit path,
+    // where a per-component sweep on every change would be paid for constantly and read never.
+    addMenuListener(
+        new MenuListener() {
+          @Override
+          public void menuSelected(MenuEvent event) {
+            computeTtlDrawingEnabled();
+          }
+
+          @Override
+          public void menuDeselected(MenuEvent event) {
+            // Nothing to do: the next open recomputes it.
+          }
+
+          @Override
+          public void menuCanceled(MenuEvent event) {
+            // Nothing to do: the next open recomputes it.
+          }
+        });
+    computeTtlDrawingEnabled();
     computeEnabled();
+  }
+
+  /**
+   * Peler Edition Feature 14. Greys out the submenu when the project holds no chip either command
+   * could touch, so an empty sweep is visible before the click rather than after it.
+   */
+  private void computeTtlDrawingEnabled() {
+    final var proj = menubar.getSaveProject();
+    ttlDrawing.setEnabled(
+        proj != null
+            && ProjectWideAttribute.isCarriedByAnyComponent(
+                proj.getLogisimFile(), TtlLibrary.DRAW_INTERNAL_STRUCTURE));
+  }
+
+  /**
+   * Peler Edition Feature 14. Sets the drawing of every TTL chip in the project -- every circuit,
+   * subcircuits included -- in one undoable step.
+   *
+   * <p>Safe to do in bulk because {@code AbstractTtlGate} reads this attribute only when painting:
+   * neither {@code getOffsetBounds} nor {@code instanceAttributeChanged} consults it, so no chip
+   * changes size and no port moves, and there is no way for the sweep to leave a wire dangling.
+   *
+   * <p>The settings page has the matching switch for chips that do not exist yet. Between them the
+   * split is: the preference decides how the next chip is drawn, this decides how the ones already
+   * placed are drawn.
+   */
+  private void setTtlDrawing(Project proj, boolean showGates) {
+    final var action =
+        ProjectWideAttribute.setEverywhere(
+            proj.getLogisimFile(),
+            TtlLibrary.DRAW_INTERNAL_STRUCTURE,
+            showGates,
+            S.getter(showGates ? "projectTtlShowGatesItem" : "projectTtlShowPackageItem"));
+    // Null when every chip is drawn that way already; doAction ignores it, but say so explicitly.
+    if (action != null) proj.doAction(action);
   }
 
   public void hotkeyUpdate() {
@@ -175,6 +250,9 @@ class MenuProject extends Menu {
     stats.setText(S.get("projectGetCircuitStatisticsItem"));
     options.setText(S.get("projectOptionsItem"));
     findTool.setText(S.get("projectFindToolItem"));
+    ttlDrawing.setText(S.get("projectTtlDrawingMenu"));
+    ttlShowGates.setText(S.get("projectTtlShowGatesItem"));
+    ttlShowPackage.setText(S.get("projectTtlShowPackageItem"));
   }
 
   private class MyListener implements ActionListener {
@@ -197,6 +275,10 @@ class MenuProject extends Menu {
         proj.getOptionsFrame().setVisible(true);
       } else if (src == findTool) {
         FindToolDialog.open(proj.getFrame(), proj);
+      } else if (src == ttlShowGates) {
+        setTtlDrawing(proj, true);
+      } else if (src == ttlShowPackage) {
+        setTtlDrawing(proj, false);
       }
     }
   }

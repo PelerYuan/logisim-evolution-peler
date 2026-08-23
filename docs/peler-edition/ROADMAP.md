@@ -1508,6 +1508,105 @@ guard back to one class, and transposing two segment labels.
 Driven by hand on the real X display: both symbols placed beside the components they redraw, the
 converter at four, nine and thirteen bits, and both turned to check the rotated drawing.
 
+## Feature 14 — Flipping every TTL chip's drawing at once (2026-08-23)
+
+Two commands under **Project -> TTL Chip Drawing**: *Show the Gates in Every Chip* and *Draw Every
+Chip as a Package*. Each sets `ShowInternalStructure` on every chip in the project -- every circuit,
+subcircuits included -- as one undo entry.
+
+### What the properties panel could not do
+
+Selecting several chips and editing the attribute already worked, and already made one undoable
+action; that was checked before anything was written. Two things stopped it from being the answer:
+
+- `SelectionAttributes.computeAttributes` intersects. An attribute is offered only when *every*
+  selected non-wire component has it, so the moment a plain gate is in the selection the drawing
+  attribute disappears from the panel. On a real sheet, Ctrl+A offers nothing.
+- A selection lives in one circuit. A project whose chips are spread over a top level and four
+  subcircuits needs the user to visit each one and remember which they have done.
+
+So the gap was real, and it was about scope rather than about the edit.
+
+### Decisions
+
+**Whole project, not the current circuit.** The alternative -- sweep what is on screen -- was
+rejected because the state it leaves is worse than the one it fixes: half the chips one way and half
+the other, with no way to see it without opening every circuit.
+
+**Two commands, not one checkbox.** The chips in a project can be drawn either way at the same time,
+so there is no single current state for a checkbox to show, and no honest answer to what a click on a
+half-ticked box should do.
+
+**Components are picked by attribute, not by class.** `ProjectWideAttribute` sweeps for components
+whose attribute set contains the attribute. A sweep written against `AbstractTtlGate` would quietly
+skip any future chip that did not inherit from it; this reaches exactly the components whose
+properties panel would have offered the same edit by hand, which is the promise the menu item makes.
+It also means the symbol chips are untouched without a special case -- `SymbolGate` does not declare
+the attribute, because a symbol has no package drawing to switch to.
+
+**One `SetAttributeAction` per circuit, joined into one entry.** `SetAttributeAction` works through
+a `CircuitMutation` and a mutation belongs to a single circuit, so the sweep cannot be one action.
+`Action.append` turns the per-circuit actions into a `JoinedAction`, which runs them forward to redo
+and backward to undo and reports the first one's name -- so the undo entry reads *Undo Show the Gates
+in Every Chip*, not the name of one circuit's share.
+
+**A sweep that would change nothing returns null.** `Project.doAction` ignores null, so repeating a
+command does not park a no-op entry in the history for the user to step back over.
+
+**No hotkey.** Neither command is frequent enough to earn one, and every free combination is worth
+more to something the user reaches for repeatedly.
+
+**Greyed out when the project holds no such chip,** recomputed when the menu opens rather than kept
+up to date, so nothing is paid on the edit path for an answer that is read once in a while.
+
+### Why a bulk flip cannot break a wire
+
+`AbstractTtlGate.getOffsetBounds` does not read `ShowInternalStructure`, and `instanceAttributeChanged`
+reacts only to `StdAttr.FACING` and `TtlLibrary.VCC_GND`. The attribute is consulted at paint time
+and nowhere else, so no chip changes size and no pin moves, whatever the sweep does. That is what
+makes it safe to run over a wired project of any size, and `geometryDoesNotDependOnTheDrawing` holds
+it there rather than leaving it as a reading of the code.
+
+`TtlLibrary.DRAW_INTERNAL_STRUCTURE` was raised from package-private to public so `gui/menu/` can
+name it. Nothing outside `std/ttl/` writes it directly -- the menu goes through a
+`SetAttributeAction` like everything else, which is what keeps it undoable.
+
+### Testing
+
+`ProjectWideAttributeTest`, 7 tests, over a fixture holding a chip in the main circuit, a second one
+down in a subcircuit, a plain gate and a subcircuit instance:
+
+| Test | Covers |
+| --- | --- |
+| `chipsInSubcircuitsAreReached` | the scope claim -- the chip a selection can never reach |
+| `componentsWithoutTheAttributeAreUntouched` | the gate and the subcircuit instance, by value |
+| `oneUndoRestoresEveryChip` | two sweeps, two undos, back to the file's state, log empty |
+| `geometryDoesNotDependOnTheDrawing` | bounds and every pin location, before and after |
+| `sweepingTwiceProducesNoSecondUndoEntry` | the null return |
+| `enablementFollowsWhetherAnyChipIsPresent` | what greys the menu out |
+| `everyLocaleNamesTheCommands` | the three new strings in twelve bundles |
+
+Four mutations were made and each was caught: sweeping only the main circuit, dropping the join so
+the last circuit wins, dropping the already-at-that-value skip, and making the enablement check
+answer true for every component.
+
+`componentsWithoutTheAttributeAreUntouched` snapshots attribute *values*, not the attribute list:
+`getAttributes` hands back a live view, so comparing it with itself afterwards would have passed
+however badly the sweep misbehaved.
+
+Driven by hand on the real X display: the submenu in place under Edit Circuit Appearance, both chips
+in the top level and the one in the subcircuit flipped together, the gate and the subcircuit instance
+left alone, one Ctrl+Z restoring all three with the Edit menu reading *Undo Show the Gates in Every
+Chip*, and the submenu greyed out in a fresh empty project.
+
+### Where this sits next to the settings page
+
+Feature 12 added a preference for how a chip is drawn when it is placed. The split between them is
+the whole story: **the preference decides how the next chip is drawn, these two decide how the ones
+already placed are drawn.** Neither reaches the other's chips, deliberately -- a preference that
+rewrote saved files would be a surprise, and a menu command that changed a global default would be a
+different surprise.
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the

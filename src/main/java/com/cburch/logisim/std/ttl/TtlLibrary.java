@@ -99,7 +99,12 @@ public class TtlLibrary extends Library {
 
   static final Attribute<Boolean> VCC_GND =
       Attributes.forBoolean("VccGndPorts", S.getter("VccGndPorts"));
-  static final Attribute<Boolean> DRAW_INTERNAL_STRUCTURE =
+  /**
+   * Public for Peler Edition Feature 14: the Project menu flips this on every chip at once, so the
+   * menu package has to be able to name the attribute. Nothing outside this package may write it
+   * directly -- go through a {@code SetAttributeAction} so the edit is undoable.
+   */
+  public static final Attribute<Boolean> DRAW_INTERNAL_STRUCTURE =
       Attributes.forBoolean("ShowInternalStructure", S.getter("ShowInternalStructure"));
 
   private List<Tool> tools = null;

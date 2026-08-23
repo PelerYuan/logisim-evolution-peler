@@ -163,7 +163,10 @@ which redraws itself as the input width changes.
 
 For the DIP chips themselves, **Preferences → Peler's Features** can make **show the gates inside
 the chip** the default for newly placed ones, instead of setting it by hand on each. Chips already
-in a circuit keep the drawing they were placed with.
+in a circuit keep the drawing they were placed with — to change those, **Project → TTL Chip
+Drawing** has one command for each direction, and either one covers the whole project, subcircuits
+included, in a single step you can undo. Nothing moves when the drawing changes, so it is safe on a
+fully wired sheet.
 
 **Its own settings page**
 **Preferences → Peler's Features** holds the settings for everything above, in one place rather
@@ -182,7 +185,8 @@ what it changed:
 * **New annotations** — the font, size and colour a new note starts with. Existing notes keep
   theirs; each one saves its own.
 * **TTL chips** — whether a newly placed 74xx chip shows the gates inside it or the numbered
-  package. Chips already in a circuit keep what they were placed with.
+  package. Chips already in a circuit keep what they were placed with; **Project → TTL Chip
+  Drawing** changes those.
 * **Saving as `.circ`** — how often you are warned that the compatible format drops annotations:
   every time, once per file each session (the default), or never.
 * **AI clients (MCP server)** — whether it runs at all (off by default), and which port.
