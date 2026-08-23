@@ -154,6 +154,8 @@ package with its pins in pin order. Both are in the toolbox; the DIP chips are u
 exactly as before. The symbols simulate through the same code the DIP chips do, so the two are the
 same chip in two pictures, not two models to keep in step.
 
+![The same 74xx chip drawn as a DIP package and as a logic symbol, side by side](docs/img/peler-edition/LogicSymbols.png)
+
 A **BFH Symbols** category does the same for the two BFH-Praktika converters. Upstream draws the BCD
 to seven segment decoder with its outputs where the segments sit on a display, and the binary to BCD
 converter as a wide box with the digits along its top edge; both are pictures of the thing being
@@ -167,6 +169,8 @@ in a circuit keep the drawing they were placed with — to change those, **Proje
 Drawing** has one command for each direction, and either one covers the whole project, subcircuits
 included, in a single step you can undo. Nothing moves when the drawing changes, so it is safe on a
 fully wired sheet.
+
+![Switching every chip in a project between the gate drawing and the package drawing from the Project menu](docs/img/peler-edition/TtlChipDrawing.gif)
 
 **Its own settings page**
 **Preferences → Peler's Features** holds the settings for everything above, in one place rather
