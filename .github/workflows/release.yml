@@ -3,7 +3,7 @@
 #
 # Manually triggered (workflow_dispatch), or triggered by pushing a tag matching "v*".
 # Builds installers for every platform nightly.yml's build_* jobs cover (Windows MSI/zip,
-# Linux deb/rpm/snap, Linux ARM deb/rpm, macOS dmg x2), each using the same Gradle tasks those
+# Linux deb/rpm, Linux ARM deb/rpm, macOS dmg x2), each using the same Gradle tasks those
 # jobs use, then publishes everything together as one GitHub Release.
 #
 # This workflow intentionally does NOT touch nightly.yml and does not run on ordinary pushes or
@@ -260,12 +260,7 @@ jobs:
           chmod +x gradlew
           ./gradlew createRpm "-PpelerAppVersion=${{ needs.prep.outputs.peler_version }}" -x checkstyleMain -x checkstyleTest
 
-      # Snap is deliberately NOT included below: `snap/snapcraft.yaml` is still unbranded (produces
-      # "logisim-evolution_3.8.0-dev_amd64.snap" -- wrong name and version, see ROADMAP.md backlog),
-      # so it isn't fit to publish yet. Built above purely to keep CI signal that snap packaging
-      # still works; `steps.snapcraft.outputs.snap` intentionally goes unused past that point.
-      #
-      # Also: don't mix a path outside `build/dist/` into this list. `actions/upload-artifact`
+      # Don't mix a path outside `build/dist/` into this list. `actions/upload-artifact`
       # computes each artifact's root as the least-common-ancestor of every listed path -- when
       # every path shares `build/dist/`, that directory itself disappears from the zip (matching
       # every other platform job here), but a single outside path (the snap used to be one) forces
