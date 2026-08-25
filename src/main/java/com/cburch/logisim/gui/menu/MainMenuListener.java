@@ -22,6 +22,7 @@ import com.cburch.logisim.gui.main.ExportImage;
 import com.cburch.logisim.gui.main.Frame;
 import com.cburch.logisim.gui.main.Print;
 import com.cburch.logisim.gui.main.StatisticsDialog;
+import com.cburch.logisim.pcomp.PcompLock;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.proj.ProjectEvent;
 import com.cburch.logisim.proj.ProjectListener;
@@ -145,9 +146,12 @@ public class MainMenuListener extends MenuListener {
       menubar.setEnabled(LogisimMenuBar.MOVE_CIRCUIT_DOWN, canMoveDown);
       menubar.setEnabled(LogisimMenuBar.SET_MAIN_CIRCUIT, canSetMain);
       menubar.setEnabled(LogisimMenuBar.REMOVE_CIRCUIT, canRemove);
+      // Peler Edition Feature 15. A custom component's drawing is derived from its port layout on
+      // every load, so there is nothing here for the appearance editor to keep.
+      final var canEditAppearance = !PcompLock.blocksAppearanceEditOf(proj, cur);
       menubar.setEnabled(LogisimMenuBar.EDIT_LAYOUT, viewAppearance);
-      menubar.setEnabled(LogisimMenuBar.EDIT_APPEARANCE, viewLayout);
-      menubar.setEnabled(LogisimMenuBar.TOGGLE_APPEARANCE, true);
+      menubar.setEnabled(LogisimMenuBar.EDIT_APPEARANCE, viewLayout && canEditAppearance);
+      menubar.setEnabled(LogisimMenuBar.TOGGLE_APPEARANCE, canEditAppearance);
       menubar.setEnabled(LogisimMenuBar.REVERT_APPEARANCE, canRevert);
       menubar.setEnabled(LogisimMenuBar.ANALYZE_CIRCUIT, true);
       menubar.setEnabled(LogisimMenuBar.CIRCUIT_STATS, true);

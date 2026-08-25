@@ -1,0 +1,102 @@
+/*
+ * Logisim-evolution - digital logic design tool and simulator
+ *
+ * https://github.com/logisim-evolution/
+ *
+ * This is free software released under GNU GPLv3 license
+ */
+
+package com.cburch.logisim.pcomp;
+
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Peler Edition. What a {@code .pcomp} file says about itself, over and above the circuit it holds.
+ *
+ * <p>Identity is {@code id} plus {@code version}, not the name. The id is generated once, when the
+ * component is first saved, and never again, so two versions of one component are recognisably
+ * related and two components that happen to share a name are not. Two versions of one id are two
+ * separate component types that can sit in one project at the same time -- which is the whole
+ * point, since the layout is fixed once published and a changed layout has to arrive as something a
+ * user opts into rather than as a silent substitution under their wires.
+ *
+ * <p><b>{@code name} and {@code mainCircuit} are deliberately two things.</b> {@code name} is what
+ * the user called the component and what is drawn in the box; {@code mainCircuit} is the name of
+ * the circuit inside the file, which carries the version -- {@code MyAdder_v2}. They have to
+ * differ, because a project file records a placed component as its library plus the factory name,
+ * and a factory name is a circuit name: if both versions called their circuit {@code MyAdder}, a
+ * project that used v1 would silently bind to v2 the next time it was opened, moving every port it
+ * had wires on. The suffix is what makes the two versions distinct references. The drawn caption
+ * stays the bare name, so a version bump does not change the width of the box.
+ *
+ * @param id stable across renames and version bumps; a UUID string
+ * @param version 1 for the first publication, incremented for each one after
+ * @param name what the user called the component; the caption drawn in the box
+ * @param mainCircuit the name of the circuit in this file that <em>is</em> the component; the rest
+ *     are its dependencies
+ * @param locked whether the component's internals are closed to a project that uses it
+ * @param ports every port, with the side and slot the layout window settled on
+ */
+public record PcompMetadata(
+    String id,
+    int version,
+    String name,
+    String mainCircuit,
+    boolean locked,
+    List<PortPlacement> ports) {
+
+  public PcompMetadata {
+    if (id == null || id.isBlank()) throw new IllegalArgumentException("a component needs an id");
+    if (version < 1) throw new IllegalArgumentException("version must be 1 or more: " + version);
+    if (name == null || name.isBlank()) throw new IllegalArgumentException("a component needs a name");
+    if (mainCircuit == null || mainCircuit.isBlank()) {
+      throw new IllegalArgumentException("a component needs a main circuit");
+    }
+    if (ports == null || ports.isEmpty()) {
+      throw new IllegalArgumentException(name + " has no ports");
+    }
+    id = id.trim();
+    name = name.trim();
+    mainCircuit = mainCircuit.trim();
+    ports = List.copyOf(ports);
+  }
+
+  /**
+   * The name the circuit inside a component file carries.
+   *
+   * <p>An underscore rather than a space because this name goes through the same door every other
+   * circuit name does: {@code SyntaxChecker.isVariableNameAcceptable} rejects a space, and a name it
+   * rejects cannot be set on a live circuit at all. A trailing underscore is rejected too, but a
+   * name ending in one could never have been the user's circuit name in the first place, so
+   * appending to it stays inside the rules.
+   */
+  public static String circuitNameFor(String name, int version) {
+    return name.trim() + "_v" + version;
+  }
+
+  /** A first publication of a component that has never been saved before. */
+  public static PcompMetadata firstVersion(String name, List<PortPlacement> ports) {
+    return new PcompMetadata(
+        UUID.randomUUID().toString(), 1, name, circuitNameFor(name, 1), true, ports);
+  }
+
+  /**
+   * The next version of this component. Same id, so the two are recognisably related; a new version
+   * number, so they are two types and nothing a user already drew moves under them.
+   */
+  public PcompMetadata nextVersion(List<PortPlacement> newPorts) {
+    return new PcompMetadata(
+        id, version + 1, name, circuitNameFor(name, version + 1), locked, newPorts);
+  }
+
+  /** The same component, published again under the same version number. */
+  public PcompMetadata withPorts(List<PortPlacement> newPorts) {
+    return new PcompMetadata(id, version, name, mainCircuit, locked, newPorts);
+  }
+
+  /** How this component is named in the toolbox: the name the user gave it, and its version. */
+  public String displayName() {
+    return name + " v" + version;
+  }
+}

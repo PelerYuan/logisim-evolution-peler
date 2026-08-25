@@ -15,6 +15,7 @@ import com.cburch.logisim.gui.main.Canvas;
 import com.cburch.logisim.instance.InstancePainter;
 import com.cburch.logisim.instance.InstancePoker;
 import com.cburch.logisim.instance.InstanceState;
+import com.cburch.logisim.pcomp.PcompLock;
 import java.awt.Color;
 import java.awt.event.MouseEvent;
 
@@ -71,8 +72,16 @@ public class SubcircuitPoker extends InstancePoker {
     if (mouseDown) {
       mouseDown = false;
       Object sub = state.getData();
-      if (e.getClickCount() == 2 && isWithin(state, e) && sub instanceof CircuitState) {
-        state.getProject().setCircuitState((CircuitState) sub);
+      if (e.getClickCount() == 2 && isWithin(state, e) && sub instanceof CircuitState substate) {
+        // Peler Edition Feature 15. This is the one gesture whose whole meaning is "let me in", so
+        // a locked custom component answers it rather than ignoring it: the user is looking for a
+        // door, and the component manager is where it is.
+        final var locked = PcompLock.lockedOwnerOf(substate.getCircuit());
+        if (locked == null) {
+          state.getProject().setCircuitState(substate);
+        } else {
+          PcompLock.explainLocked(state.getProject().getFrame(), locked);
+        }
       } else {
         state.getInstance().fireInvalidated();
       }

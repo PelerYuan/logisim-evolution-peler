@@ -23,6 +23,7 @@ import com.cburch.logisim.gui.generic.ProjectExplorerToolNode;
 import com.cburch.logisim.gui.menu.Popups;
 import com.cburch.logisim.gui.menu.ProjectCircuitActions;
 import com.cburch.logisim.gui.menu.ProjectLibraryActions;
+import com.cburch.logisim.pcomp.PcompLock;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.proj.ProjectEvent;
 import com.cburch.logisim.proj.ProjectListener;
@@ -90,10 +91,16 @@ class ToolboxManip implements ProjectExplorer.Listener {
       final var baseTool = ((ProjectExplorerToolNode) clicked).getValue();
       if (baseTool instanceof AddTool tool) {
         final var source = tool.getFactory();
-        if (source instanceof SubcircuitFactory circFact) {
+        if (source instanceof SubcircuitFactory circFact
+            && !PcompLock.blocksEntryInto(circFact.getSubcircuit())) {
           proj.setCurrentCircuit(circFact.getSubcircuit());
           proj.getFrame().setEditorView(Frame.EDIT_LAYOUT);
           setDefaultTool(lastSelected, proj);
+        } else if (source instanceof SubcircuitFactory) {
+          // A locked custom component (Peler Edition Feature 15). Rather than refuse the gesture,
+          // give it the meaning it has for every built-in component, which is what this one is
+          // trying to be: arm continuous placement. Getting inside is the component manager's job.
+          ContinuousPlacement.arm(proj, tool, ContinuousPlacement.armedByDoubleClick());
         } else if (source instanceof VhdlEntity vhdl) {
           proj.setCurrentHdlModel(vhdl.getContent());
         } else {

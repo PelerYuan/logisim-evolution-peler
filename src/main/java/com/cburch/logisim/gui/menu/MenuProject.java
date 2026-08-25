@@ -12,6 +12,8 @@ package com.cburch.logisim.gui.menu;
 import static com.cburch.logisim.gui.Strings.S;
 
 import com.cburch.logisim.gui.find.FindToolDialog;
+import com.cburch.logisim.gui.pcomp.PcompManagerDialog;
+import com.cburch.logisim.gui.pcomp.PcompSaveDialog;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.prefs.PrefMonitorKeyStroke;
 import com.cburch.logisim.proj.Project;
@@ -67,6 +69,13 @@ class MenuProject extends Menu {
   private final JMenu ttlDrawing = new JMenu();
   private final JMenuItem ttlShowGates = new JMenuItem();
   private final JMenuItem ttlShowPackage = new JMenuItem();
+  /**
+   * Peler Edition Feature 15. Turns the circuit being edited into a custom component. In this menu
+   * because it acts on the current circuit, next to the other things that do; a plain JMenuItem
+   * with its own listener, for the same reason as `findTool` above.
+   */
+  private final JMenuItem saveAsComponent = new JMenuItem();
+  private final JMenuItem manageComponents = new JMenuItem();
 
   MenuProject(LogisimMenuBar menubar) {
     this.menubar = menubar;
@@ -100,6 +109,8 @@ class MenuProject extends Menu {
         ((PrefMonitorKeyStroke) AppPreferences.HOTKEY_FIND_TOOL).getWithMask(0));
     ttlShowGates.addActionListener(myListener);
     ttlShowPackage.addActionListener(myListener);
+    saveAsComponent.addActionListener(myListener);
+    manageComponents.addActionListener(myListener);
     ttlDrawing.add(ttlShowGates);
     ttlDrawing.add(ttlShowPackage);
 
@@ -128,6 +139,9 @@ class MenuProject extends Menu {
     add(appearance);
     add(ttlDrawing);
     addSeparator();
+    add(saveAsComponent);
+    add(manageComponents);
+    addSeparator();
     add(analyze);
     add(stats);
     addSeparator();
@@ -141,6 +155,9 @@ class MenuProject extends Menu {
     unload.setEnabled(known);
     options.setEnabled(known);
     findTool.setEnabled(known);
+    saveAsComponent.setEnabled(known);
+    // The manager is about what is installed, which is true whether or not a project is open.
+    manageComponents.setEnabled(true);
     // Whether the project holds any TTL chip is only true until the next edit, so the answer is
     // taken when the menu opens rather than kept up to date. That keeps this off the edit path,
     // where a per-component sweep on every change would be paid for constantly and read never.
@@ -253,6 +270,8 @@ class MenuProject extends Menu {
     ttlDrawing.setText(S.get("projectTtlDrawingMenu"));
     ttlShowGates.setText(S.get("projectTtlShowGatesItem"));
     ttlShowPackage.setText(S.get("projectTtlShowPackageItem"));
+    saveAsComponent.setText(S.get("projectSaveAsComponentItem"));
+    manageComponents.setText(S.get("projectManageComponentsItem"));
   }
 
   private class MyListener implements ActionListener {
@@ -279,6 +298,10 @@ class MenuProject extends Menu {
         setTtlDrawing(proj, true);
       } else if (src == ttlShowPackage) {
         setTtlDrawing(proj, false);
+      } else if (src == manageComponents) {
+        PcompManagerDialog.open(proj);
+      } else if (src == saveAsComponent) {
+        PcompSaveDialog.open(proj);
       }
     }
   }

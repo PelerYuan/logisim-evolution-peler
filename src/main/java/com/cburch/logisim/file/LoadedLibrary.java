@@ -64,7 +64,7 @@ public class LoadedLibrary extends Library implements LibraryEventSource {
     }
   }
 
-  private static AttributeSet createAttributes(ComponentFactory factory, AttributeSet src) {
+  static AttributeSet createAttributes(ComponentFactory factory, AttributeSet src) {
     final var dest = factory.createAttributeSet();
     copyAttributes(dest, src);
     return dest;

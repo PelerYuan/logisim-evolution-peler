@@ -26,6 +26,7 @@ import com.cburch.logisim.instance.InstanceState;
 import com.cburch.logisim.instance.InstanceStateImpl;
 import com.cburch.logisim.instance.Port;
 import com.cburch.logisim.instance.StdAttr;
+import com.cburch.logisim.pcomp.PcompLock;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.std.wiring.Pin;
@@ -66,6 +67,10 @@ public class SubcircuitFactory extends InstanceFactory {
 
     @Override
     public void configureMenu(JPopupMenu menu, Project proj) {
+      // Peler Edition Feature 15. A locked custom component contributes nothing here: not the
+      // "view" item that would open its internals, and not the sub-items either, which are drawn
+      // from the components inside it and would name them.
+      if (PcompLock.blocksEntryInto(source)) return;
       this.proj = proj;
       final var name = instance.getFactory().getDisplayName();
       final var text = S.get("subcircuitViewItem", name);

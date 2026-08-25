@@ -12,6 +12,7 @@ package com.cburch.logisim.file;
 import com.cburch.draw.model.AbstractCanvasObject;
 import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.CircuitAttributes;
+import com.cburch.logisim.circuit.SubcircuitFactory;
 import com.cburch.logisim.circuit.Wire;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentFactory;
@@ -21,6 +22,7 @@ import com.cburch.logisim.data.AttributeSet;
 import com.cburch.logisim.fpga.data.MapComponent;
 import com.cburch.logisim.generated.BuildInfo;
 import com.cburch.logisim.instance.StdAttr;
+import com.cburch.logisim.pcomp.PcompCatalogLibrary;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.std.annotate.Annotation;
 import com.cburch.logisim.std.annotate.AnnotationAttributes;
@@ -30,6 +32,7 @@ import com.cburch.logisim.std.base.Text;
 import com.cburch.logisim.std.symbol.SymbolGate;
 import com.cburch.logisim.std.symbol.SymbolLibrary;
 import com.cburch.logisim.std.wiring.ProbeAttributes;
+import com.cburch.logisim.tools.AddTool;
 import com.cburch.logisim.tools.Library;
 import com.cburch.logisim.tools.Tool;
 import com.cburch.logisim.util.InputEventUtil;
@@ -47,6 +50,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import java.util.regex.Pattern;
@@ -91,6 +95,16 @@ final class XmlWriter {
    * caller, stay as upstream wrote them.
    */
   private boolean compatMode;
+
+  /**
+   * Peler Edition compatibility mode: the custom-component circuits this file is being written with
+   * inlined, and the name each one takes. Empty in every other mode.
+   *
+   * <p>Worked out once, before anything is written, because the answer is needed in two places that
+   * must agree -- the {@code <comp>} that refers to a component and the {@code <circuit>} that
+   * becomes it. See {@link PcompLowering}.
+   */
+  private Map<Circuit, String> loweredComponents = Map.of();
 
   private XmlWriter(LogisimFile file, Document doc, LibraryLoader loader) {
     this(file, doc, loader, null, null, false);
@@ -218,6 +232,9 @@ final class XmlWriter {
     // supplies destFile; a project bundle keeps full fidelity, since the bundle is ours too.
     context.compatMode =
         PelerCompat.isCompatTarget(destFile);
+    // Peler Edition: custom components have to become ordinary circuits before anything refers to
+    // them, so the plan is made here rather than partway through the document.
+    if (context.compatMode) context.loweredComponents = PcompLowering.plan(file);
 
     context.fromLogisimFile();
 
@@ -323,6 +340,29 @@ final class XmlWriter {
     for (final var board : circuit.getBoardMapNamestoSave()) {
       final var elt = fromMap(circuit, board);
       if (elt != null) ret.appendChild(elt);
+    }
+    return ret;
+  }
+
+  /**
+   * Peler Edition compatibility mode: one custom component's circuit, under the name the lowering
+   * gave it.
+   *
+   * <p>The name is in the element twice, as the {@code name} attribute and again as the {@code
+   * circuit} static attribute inside it, and the reader applies the second over the first. Both are
+   * set here for the same reason {@code PcompWriter} sets both when it versions a component: a
+   * circuit whose two names disagree is read under the one this code did not mean.
+   */
+  private Element fromLoweredCircuit(Circuit circuit, String name) {
+    final var ret = fromCircuit(circuit);
+    ret.setAttribute("name", name);
+    for (var child = ret.getFirstChild(); child != null; child = child.getNextSibling()) {
+      if (child instanceof Element attribute
+          && "a".equals(attribute.getTagName())
+          && "circuit".equals(attribute.getAttribute("name"))) {
+        attribute.setAttribute("val", name);
+        break;
+      }
     }
     return ret;
   }
@@ -439,8 +479,15 @@ final class XmlWriter {
     // See PelerCompat.hasSymbolChips for why lowering would be the more dangerous choice; the save
     // dialog has already told the user this is about to happen.
     if (compatMode && source instanceof SymbolGate) return null;
+    // Peler Edition: a custom component becomes a reference to the circuit it was inlined as.
+    // No `lib` attribute, because that circuit is now one of this file's own.
+    if (compatMode && source instanceof SubcircuitFactory subcircuit) {
+      final var lowered = loweredComponents.get(subcircuit.getSubcircuit());
+      if (lowered != null) return fromLoweredComponent(comp, lowered);
+    }
 
-    final var lib = findLibrary(source);
+    var lib = findLibrary(source);
+    if (lib == null && compatMode) lib = findLibraryOffering(source);
     String libName;
     if (lib == null) {
       loader.showError(source.getName() + " component not found");
@@ -468,6 +515,49 @@ final class XmlWriter {
     return ret;
   }
 
+  /**
+   * Peler Edition compatibility mode: a placed custom component, written as a plain subcircuit.
+   *
+   * <p>No {@code lib} attribute, which is how a {@code <comp>} says the circuit is one of this
+   * file's own. The rest of the element is what any subcircuit would write -- facing, label and the
+   * rest belong to the instance and mean the same thing either side of the lowering.
+   *
+   * <p>The one thing that would have to be left out is the {@code circuit} attribute, which still
+   * holds the component's own versioned name and which the reader applies over {@code name}.
+   * Nothing has to be done about it: {@code CircuitAttributes.isToSave} refuses every static
+   * attribute, and that is one of them, so a subcircuit has never written it.
+   */
+  private Element fromLoweredComponent(Component comp, String name) {
+    final var ret = doc.createElement("comp");
+    ret.setAttribute("name", name);
+    ret.setAttribute("loc", comp.getLocation().toString());
+    addAttributeSetContent(ret, comp.getAttributeSet(), comp.getFactory(), false);
+    return ret;
+  }
+
+  /**
+   * Peler Edition compatibility mode: the library in this file that offers a component of the same
+   * name.
+   *
+   * <p>Needed because a component inlined by {@link PcompLowering} was loaded by the catalog's own
+   * loader, and a loader builds its own copy of the built-in libraries. Not every built-in
+   * component factory is a singleton -- the ones declared through {@code FactoryDescription} are
+   * made per library instance -- so the inlined circuit's gates are equal to the project's in every
+   * way except the one {@code Library.contains} asks about.
+   *
+   * <p>Matching on the name is not a near-enough substitute for identity, it is the actual
+   * question: a {@code <comp>} element names a library and a component within it, and that is all
+   * the reader has to go on.
+   */
+  private Library findLibraryOffering(ComponentFactory source) {
+    for (final var lib : file.getLibraries()) {
+      for (final var tool : lib.getTools()) {
+        if (tool instanceof AddTool add && source.getName().equals(add.getName())) return lib;
+      }
+    }
+    return null;
+  }
+
   Element fromLibrary(Library lib) throws IOException, LoadFailedException {
     // Peler Edition compatibility mode: leave the Annotation library out entirely, and out of the
     // `libs` map too, so nothing downstream can emit a reference to it. Note this is the reason a
@@ -478,6 +568,10 @@ final class XmlWriter {
     // Feature 12: the same, for every symbol library. Their entries also come from the new-project
     // template, so they would otherwise appear in every compatible file this edition wrote.
     if (compatMode && lib instanceof SymbolLibrary) return null;
+    // Peler Edition: the custom-component category, for the same reason and with the same care --
+    // its entry comes from the new-project template, so it is in every file this edition writes.
+    // Whatever was placed from it has already been inlined by PcompLowering.
+    if (compatMode && lib instanceof PcompCatalogLibrary) return null;
 
     final var ret = doc.createElement("lib");
     if (libs.containsKey(lib)) return null;
@@ -495,6 +589,13 @@ final class XmlWriter {
       for (final var circuit : file.getCircuits()) {
         for (final var tool : circuit.getNonWires()) {
           isUsed |= lib.contains(tool.getFactory());
+        }
+      }
+      // Peler Edition: an inlined component's parts count as used. They are about to be written
+      // into this file, and a library dropped as unused would still be named by them.
+      for (final var circuit : loweredComponents.keySet()) {
+        for (final var comp : circuit.getNonWires()) {
+          isUsed |= lib == findLibraryOffering(comp.getFactory());
         }
       }
       for (final var tool : file.getOptions().getToolbarData().getContents()) {
@@ -576,6 +677,12 @@ final class XmlWriter {
 
     for (final var circ : file.getCircuits()) {
       ret.appendChild(fromCircuit(circ));
+    }
+    // Peler Edition compatibility mode: the custom components, as ordinary circuits. After the
+    // project's own, so a diff of two saves of the same project keeps the parts the user wrote
+    // where they were.
+    for (final var lowered : loweredComponents.entrySet()) {
+      ret.appendChild(fromLoweredCircuit(lowered.getKey(), lowered.getValue()));
     }
     for (final var vhdl : file.getVhdlContents()) {
       ret.appendChild(fromVhdl(vhdl));

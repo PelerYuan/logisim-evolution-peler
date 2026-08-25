@@ -98,7 +98,16 @@ public final class PelerCompat {
     return false;
   }
 
-  /** True if a compatible save would drop any of the user's actual work. */
+  /**
+   * True if a compatible save would drop any of the user's actual work.
+   *
+   * <p>Custom components are deliberately not on this list. They are the one addition of this
+   * edition that a compatible file can keep: {@code PcompLowering} writes each one into the file as
+   * an ordinary circuit with the same appearance, so the drawing, the ports and every wire that
+   * reached one are exactly where they were. What is left behind is the link to the catalog -- the
+   * reopened file has a few more circuits and no components -- which is a change to how the project
+   * is organised rather than a loss of anything in it, and not worth a warning on every save.
+   */
   public static boolean isLossy(LogisimFile file) {
     return hasAnnotations(file) || hasSymbolChips(file);
   }

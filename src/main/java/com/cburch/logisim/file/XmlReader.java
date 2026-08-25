@@ -533,6 +533,12 @@ class XmlReader {
           case "message":
             file.addMessage(sub_elt.getAttribute("value"));
             break;
+          case "pcomp":
+            // Peler Edition: a custom component file's own metadata, read separately by PcompFile
+            // rather than threaded through here -- LogisimFile has no use for it. Tolerated here
+            // because the default below refuses the whole file over an element it does not know,
+            // which is also why official Logisim-evolution cannot open a .pcomp at all.
+            break;
           default:
             throw new IllegalArgumentException("Invalid node in logisim file: " + name);
         }

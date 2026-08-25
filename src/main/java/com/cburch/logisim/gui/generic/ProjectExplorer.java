@@ -105,6 +105,11 @@ public class ProjectExplorer extends JTree implements LocaleListener {
         : null;
   }
 
+  /** Peler Edition. See {@link ProjectExplorerModel#rebuild}. */
+  public void rebuild() {
+    ((ProjectExplorerModel) getModel()).rebuild();
+  }
+
   public void updateStructure() {
     ProjectExplorerModel model = (ProjectExplorerModel) getModel();
     model.updateStructure();
