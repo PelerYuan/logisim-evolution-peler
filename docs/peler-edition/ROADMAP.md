@@ -1607,6 +1607,94 @@ already placed are drawn.** Neither reaches the other's chips, deliberately -- a
 rewrote saved files would be a surprise, and a menu command that changed a global default would be a
 different surprise.
 
+## Feature 15 — Custom components (2026-08-26)
+
+A user can save a circuit as their own component, give it a symbol, and have it appear in the
+toolbox of every project on the machine. Designed in
+[docs/peler-edition/design/custom-components.md](design/custom-components.md), which holds the
+investigation, the four decisions the maintainer settled, and a step-by-step implementation record;
+this section is the summary and the things worth knowing before touching it again.
+
+### Four decisions, taken before any code
+
+1. **The internals stay in the file, but are locked by default.** Not a black box -- there is an
+   unlock, and it is "open the component file itself in the main window", which needs no new
+   mechanism because the file is an ordinary project.
+2. **The layout window offers two degrees of freedom**: which of the four sides a port sits on, and
+   where in that side's order. The box sizes itself.
+3. **A published layout is fixed.** Changing it means publishing a new version, not editing the old
+   one. This is what makes a component safe to hand to someone.
+4. **Importing is a management panel**, not a menu action.
+
+### What a component actually is
+
+A subcircuit with a *derived* appearance. No new `InstanceFactory`, no new simulation path: a
+`.pcomp` file is a `LogisimFile` holding the component's circuit, every circuit it depends on, and
+one `<pcomp>` element carrying the port layout. State, propagation, rotation and entering are all
+inherited from subcircuits for free; the only thing that had to be written was the locking.
+
+The layout is stored as constraints -- which side, which slot, what name -- and the drawing is
+derived from it at load time. Storing the drawing instead would have given up the guarantee that
+made decision 3 possible: a `CircuitAppearance` can hold any shapes at all, so a user could edit
+around the layout window and the lock would mean nothing.
+
+### The part that shaped everything else: two versions must have two circuit names
+
+A project file records a placed component as `<comp lib="N" name="CircuitName"/>`, and the catalog
+library dedupes tools by name. So if v1 and v2 both called their circuit `MyAnd`, a project saved
+against v1 would silently bind to v2 on the next open, and the replace action would have nothing to
+swap between. Hence `mainCircuit = name + "_v" + version` -- with an underscore, because the circuit
+name attribute's listener runs `SyntaxChecker.isVariableNameAcceptable` and *opens a modal dialog*
+when it rejects one, mid-write. The caption drawn in the box stays the bare name, so a version bump
+does not change the box width.
+
+### Locking
+
+Five doors, all answering to `pcomp/PcompLock.java` so the policy cannot drift between them: the
+toolbox double-click, the explorer's Edit Layout and Edit Appearance items, the double-click on a
+placed instance, `SubcircuitFactory.configureMenu`'s View entry, and the main menu's appearance
+editor. Edit Circuit Appearance is refused **even when unlocked**, because the appearance is derived
+and hand-editing it would put the drawing and the model out of step.
+
+A double-click in the toolbox arms continuous placement, the way a built-in gate does -- no dialog.
+The explanation is reserved for the one gesture whose only meaning is "let me in".
+
+### Saving to official `.circ`
+
+The one Peler addition a compatible file can keep. `file/PcompLowering.java` plans which circuits to
+inline and under what names; `XmlWriter` writes each component in as an ordinary circuit with its
+derived appearance, and every placed instance as a plain subcircuit reference. Port coordinates are
+identical either side, so no wire moves. Feature 12 could not do this for the 74xx symbols because
+the symbol and the DIP package place their ports differently; here both sides use the same
+coordinates, because this edition defined them.
+
+It is therefore **not** in `PelerCompat.isLossy` and raises no save warning. What the reopened file
+loses is the link to the catalog -- a change in how the project is organised, not a loss of anything
+in it.
+
+### Things that will bite whoever touches this next
+
+- **Setting the derived shapes is not enough.** `CircuitAttributes.APPEARANCE_ATTR` has to be set to
+  `APPEAR_CUSTOM` in the same breath, or `isDefaultAppearance()` stays true and the shapes are
+  quietly replaced by a regenerated default box. The component loads, places and simulates -- and is
+  drawn as an ordinary subcircuit with its ports somewhere else.
+- **The catalog is a process-wide registry with a re-entrancy guard.** Reading a component needs a
+  `Loader`, every `Loader` builds a `Builtin`, and `Builtin` holds the catalog library. The guard is
+  load-bearing, not defensive.
+- **Not every built-in factory is a singleton.** The ones declared through `FactoryDescription` are
+  built per library instance, so an inlined component's parts fail `Library.contains` against the
+  project's own libraries. `XmlWriter.findLibraryOffering` matches by name instead, which is what a
+  `<comp lib name>` pair means anyway.
+- **`PcompCatalog.useDirectory` is a test seam.** Without pointing the catalog at a temporary folder,
+  the catalog tests read whatever the person running them has installed.
+
+### Open items specific to this feature
+
+- One component per file; no `.pcompack` bundle format.
+- No preference for the component directory. `PcompCatalog.directory` is a plain field, so
+  `PelerOptionsTest` is not triggered; adding a preference would require a control on a panel under
+  `gui/prefs/`.
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the
