@@ -1620,8 +1620,12 @@ this section is the summary and the things worth knowing before touching it agai
 1. **The internals stay in the file, but are locked by default.** Not a black box -- there is an
    unlock, and it is "open the component file itself in the main window", which needs no new
    mechanism because the file is an ordinary project.
-2. **The layout window offers two degrees of freedom**: which of the four sides a port sits on, and
-   where in that side's order. The box sizes itself.
+2. ~~**The layout window offers two degrees of freedom**: which of the four sides a port sits on,
+   and where in that side's order. The box sizes itself.~~ **Reversed once the feature was in the
+   maintainer's hands**: the window is a small appearance editor now -- box, ports and caption all
+   drag anywhere, and every position is an absolute coordinate. The sizing arithmetic survives as
+   the starting point for a new component and behind an "Arrange for Me" button. See "The layout is
+   free" below.
 3. **A published layout is fixed.** Changing it means publishing a new version, not editing the old
    one. This is what makes a component safe to hand to someone.
 4. **Importing is a management panel**, not a menu action.
@@ -1633,10 +1637,40 @@ A subcircuit with a *derived* appearance. No new `InstanceFactory`, no new simul
 one `<pcomp>` element carrying the port layout. State, propagation, rotation and entering are all
 inherited from subcircuits for free; the only thing that had to be written was the locking.
 
-The layout is stored as constraints -- which side, which slot, what name -- and the drawing is
-derived from it at load time. Storing the drawing instead would have given up the guarantee that
-made decision 3 possible: a `CircuitAppearance` can hold any shapes at all, so a user could edit
-around the layout window and the lock would mean nothing.
+The layout is stored as geometry -- how big the box is, where on it each port sits, where the
+caption goes -- and the drawing is derived from it at load time. Storing the *drawing* instead
+would have given up the guarantee that made decision 3 possible: a `CircuitAppearance` can hold any
+shapes at all, so a user could edit around the layout window and the lock would mean nothing.
+Deriving keeps there being exactly one description of the component.
+
+### The layout is free
+
+Ports carry `(side, x, y)`, both axes measured from the box's top-left corner, which is also the
+appearance anchor. `PortSide` is no longer half of a port's position; it is an orientation derived
+from the coordinate -- which way the stub points, which side of the box the name is written on --
+and `PortSide.nearest` recomputes it while a port is being dragged.
+
+`PortLayout.automatic` is the old sizing arithmetic, kept for two jobs: laying out a component the
+first time, and the "Arrange for Me" button. Three defects in it were fixed on the way through, all
+of them visible in the first component the maintainer built:
+
+- ports were laid from the top band downwards, so every bit of slack collected at the bottom. They
+  are centred between the two bands now -- between the *bands*, not between the box's edges, because
+  the bands are where the other two sides write their names.
+- `PITCH` was `10`, the same as a line of text, so two adjacent port names touched. It is `20` now.
+- the caption widened the box through `captionWidth + 2 * max(left, right)`. The rule is now just
+  `width >= left + captionWidth + right`, with the caption centred in the interior rather than in
+  the box.
+
+Only the right and bottom edges resize. The top-left corner is the anchor every port coordinate is
+measured from, so dragging it would move the whole component rather than reshape it.
+
+Two consequences worth keeping in mind. The box's size and the caption's position are deliberately
+**not** in `PortSignature`: tidying up a published component must not force a new version on the
+projects already using it, and since ports are pinned to the anchor, a wider box moves none of them.
+And `PortLayout` refuses two ports in one place, which a drag necessarily passes through -- so the
+canvas draws from `PortLayoutDraft` directly rather than through a `PortLayout`, and the overlap is
+reported as a `Problem` on the save button instead.
 
 ### The part that shaped everything else: two versions must have two circuit names
 
@@ -1690,6 +1724,10 @@ in it.
 
 ### Open items specific to this feature
 
+- Files written before the free layout carry a `slot` attribute instead of `x`/`y`. They still load
+  -- `PcompFile` runs them back through `PortLayout.automatic` -- but through the *corrected*
+  arithmetic, so they come back working rather than pixel-identical to what they were published as.
+  `slot` is read, never written.
 - One component per file; no `.pcompack` bundle format.
 - No preference for the component directory. `PcompCatalog.directory` is a plain field, so
   `PelerOptionsTest` is not triggered; adding a preference would require a control on a panel under
