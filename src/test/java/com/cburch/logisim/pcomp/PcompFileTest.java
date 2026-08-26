@@ -37,10 +37,10 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Peler Edition. The {@code .pcomp} format: what survives a trip to disk and back.
  *
- * <p>A component file is the one place a port's side and slot are recorded. Everything a project
+ * <p>A component file is the one place the box and its ports are recorded. Everything a project
  * that uses the component depends on -- where its ports are, therefore where its wires attach --
- * is derived from what is written here, so a field that quietly fails to round-trip does not show
- * up as a parse error but as a component whose ports have moved.
+ * comes from what is written here, so a field that quietly fails to round-trip does not show up as
+ * a parse error but as a component whose ports have moved.
  */
 class PcompFileTest {
 
@@ -51,11 +51,12 @@ class PcompFileTest {
         "Adder4",
         "Adder4_v3",
         true,
-        List.of(
-            new PortPlacement("A", PortSide.LEFT, 0),
-            new PortPlacement("B", PortSide.LEFT, 1),
-            new PortPlacement("CIN", PortSide.BOTTOM, 0),
-            new PortPlacement("SUM", PortSide.RIGHT, 0)));
+        PcompLayouts.automatic(
+            "Adder4",
+            PcompLayouts.nth("A", PortSide.LEFT, 0),
+            PcompLayouts.nth("B", PortSide.LEFT, 1),
+            PcompLayouts.nth("CIN", PortSide.BOTTOM, 0),
+            PcompLayouts.nth("SUM", PortSide.RIGHT, 0)));
   }
 
   private static String projectXml(String extra) {
@@ -123,18 +124,88 @@ class PcompFileTest {
    * component whose pins outnumber its ports, which draws fine and cannot be wired.
    */
   @Test
-  public void portsWithNoUsableSideOrSlotAreRefused(@TempDir Path dir) throws Exception {
+  public void portsWithNoUsableSideOrPlaceAreRefused(@TempDir Path dir) throws Exception {
     final var noSide =
         "<pcomp id=\"x\" version=\"1\" main=\"Adder4\" locked=\"true\">"
-            + "<port name=\"A\" side=\"sideways\" slot=\"0\"/></pcomp>";
-    final var noSlot =
+            + "<port name=\"A\" side=\"sideways\" x=\"0\" y=\"20\"/></pcomp>";
+    final var nowhere =
         "<pcomp id=\"x\" version=\"1\" main=\"Adder4\" locked=\"true\">"
-            + "<port name=\"A\" side=\"left\" slot=\"first\"/></pcomp>";
-    for (final var broken : List.of(noSide, noSlot)) {
+            + "<port name=\"A\" side=\"left\"/></pcomp>";
+    final var halfAPlace =
+        "<pcomp id=\"x\" version=\"1\" main=\"Adder4\" locked=\"true\">"
+            + "<port name=\"A\" side=\"left\" x=\"0\" y=\"over there\"/></pcomp>";
+    for (final var broken : List.of(noSide, nowhere, halfAPlace)) {
       final var file = dir.resolve(Math.abs(broken.hashCode()) + PcompFile.EXTENSION).toFile();
       Files.writeString(file.toPath(), projectXml(broken), StandardCharsets.UTF_8);
       assertThrows(IOException.class, () -> PcompFile.read(file));
     }
+  }
+
+  /**
+   * A component published before the layout window could do more than order the ports still opens.
+   *
+   * <p>Those files say an edge and a place in that edge's order and leave the geometry to the
+   * reader, so they are laid out by {@link PortLayout#automatic} -- the same arithmetic, in the same
+   * place, that produced their coordinates when they were written. What they get back is therefore
+   * the tidy default rather than to the pixel what they had, that arithmetic having been corrected
+   * since; what matters is that the component still loads, still places and still wires up.
+   */
+  @Test
+  public void filesFromTheSlotFormStillLoad(@TempDir Path dir) throws Exception {
+    final var slots =
+        "<pcomp id=\"x\" version=\"1\" name=\"Adder4\" main=\"Adder4\" locked=\"true\">"
+            + "<port name=\"A\" side=\"left\" slot=\"0\"/>"
+            + "<port name=\"B\" side=\"left\" slot=\"1\"/>"
+            + "<port name=\"SUM\" side=\"right\" slot=\"0\"/></pcomp>";
+    final var file = dir.resolve("legacy" + PcompFile.EXTENSION).toFile();
+    Files.writeString(file.toPath(), projectXml(slots), StandardCharsets.UTF_8);
+
+    final var read = PcompFile.read(file);
+
+    assertNotNull(read);
+    assertEquals(
+        PcompLayouts.automatic(
+            "Adder4",
+            PcompLayouts.nth("A", PortSide.LEFT, 0),
+            PcompLayouts.nth("B", PortSide.LEFT, 1),
+            PcompLayouts.nth("SUM", PortSide.RIGHT, 0)),
+        read.layout(),
+        "an older component came back as a different shape from the default one");
+  }
+
+  /**
+   * The box and the caption's place survive on their own, not only the ports.
+   *
+   * <p>They are what the user dragged, and a file that lost them would open every component back at
+   * the default shape -- which is exactly the shape the layout window exists to get away from.
+   */
+  @Test
+  public void theBoxAndTheCaptionSurviveTheRoundTrip(@TempDir Path dir) throws Exception {
+    final var dragged =
+        new PcompMetadata(
+            "5f2c1d90-0000-4000-8000-000000000002",
+            1,
+            "Wide",
+            "Wide_v1",
+            true,
+            new PortLayout(
+                "Wide",
+                240,
+                40,
+                90,
+                10,
+                List.of(
+                    new PortPlacement("A", PortSide.LEFT, 0, 20),
+                    new PortPlacement("SUM", PortSide.BOTTOM, 200, 40))));
+    final var file = dir.resolve("Wide" + PcompFile.EXTENSION).toFile();
+    Files.writeString(file.toPath(), projectXml(elementXml(dragged)), StandardCharsets.UTF_8);
+
+    final var read = PcompFile.read(file);
+
+    assertNotNull(read);
+    assertEquals(dragged.layout(), read.layout());
+    assertEquals(240, read.layout().width());
+    assertEquals(90, read.layout().captionX());
   }
 
   /**
@@ -174,8 +245,13 @@ class PcompFileTest {
    */
   @Test
   public void newVersionsKeepTheIdAndBumpTheNumber() {
-    final var first = PcompMetadata.firstVersion("Adder4", sample().ports());
-    final var second = first.nextVersion(sample().ports().subList(0, 3));
+    final var first = PcompMetadata.firstVersion("Adder4", sample().layout());
+    final var second =
+        first.nextVersion(
+            PcompLayouts.automatic(
+                "Adder4",
+                PcompLayouts.nth("A", PortSide.LEFT, 0),
+                PcompLayouts.nth("SUM", PortSide.RIGHT, 0)));
 
     assertEquals(first.id(), second.id(), "a new version should be the same component");
     assertEquals(first.version() + 1, second.version());

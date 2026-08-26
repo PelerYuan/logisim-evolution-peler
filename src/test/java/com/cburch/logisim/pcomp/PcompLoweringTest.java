@@ -51,12 +51,13 @@ class PcompLoweringTest {
     PcompCatalog.useDirectory(null);
   }
 
-  private static final List<PortPlacement> PORTS =
-      List.of(
-          new PortPlacement("A", PortSide.LEFT, 0),
-          new PortPlacement("B", PortSide.LEFT, 1),
-          new PortPlacement("S", PortSide.RIGHT, 0),
-          new PortPlacement("C", PortSide.BOTTOM, 0));
+  private static final PortLayout PORTS =
+      PcompLayouts.automatic(
+          "Top",
+          PcompLayouts.nth("A", PortSide.LEFT, 0),
+          PcompLayouts.nth("B", PortSide.LEFT, 1),
+          PcompLayouts.nth("S", PortSide.RIGHT, 0),
+          PcompLayouts.nth("C", PortSide.BOTTOM, 0));
 
   /**
    * A project that places one custom component, and nothing else.

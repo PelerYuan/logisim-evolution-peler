@@ -119,8 +119,7 @@ public final class PcompLibrary extends Library {
       if (label != null && !label.isBlank()) pins.put(label.trim(), pin);
     }
     try {
-      final var layout = new PortLayout(metadata.name(), metadata.ports());
-      final var shapes = PcompAppearance.build(layout, pins);
+      final var shapes = PcompAppearance.build(metadata.layout(), pins);
       circuit
           .getStaticAttributes()
           .setValue(CircuitAttributes.APPEARANCE_ATTR, CircuitAttributes.APPEAR_CUSTOM);

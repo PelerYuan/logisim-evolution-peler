@@ -37,7 +37,7 @@ class PcompWriterTest {
     final var project = PcompProjects.read(PcompProjects.THREE_CIRCUITS);
     final var top = project.getCircuit("Top");
     final var draft = PortLayoutDraft.of(top);
-    final var metadata = PcompMetadata.firstVersion(top.getName(), draft.placements());
+    final var metadata = PcompMetadata.firstVersion(top.getName(), draft.layout());
     final var destination = dir.resolve(name + PcompFile.EXTENSION);
     PcompWriter.write(destination.toFile(), project, top, metadata, new Loader(null));
     return destination;
@@ -93,7 +93,7 @@ class PcompWriterTest {
         dir.resolve("Top" + PcompFile.EXTENSION).toFile(),
         project,
         top,
-        PcompMetadata.firstVersion(top.getName(), draft.placements()),
+        PcompMetadata.firstVersion(top.getName(), draft.layout()),
         new Loader(null));
 
     assertEquals(3, project.getCircuits().size(), "the project lost circuits it still needs");
@@ -129,9 +129,9 @@ class PcompWriterTest {
     assertEquals(1, component.getMetadata().version());
     assertFalse(component.getCircuit().getAppearance().isDefaultAppearance());
 
-    final var expected = new PortLayout("Top",
+    final var expected =
         PortLayoutDraft.of(PcompProjects.read(PcompProjects.THREE_CIRCUITS).getCircuit("Top"))
-            .placements());
+            .layout();
     final var offsets = component.getCircuit().getAppearance().getPortOffsets(Direction.EAST);
     assertEquals(4, offsets.size());
     for (final var name : List.of("A", "B", "S", "C")) {
@@ -168,6 +168,7 @@ class PcompWriterTest {
     assertEquals("Top_v1", metadata.mainCircuit());
     assertTrue(metadata.locked(), "a component is locked when it is created");
     assertEquals(4, metadata.ports().size());
-    assertNull(new PortLayout(metadata.mainCircuit(), metadata.ports()).offsetOf("Nothing"));
+    assertNull(metadata.layout().offsetOf("Nothing"));
+    assertEquals("Top", metadata.layout().caption(), "the box is captioned with the bare name");
   }
 }

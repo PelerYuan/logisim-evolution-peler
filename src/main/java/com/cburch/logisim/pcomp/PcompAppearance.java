@@ -25,12 +25,12 @@ import java.util.Map;
 /**
  * Peler Edition. Turns a {@link PortLayout} into the shapes that draw it.
  *
- * <p>This is the join between the two halves of the feature. The layout is the constrained model
- * the user edits -- four sides, a slot per port, a name -- and is what a {@code .pcomp} file
+ * <p>This is the join between the two halves of the feature. The layout is the model the user
+ * drags around -- a box, a caption and a coordinate per port -- and is what a {@code .pcomp} file
  * stores. The appearance is what Logisim already knows how to draw, place, rotate and wire up, and
- * is derived here rather than stored. Deriving it is what makes the constraint real: were the
- * shapes the stored form, the ordinary appearance editor could move a port and the layout would no
- * longer describe the component.
+ * is derived here rather than stored. Deriving it is what keeps the layout the single description
+ * of the component: were the shapes the stored form, the ordinary appearance editor could move a
+ * port and the layout would no longer describe it.
  *
  * <p><b>The anchor sits on the box's top-left corner.</b> Port offsets are taken relative to it, so
  * each one comes out exactly the coordinate {@link PortLayout} computed, and the offset bounds come
@@ -69,9 +69,7 @@ public final class PcompAppearance {
 
     final var caption =
         new Text(
-            OFFS + layout.width() / 2,
-            OFFS + layout.height() / 2 + BASELINE_LIFT,
-            layout.caption());
+            OFFS + layout.captionX(), OFFS + layout.captionY() + BASELINE_LIFT, layout.caption());
     caption.getLabel().setHorizontalAlignment(EditableLabel.CENTER);
     caption.getLabel().setColor(Color.BLACK);
     caption.getLabel().setFont(DrawAttr.DEFAULT_NAME_FONT);

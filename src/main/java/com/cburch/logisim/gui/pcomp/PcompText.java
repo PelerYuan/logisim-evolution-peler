@@ -36,9 +36,12 @@ final class PcompText {
     };
   }
 
-  /** Where a port sits, as "left 3" rather than "LEFT 2" -- slots are counted from one out here. */
+  /**
+   * Where a port sits, as "left 0,20": the edge it belongs to and its offset from the box's
+   * top-left corner, which is the coordinate a user can go and look for on the drawing.
+   */
   static String placeOf(PortSignature port) {
-    return S.get("pcompPlaceAt", sideName(port.side()), Integer.toString(port.slot() + 1));
+    return S.get("pcompPlaceAt", sideName(port.side()), port.x() + "," + port.y());
   }
 
   /** One difference between two versions of a component, in a line a user can act on. */

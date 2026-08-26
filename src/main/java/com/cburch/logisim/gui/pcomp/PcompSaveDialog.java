@@ -20,7 +20,6 @@ import com.cburch.logisim.pcomp.PcompFile;
 import com.cburch.logisim.pcomp.PcompLibrary;
 import com.cburch.logisim.pcomp.PcompMetadata;
 import com.cburch.logisim.pcomp.PortLayoutDraft;
-import com.cburch.logisim.pcomp.PortSide;
 import com.cburch.logisim.pcomp.PortSignature;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.proj.Projects;
@@ -91,6 +90,7 @@ public class PcompSaveDialog extends JDialog {
   private final JTextField name = new JTextField(18);
   private final JLabel problem = new JLabel(" ");
   private final JLabel plan = new JLabel(" ");
+  private final JButton arrange = new JButton();
   private final JButton save = new JButton();
   private final JButton cancel = new JButton();
 
@@ -103,7 +103,7 @@ public class PcompSaveDialog extends JDialog {
         republish == null
             ? PortLayoutDraft.of(circuit)
             : PortLayoutDraft.of(
-                circuit, republish.metadata().name(), republish.metadata().ports());
+                circuit, republish.metadata().name(), republish.metadata().layout());
     this.canvas = new PcompLayoutCanvas(draft, this::refresh);
 
     name.setText(draft.caption());
@@ -136,9 +136,15 @@ public class PcompSaveDialog extends JDialog {
     problem.setBorder(BorderFactory.createEmptyBorder(6, 10, 0, 10));
     plan.setBorder(BorderFactory.createEmptyBorder(2, 10, 0, 10));
 
+    arrange.addActionListener(
+        event -> {
+          draft.arrange();
+          refresh();
+        });
     save.addActionListener(event -> onSave());
     cancel.addActionListener(event -> dispose());
     final var buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+    buttons.add(arrange);
     buttons.add(cancel);
     buttons.add(save);
 
@@ -208,6 +214,7 @@ public class PcompSaveDialog extends JDialog {
   private void localeChanged() {
     nameLabel.setText(S.get("pcompNameLabel"));
     cancel.setText(S.get("pcompCancelButton"));
+    arrange.setText(S.get("pcompArrangeButton"));
   }
 
   private void refresh() {
@@ -239,6 +246,7 @@ public class PcompSaveDialog extends JDialog {
         case NO_PORTS -> S.get("pcompProblemNoPorts");
         case UNNAMED -> S.get("pcompProblemUnnamed");
         case DUPLICATE_NAME -> S.get("pcompProblemDuplicate");
+        case OVERLAP -> S.get("pcompProblemOverlap");
       };
     }
     return null;
@@ -246,11 +254,11 @@ public class PcompSaveDialog extends JDialog {
 
   /** What saving right now would write: a first version, the same version again, or the next one. */
   private PcompMetadata plannedMetadata() {
-    final var placements = draft.placements();
-    if (republish == null) return PcompMetadata.firstVersion(name.getText().trim(), placements);
+    final var layout = draft.layout();
+    if (republish == null) return PcompMetadata.firstVersion(name.getText().trim(), layout);
     return PortSignature.of(draft).equals(republish.published())
-        ? republish.metadata().withPorts(placements)
-        : republish.metadata().nextVersion(placements);
+        ? republish.metadata().withLayout(layout)
+        : republish.metadata().nextVersion(layout);
   }
 
   private String describe(PcompMetadata planned) {
@@ -339,13 +347,11 @@ public class PcompSaveDialog extends JDialog {
   private void applyPinNames() {
     final var action = new SetAttributeAction(circuit, S.getter("pcompNamePinsAction"));
     var changed = false;
-    for (final var side : PortSide.values()) {
-      for (final var entry : draft.on(side)) {
-        final var current = entry.pin().getAttributeValue(StdAttr.LABEL);
-        if (entry.name().equals(current)) continue;
-        action.set(entry.pin().getComponent(), StdAttr.LABEL, entry.name());
-        changed = true;
-      }
+    for (final var entry : draft.all()) {
+      final var current = entry.pin().getAttributeValue(StdAttr.LABEL);
+      if (entry.name().equals(current)) continue;
+      action.set(entry.pin().getComponent(), StdAttr.LABEL, entry.name());
+      changed = true;
     }
     if (changed) project.doAction(action);
   }
@@ -376,9 +382,7 @@ public class PcompSaveDialog extends JDialog {
     private List<PortLayoutDraft.Entry> rows = List.of();
 
     private void reload() {
-      final var next = new ArrayList<PortLayoutDraft.Entry>();
-      for (final var side : PortSide.values()) next.addAll(draft.on(side));
-      rows = next;
+      rows = new ArrayList<>(draft.all());
       fireTableDataChanged();
     }
 
@@ -412,7 +416,7 @@ public class PcompSaveDialog extends JDialog {
       return switch (column) {
         case 0 -> entry.name();
         case 1 -> S.get(entry.isInput() ? "pcompDirectionInput" : "pcompDirectionOutput");
-        default -> PcompText.sideName(draft.sideOf(entry));
+        default -> PcompText.sideName(entry.side());
       };
     }
 

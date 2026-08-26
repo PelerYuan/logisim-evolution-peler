@@ -47,20 +47,18 @@ class PcompVersionTest {
     PcompCatalog.useDirectory(null);
   }
 
-  private static final List<PortPlacement> ORIGINAL =
-      List.of(
-          new PortPlacement("A", PortSide.LEFT, 0),
-          new PortPlacement("B", PortSide.LEFT, 1),
-          new PortPlacement("S", PortSide.RIGHT, 0),
-          new PortPlacement("C", PortSide.RIGHT, 1));
+  private static final PortLayout ORIGINAL =
+      PcompLayouts.automatic(
+          "Top",
+          PcompLayouts.nth("A", PortSide.LEFT, 0),
+          PcompLayouts.nth("B", PortSide.LEFT, 1),
+          PcompLayouts.nth("S", PortSide.RIGHT, 0),
+          PcompLayouts.nth("C", PortSide.RIGHT, 1));
 
-  /** {@code C} moved to the bottom, which is a signature change and so a new version. */
-  private static final List<PortPlacement> REARRANGED =
-      List.of(
-          new PortPlacement("A", PortSide.LEFT, 0),
-          new PortPlacement("B", PortSide.LEFT, 1),
-          new PortPlacement("S", PortSide.RIGHT, 0),
-          new PortPlacement("C", PortSide.BOTTOM, 0));
+  /** {@code C} dragged to the bottom, which is a signature change and so a new version. */
+  private static final PortLayout REARRANGED =
+      PcompLayouts.moving(
+          ORIGINAL, "C", PortSide.BOTTOM, ORIGINAL.width() / 2, ORIGINAL.height());
 
   /** Writes one version of the Top circuit into {@code dir} and hands back the file. */
   private static File publish(Path dir, PcompMetadata metadata) throws Exception {

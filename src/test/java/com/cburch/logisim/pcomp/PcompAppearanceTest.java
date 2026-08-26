@@ -52,11 +52,11 @@ class PcompAppearanceTest {
 
   private static PortLayout layoutOf(int left, int right, int top, int bottom) {
     final var ports = new ArrayList<PortPlacement>();
-    for (var i = 0; i < left; i++) ports.add(new PortPlacement("IN" + i, PortSide.LEFT, i));
-    for (var i = 0; i < right; i++) ports.add(new PortPlacement("OUT" + i, PortSide.RIGHT, i));
-    for (var i = 0; i < top; i++) ports.add(new PortPlacement("CLK" + i, PortSide.TOP, i));
-    for (var i = 0; i < bottom; i++) ports.add(new PortPlacement("CARRY" + i, PortSide.BOTTOM, i));
-    return new PortLayout("Component", ports);
+    for (var i = 0; i < left; i++) ports.add(PcompLayouts.nth("IN" + i, PortSide.LEFT, i));
+    for (var i = 0; i < right; i++) ports.add(PcompLayouts.nth("OUT" + i, PortSide.RIGHT, i));
+    for (var i = 0; i < top; i++) ports.add(PcompLayouts.nth("CLK" + i, PortSide.TOP, i));
+    for (var i = 0; i < bottom; i++) ports.add(PcompLayouts.nth("CARRY" + i, PortSide.BOTTOM, i));
+    return PcompLayouts.automatic("Component", ports);
   }
 
   static Stream<Arguments> portCounts() {

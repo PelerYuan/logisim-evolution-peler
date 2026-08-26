@@ -8,6 +8,8 @@
 
 package com.cburch.logisim.pcomp;
 
+import static com.cburch.logisim.pcomp.PcompLayouts.automatic;
+import static com.cburch.logisim.pcomp.PcompLayouts.nth;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -28,21 +30,24 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * Peler Edition. The geometry of a custom component's box.
  *
- * <p>Everything here guards a property that only shows up much later if it breaks. A port half a
- * grid square off its edge draws fine and refuses to take a wire; a box measured from the local
- * font draws fine here and puts every wire in the wrong place on somebody else's machine; a caption
- * that overlaps a port name looks like a drawing bug rather than a sizing one. All three are cheap
- * to state as arithmetic and expensive to find by eye.
+ * <p>Two things are being tested, and they are not the same thing. A layout the user dragged is
+ * carried as given, and almost nothing about it is guaranteed -- that is what the layout window is
+ * for. {@link PortLayout#automatic} is the tidy default a component starts from, and it does
+ * guarantee things: ports on the grid and off the corners, names that clear each other, a caption
+ * that clears the names. Everything below guards a property that only shows up much later if it
+ * breaks. A port half a grid square off its edge draws fine and refuses to take a wire; a box
+ * measured from the local font draws fine here and puts every wire in the wrong place on somebody
+ * else's machine; a caption over a port name looks like a drawing bug rather than a sizing one.
  */
 public class PortLayoutTest {
 
   private static PortLayout layoutOf(String caption, int left, int right, int top, int bottom) {
     final var ports = new ArrayList<PortPlacement>();
-    for (var i = 0; i < left; i++) ports.add(new PortPlacement("L" + i, PortSide.LEFT, i));
-    for (var i = 0; i < right; i++) ports.add(new PortPlacement("R" + i, PortSide.RIGHT, i));
-    for (var i = 0; i < top; i++) ports.add(new PortPlacement("T" + i, PortSide.TOP, i));
-    for (var i = 0; i < bottom; i++) ports.add(new PortPlacement("B" + i, PortSide.BOTTOM, i));
-    return new PortLayout(caption, ports);
+    for (var i = 0; i < left; i++) ports.add(nth("L" + i, PortSide.LEFT, i));
+    for (var i = 0; i < right; i++) ports.add(nth("R" + i, PortSide.RIGHT, i));
+    for (var i = 0; i < top; i++) ports.add(nth("T" + i, PortSide.TOP, i));
+    for (var i = 0; i < bottom; i++) ports.add(nth("B" + i, PortSide.BOTTOM, i));
+    return automatic(caption, ports);
   }
 
   static Stream<Arguments> portCounts() {
@@ -62,27 +67,76 @@ public class PortLayoutTest {
 
   /**
    * The shape the layout window opens with, worked out by hand rather than recorded from a run: two
-   * one-character inputs down the left, one output on the right, a five-character caption. Bands
-   * on those two sides come to 3 + 8 = 11, rounded to 20, and being horizontal they set the width
-   * and nothing else; the top and bottom carry no ports so their bands stay at the 10 margin. The
-   * caption asks for 5 * 9 + 6 = 51, so the box is 51 + 2 * 20 = 91 wide, rounded to 100. Two rows
-   * at a 10 pitch between two 10 margins is only 40 tall, so the 60 minimum wins.
+   * one-character inputs down the left, one output on the right, a five-character caption. Each
+   * side band comes to 5 + 8 = 13, rounded up to 20; the top and bottom carry no ports so theirs
+   * stay at the 10 margin. The caption asks for 5 * 9 = 45, which is more than the nothing the
+   * empty top and bottom sides ask for, so the box is 20 + 45 + 20 = 85 wide, rounded to 90. Two
+   * ports at a pitch of 20 between two 10 margins is 60 tall, which is also the minimum. The two
+   * left ports are centred in the 40 between the margins, so they land 20 apart with 20 clear above
+   * and below; the single right port ends up in the middle on its own.
    */
   @Test
   public void theDefaultShapeIsTheOneTheArithmeticSaysItIs() {
     final var layout =
-        new PortLayout(
+        automatic(
             "Adder",
+            nth("A", PortSide.LEFT, 0),
+            nth("B", PortSide.LEFT, 1),
+            nth("S", PortSide.RIGHT, 0));
+
+    assertEquals(90, layout.width());
+    assertEquals(60, layout.height());
+    assertEquals(Location.create(0, 20, false), layout.offsetOf("A"));
+    assertEquals(Location.create(0, 40, false), layout.offsetOf("B"));
+    assertEquals(Location.create(90, 30, false), layout.offsetOf("S"));
+    assertEquals(45, layout.captionX());
+    assertEquals(30, layout.captionY());
+  }
+
+  /**
+   * A layout that came out of the layout window is carried, not recomputed. This is the whole
+   * difference between the two constructors, and the reason the window is worth having.
+   */
+  @Test
+  public void theDraggedLayoutIsKeptExactlyAsItWasGiven() {
+    final var layout =
+        new PortLayout(
+            "Odd",
+            200,
+            40,
+            13,
+            7,
             List.of(
-                new PortPlacement("A", PortSide.LEFT, 0),
-                new PortPlacement("B", PortSide.LEFT, 1),
-                new PortPlacement("S", PortSide.RIGHT, 0)));
+                new PortPlacement("A", PortSide.LEFT, 0, 30),
+                new PortPlacement("B", PortSide.TOP, 170, 0)));
+
+    assertEquals(200, layout.width());
+    assertEquals(40, layout.height());
+    assertEquals(13, layout.captionX());
+    assertEquals(7, layout.captionY());
+    assertEquals(Location.create(0, 30, false), layout.offsetOf("A"));
+    assertEquals(Location.create(170, 0, false), layout.offsetOf("B"));
+  }
+
+  /**
+   * Ports are snapped to the grid on the way in rather than refused. A port off the grid draws
+   * perfectly and then silently takes no wire, which is the worst way for this to go wrong; the box
+   * is rounded up for the same reason, so its far edge stays somewhere a port can sit.
+   */
+  @Test
+  public void coordinatesOffTheGridAreSnappedOntoIt() {
+    final var layout =
+        new PortLayout(
+            "Odd",
+            93,
+            57,
+            40,
+            20,
+            List.of(new PortPlacement("A", PortSide.LEFT, 2, 34)));
 
     assertEquals(100, layout.width());
     assertEquals(60, layout.height());
-    assertEquals(Location.create(0, 10, false), layout.offsetOf("A"));
-    assertEquals(Location.create(0, 20, false), layout.offsetOf("B"));
-    assertEquals(Location.create(100, 10, false), layout.offsetOf("S"));
+    assertEquals(Location.create(0, 30, false), layout.offsetOf("A"));
   }
 
   /** Every port coordinate, and the box itself, is a whole number of grid squares. */
@@ -120,28 +174,85 @@ public class PortLayoutTest {
   }
 
   /**
-   * The caption is drawn centred, so the box has to be wide enough that it starts after the wider
-   * of the two side bands ends -- otherwise a long component name is written across its own port
-   * names. Same argument vertically.
+   * Each side's run of ports is centred between the bands that bound it, rather than starting hard
+   * against one of them. The old arithmetic anchored every run at the top band and let all the
+   * slack collect at the bottom, which is what made a component with two ports and a roomy box look
+   * like a mistake.
+   */
+  @ParameterizedTest
+  @MethodSource("portCounts")
+  public void eachSidesPortsAreCentredOnIt(int left, int right, int top, int bottom) {
+    final var layout = layoutOf("Box", left, right, top, bottom);
+
+    for (final var side : PortSide.values()) {
+      final var onSide = layout.side(side);
+      if (onSide.isEmpty()) continue;
+      final var first = layout.offsetOf(onSide.get(0).name());
+      final var last = layout.offsetOf(onSide.get(onSide.size() - 1).name());
+      // Centred between the bands rather than between the box's own edges: the bands are where the
+      // other two sides write their names, and a run centred through them would cross the writing.
+      final var startBand = layout.band(side.stacked() ? PortSide.TOP : PortSide.LEFT);
+      final var endBand = layout.band(side.stacked() ? PortSide.BOTTOM : PortSide.RIGHT);
+      final var extent = side.stacked() ? layout.height() : layout.width();
+      final var before = (side.stacked() ? first.getY() : first.getX()) - startBand;
+      final var beyond = extent - endBand - (side.stacked() ? last.getY() : last.getX());
+      assertTrue(
+          Math.abs(before - beyond) <= PortLayout.GRID,
+          "the " + side + " ports sit " + before + " from one end and " + beyond + " from the other");
+    }
+  }
+
+  /**
+   * Two names on one side never touch. A name is {@link PortLayout#LINE_HEIGHT} tall and the pitch
+   * on a stacked side is a whole {@link PortLayout#PITCH}, which is what the first version of this
+   * got wrong -- the two were both ten, so every pair of neighbouring names met.
+   */
+  @ParameterizedTest
+  @MethodSource("portCounts")
+  public void namesOnAStackedSideDoNotTouch(int left, int right, int top, int bottom) {
+    final var layout = layoutOf("Box", left, right, top, bottom);
+
+    for (final var side : List.of(PortSide.LEFT, PortSide.RIGHT)) {
+      final var onSide = layout.side(side);
+      for (var index = 1; index < onSide.size(); index++) {
+        final var gap =
+            layout.offsetOf(onSide.get(index).name()).getY()
+                - layout.offsetOf(onSide.get(index - 1).name()).getY();
+        assertEquals(PortLayout.PITCH, gap, "the ports on the " + side + " side are not one pitch apart");
+        assertTrue(gap > PortLayout.LINE_HEIGHT, "two names on the " + side + " side overlap");
+      }
+    }
+  }
+
+  /**
+   * The caption is centred in the space the four bands leave, and the box is made big enough for it
+   * to fit there -- otherwise a long component name is written across its own port names.
+   *
+   * <p>Only as wide as it needs to be, though. The rule this replaced demanded the wider of the two
+   * side bands' worth of clearance on <em>both</em> sides of the caption, which on a component with
+   * one long output name and one short input name made the box half as wide again as anything in it
+   * needed.
    */
   @ParameterizedTest
   @MethodSource("portCounts")
   public void theCaptionCannotRunIntoAPortName(int left, int right, int top, int bottom) {
     final var caption = "A rather long component name";
     final var layout = layoutOf(caption, left, right, top, bottom);
-
-    final var captionWidth =
-        caption.length() * PortLayout.CAPTION_CHAR_WIDTH + 2 * PortLayout.LABEL_INSET;
-    final var widestSideBand =
-        Math.max(layout.band(PortSide.LEFT), layout.band(PortSide.RIGHT));
-    final var deepestEndBand = Math.max(layout.band(PortSide.TOP), layout.band(PortSide.BOTTOM));
+    final var half = caption.length() * PortLayout.CAPTION_CHAR_WIDTH / 2;
 
     assertTrue(
-        (layout.width() - captionWidth) / 2 >= widestSideBand,
-        "the caption starts inside the left or right band");
+        layout.captionX() - half >= layout.band(PortSide.LEFT),
+        "the caption starts inside the left band");
     assertTrue(
-        (layout.height() - PortLayout.CAPTION_HEIGHT) / 2 >= deepestEndBand,
-        "the caption starts inside the top or bottom band");
+        layout.captionX() + half <= layout.width() - layout.band(PortSide.RIGHT),
+        "the caption ends inside the right band");
+    assertTrue(
+        layout.captionY() - PortLayout.CAPTION_HEIGHT / 2 >= layout.band(PortSide.TOP),
+        "the caption starts inside the top band");
+    assertTrue(
+        layout.captionY() + PortLayout.CAPTION_HEIGHT / 2
+            <= layout.height() - layout.band(PortSide.BOTTOM),
+        "the caption ends inside the bottom band");
   }
 
   /** A long name on one side deepens that side's band and nothing else's. */
@@ -149,11 +260,7 @@ public class PortLayoutTest {
   public void longNamesWidenOnlyTheSideTheyAreOn() {
     final var plain = layoutOf("Box", 1, 1, 0, 0);
     final var wide =
-        new PortLayout(
-            "Box",
-            List.of(
-                new PortPlacement("CARRY_IN", PortSide.LEFT, 0),
-                new PortPlacement("R0", PortSide.RIGHT, 0)));
+        automatic("Box", nth("CARRY_IN", PortSide.LEFT, 0), nth("R0", PortSide.RIGHT, 0));
 
     assertTrue(
         wide.band(PortSide.LEFT) > plain.band(PortSide.LEFT), "the long name did not widen its band");
@@ -171,11 +278,7 @@ public class PortLayoutTest {
   public void namesOnALaidOutSideWidenThePitchRatherThanTheBand() {
     final var shortNames = layoutOf("Box", 0, 0, 2, 0);
     final var longNames =
-        new PortLayout(
-            "Box",
-            List.of(
-                new PortPlacement("CARRY_IN", PortSide.TOP, 0),
-                new PortPlacement("CARRY_OUT", PortSide.TOP, 1)));
+        automatic("Box", nth("CARRY_IN", PortSide.TOP, 0), nth("CARRY_OUT", PortSide.TOP, 1));
 
     assertEquals(
         shortNames.band(PortSide.TOP),
@@ -189,8 +292,8 @@ public class PortLayoutTest {
 
   /**
    * Names on a laid-out side never run into each other, and the first and last stay inside the box.
-   * A port there sits in the middle of its own cell, so both follow from the pitch being at least
-   * as wide as the longest name.
+   * Both follow from the pitch being at least as wide as the longest name and the run being centred
+   * in a box wide enough for one whole pitch per port.
    */
   @ParameterizedTest
   @MethodSource("portCounts")
@@ -211,81 +314,86 @@ public class PortLayoutTest {
           final var gap = centre - layout.offsetOf(previous).getX();
           assertEquals(pitch, gap, name + " is not one pitch from " + previous);
           assertTrue(
-              gap >= half + previous.length() * PortLayout.LABEL_CHAR_WIDTH / 2, name + " overlaps " + previous);
+              gap >= half + previous.length() * PortLayout.LABEL_CHAR_WIDTH / 2,
+              name + " overlaps " + previous);
         }
       }
     }
   }
 
-  /** Ports keep the slot order they were given, whatever order they arrive in. */
+  /**
+   * Ports keep the order they were already in along their side, whatever order the list arrives in.
+   * That is what makes the arrange button usable on a layout the user has already thought about: it
+   * fixes the spacing without shuffling the ports.
+   */
   @Test
-  public void slotOrderSurvivesTheOrderThePortsArriveIn() {
+  public void theOrderAlongASideSurvivesTheOrderThePortsArriveIn() {
     final var layout =
-        new PortLayout(
+        automatic(
             "Box",
-            List.of(
-                new PortPlacement("third", PortSide.LEFT, 2),
-                new PortPlacement("first", PortSide.LEFT, 0),
-                new PortPlacement("second", PortSide.LEFT, 1)));
+            nth("third", PortSide.LEFT, 2),
+            nth("first", PortSide.LEFT, 0),
+            nth("second", PortSide.LEFT, 1));
 
     assertEquals(
         List.of("first", "second", "third"),
         layout.side(PortSide.LEFT).stream().map(PortPlacement::name).toList());
     assertTrue(
         layout.offsetOf("first").getY() < layout.offsetOf("second").getY(),
-        "slot 0 should sit above slot 1");
+        "the first port should sit above the second");
   }
 
   @Test
   public void blankOrMissingPortNamesAreRefused() {
     assertThrows(
-        IllegalArgumentException.class, () -> new PortPlacement("   ", PortSide.LEFT, 0));
-    assertThrows(IllegalArgumentException.class, () -> new PortPlacement(null, PortSide.LEFT, 0));
+        IllegalArgumentException.class, () -> new PortPlacement("   ", PortSide.LEFT, 0, 0));
+    assertThrows(IllegalArgumentException.class, () -> new PortPlacement(null, PortSide.LEFT, 0, 0));
+  }
+
+  /** A port outside the box to the left or above it has no anchor to be measured from. */
+  @Test
+  public void portsBeforeTheBoxsOwnCornerAreRefused() {
+    assertThrows(
+        IllegalArgumentException.class, () -> new PortPlacement("A", PortSide.LEFT, -10, 0));
+    assertThrows(
+        IllegalArgumentException.class, () -> new PortPlacement("A", PortSide.TOP, 0, -10));
   }
 
   @Test
   public void componentsWithNoNameOrNoPortsAreRefused() {
     assertThrows(
-        IllegalArgumentException.class,
-        () -> new PortLayout("  ", List.of(new PortPlacement("A", PortSide.LEFT, 0))));
-    assertThrows(IllegalArgumentException.class, () -> new PortLayout("Box", List.of()));
+        IllegalArgumentException.class, () -> automatic("  ", nth("A", PortSide.LEFT, 0)));
+    assertThrows(IllegalArgumentException.class, () -> automatic("Box", List.of()));
   }
 
   @Test
   public void twoPortsCannotShareAName() {
     assertThrows(
         IllegalArgumentException.class,
-        () ->
-            new PortLayout(
-                "Box",
-                List.of(
-                    new PortPlacement("A", PortSide.LEFT, 0),
-                    new PortPlacement("A", PortSide.RIGHT, 0))));
+        () -> automatic("Box", nth("A", PortSide.LEFT, 0), nth("A", PortSide.RIGHT, 0)));
   }
 
   /**
-   * A hole or a repeat in one side's slots is refused rather than renumbered. Either means the
-   * caller's picture of the box and this one have come apart, and tidying it up here would move
-   * ports out from under wires that were already drawn to them.
+   * Two ports in one place are refused, which is the one thing a free layout still may not say. A
+   * wire drawn there would attach to both, and nothing about the drawing would show why.
    */
   @Test
-  public void slotsOnOneSideMustRunWithoutHolesOrRepeats() {
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            new PortLayout(
-                "Box",
-                List.of(
-                    new PortPlacement("A", PortSide.LEFT, 0),
-                    new PortPlacement("B", PortSide.LEFT, 2))));
-    assertThrows(
-        IllegalArgumentException.class,
-        () ->
-            new PortLayout(
-                "Box",
-                List.of(
-                    new PortPlacement("A", PortSide.LEFT, 1),
-                    new PortPlacement("B", PortSide.LEFT, 1))));
+  public void twoPortsCannotShareOnePlace() {
+    final var failure =
+        assertThrows(
+            IllegalArgumentException.class,
+            () ->
+                new PortLayout(
+                    "Box",
+                    100,
+                    60,
+                    50,
+                    30,
+                    List.of(
+                        new PortPlacement("A", PortSide.LEFT, 0, 20),
+                        new PortPlacement("B", PortSide.TOP, 0, 20))));
+    assertTrue(failure.getMessage().contains("A"), "the message should name the ports");
+    assertTrue(failure.getMessage().contains("B"), "the message should name the ports");
   }
 
   /**

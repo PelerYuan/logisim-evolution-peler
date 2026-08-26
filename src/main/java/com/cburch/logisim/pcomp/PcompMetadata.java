@@ -28,15 +28,20 @@ import java.util.UUID;
  * and a factory name is a circuit name: if both versions called their circuit {@code MyAdder}, a
  * project that used v1 would silently bind to v2 the next time it was opened, moving every port it
  * had wires on. The suffix is what makes the two versions distinct references. The drawn caption
- * stays the bare name, so a version bump does not change the width of the box.
+ * stays the bare name, so a version bump does not change the shape of the box.
+ *
+ * <p>The whole drawing lives in one {@link PortLayout} rather than in a handful of loose numbers.
+ * The box's size, the caption's place and every port's coordinate are one description of one
+ * picture, and a file that could state them apart from each other is a file that could state them
+ * inconsistently.
  *
  * @param id stable across renames and version bumps; a UUID string
  * @param version 1 for the first publication, incremented for each one after
- * @param name what the user called the component; the caption drawn in the box
+ * @param name what the user called the component; also the caption drawn in the box
  * @param mainCircuit the name of the circuit in this file that <em>is</em> the component; the rest
  *     are its dependencies
  * @param locked whether the component's internals are closed to a project that uses it
- * @param ports every port, with the side and slot the layout window settled on
+ * @param layout the box as the user laid it out, ports and all
  */
 public record PcompMetadata(
     String id,
@@ -44,7 +49,7 @@ public record PcompMetadata(
     String name,
     String mainCircuit,
     boolean locked,
-    List<PortPlacement> ports) {
+    PortLayout layout) {
 
   public PcompMetadata {
     if (id == null || id.isBlank()) throw new IllegalArgumentException("a component needs an id");
@@ -53,13 +58,19 @@ public record PcompMetadata(
     if (mainCircuit == null || mainCircuit.isBlank()) {
       throw new IllegalArgumentException("a component needs a main circuit");
     }
-    if (ports == null || ports.isEmpty()) {
-      throw new IllegalArgumentException(name + " has no ports");
-    }
+    if (layout == null) throw new IllegalArgumentException(name + " has no layout");
     id = id.trim();
     name = name.trim();
     mainCircuit = mainCircuit.trim();
-    ports = List.copyOf(ports);
+    if (!layout.caption().equals(name)) {
+      throw new IllegalArgumentException(
+          name + " is drawn with the caption " + layout.caption());
+    }
+  }
+
+  /** Every port, with the place the layout window settled on. */
+  public List<PortPlacement> ports() {
+    return layout.placements();
   }
 
   /**
@@ -76,23 +87,23 @@ public record PcompMetadata(
   }
 
   /** A first publication of a component that has never been saved before. */
-  public static PcompMetadata firstVersion(String name, List<PortPlacement> ports) {
+  public static PcompMetadata firstVersion(String name, PortLayout layout) {
     return new PcompMetadata(
-        UUID.randomUUID().toString(), 1, name, circuitNameFor(name, 1), true, ports);
+        UUID.randomUUID().toString(), 1, name, circuitNameFor(name, 1), true, layout);
   }
 
   /**
    * The next version of this component. Same id, so the two are recognisably related; a new version
    * number, so they are two types and nothing a user already drew moves under them.
    */
-  public PcompMetadata nextVersion(List<PortPlacement> newPorts) {
+  public PcompMetadata nextVersion(PortLayout newLayout) {
     return new PcompMetadata(
-        id, version + 1, name, circuitNameFor(name, version + 1), locked, newPorts);
+        id, version + 1, name, circuitNameFor(name, version + 1), locked, newLayout);
   }
 
   /** The same component, published again under the same version number. */
-  public PcompMetadata withPorts(List<PortPlacement> newPorts) {
-    return new PcompMetadata(id, version, name, mainCircuit, locked, newPorts);
+  public PcompMetadata withLayout(PortLayout newLayout) {
+    return new PcompMetadata(id, version, name, mainCircuit, locked, newLayout);
   }
 
   /** How this component is named in the toolbox: the name the user gave it, and its version. */

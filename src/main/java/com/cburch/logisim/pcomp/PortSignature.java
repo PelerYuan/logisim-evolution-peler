@@ -20,10 +20,16 @@ import java.util.Map;
 /**
  * Peler Edition. Everything about a component's ports that a wire already drawn to one depends on.
  *
- * <p>Five things per port: the name, which side it is on, where in that side's order it sits, which
- * way it points and how wide it is. Change any of them and something in somebody's project is now
- * wrong -- the first three move the port out from under its wire, the last two leave the wire where
- * it is and change what flows through it, which is worse for being invisible.
+ * <p>Five things per port: the name, where on the box it sits, which edge it belongs to, which way
+ * it points and how wide it is. Change any of them and something in somebody's project is now wrong
+ * -- the first three move the port out from under its wire, the last two leave the wire where it is
+ * and change what flows through it, which is worse for being invisible.
+ *
+ * <p><b>The box's own size is deliberately not in here.</b> Nor is where the caption sits. A
+ * component's ports are pinned to the anchor, not to the far edge, so making the box bigger or
+ * moving its name around leaves every port exactly where it was and every wire attached. Those are
+ * the changes a user is allowed to make to a published component without pushing a new version on
+ * everybody who already placed it.
  *
  * <p><b>This is why a published component cannot be edited in place.</b> Comparing signatures is
  * what turns "the layout is fixed once published" from a rule people are asked to follow into one
@@ -36,12 +42,14 @@ import java.util.Map;
  * circuit already says, free to disagree with it.
  *
  * @param name the port's name, which is also its pin's label
- * @param side which side of the box it is on
- * @param slot its position in that side's order, counting from zero
+ * @param side which edge of the box it belongs to, which is how its name is drawn
+ * @param x distance right of the box's left edge
+ * @param y distance below the box's top edge
  * @param input true for an input, false for an output
  * @param width bits, from the pin's {@code StdAttr.WIDTH}
  */
-public record PortSignature(String name, PortSide side, int slot, boolean input, int width) {
+public record PortSignature(
+    String name, PortSide side, int x, int y, boolean input, int width) {
 
   /**
    * The signature of a set of placements, taking direction and width from the matching pins.
@@ -60,7 +68,8 @@ public record PortSignature(String name, PortSide side, int slot, boolean input,
           new PortSignature(
               port.name(),
               port.side(),
-              port.slot(),
+              port.x(),
+              port.y(),
               Pin.INPUT.equals(pin.getAttributeValue(Pin.ATTR_TYPE)),
               pin.getAttributeValue(StdAttr.WIDTH).getWidth()));
     }
@@ -84,8 +93,9 @@ public record PortSignature(String name, PortSide side, int slot, boolean input,
   }
 
   private static int inReadingOrder(PortSignature a, PortSignature b) {
-    if (a.side != b.side) return a.side.compareTo(b.side);
-    return a.slot - b.slot;
+    if (a.y != b.y) return Integer.compare(a.y, b.y);
+    if (a.x != b.x) return Integer.compare(a.x, b.x);
+    return a.name.compareTo(b.name);
   }
 
   /**
@@ -119,7 +129,8 @@ public record PortSignature(String name, PortSide side, int slot, boolean input,
       final var kind =
           older == null ? Kind.ADDED
               : newer == null ? Kind.REMOVED
-                  : older.side != newer.side || older.slot != newer.slot ? Kind.MOVED
+                  : older.side != newer.side || older.x != newer.x || older.y != newer.y
+                      ? Kind.MOVED
                       : older.input != newer.input ? Kind.DIRECTION
                           : older.width != newer.width ? Kind.WIDTH : null;
       if (kind != null) found.add(new Difference(kind, name, older, newer));

@@ -48,13 +48,12 @@ class PcompLibraryTest {
    * OutOfMemoryError reaches Gradle as "Test process encountered an unexpected problem", naming no
    * test and no line.
    */
-  private static File writeAdder(Path dir, String name, List<PortPlacement> ports)
-      throws IOException {
+  private static File writeAdder(Path dir, String name, PortLayout layout) throws IOException {
     final var portXml = new StringBuilder();
-    for (final var port : ports) {
+    for (final var port : layout.placements()) {
       portXml.append(
-          "    <port name=\"%s\" side=\"%s\" slot=\"%d\"/>%n"
-              .formatted(port.name(), port.side().toXmlValue(), port.slot()));
+          "    <port name=\"%s\" side=\"%s\" x=\"%d\" y=\"%d\"/>%n"
+              .formatted(port.name(), port.side().toXmlValue(), port.x(), port.y()));
     }
     final var xml =
         """
@@ -81,21 +80,31 @@ class PcompLibraryTest {
             <wire from="(100,130)" to="(170,130)"/>
             <wire from="(220,120)" to="(300,120)"/>
           </circuit>
-          <pcomp id="11111111-2222-4333-8444-555555555555" version="1" main="%s" locked="true">
+          <pcomp id="11111111-2222-4333-8444-555555555555" version="1" main="%s" locked="true"
+                 width="%d" height="%d" caption-x="%d" caption-y="%d">
         %s  </pcomp>
         </project>
         """
-            .formatted(name, name, name, portXml);
+            .formatted(
+                name,
+                name,
+                name,
+                layout.width(),
+                layout.height(),
+                layout.captionX(),
+                layout.captionY(),
+                portXml);
     final var file = dir.resolve(name + PcompFile.EXTENSION).toFile();
     Files.writeString(file.toPath(), xml, StandardCharsets.UTF_8);
     return file;
   }
 
-  private static List<PortPlacement> defaultPorts() {
-    return List.of(
-        new PortPlacement("A", PortSide.LEFT, 0),
-        new PortPlacement("B", PortSide.LEFT, 1),
-        new PortPlacement("SUM", PortSide.RIGHT, 0));
+  private static PortLayout defaultLayout(String name) {
+    return PcompLayouts.automatic(
+        name,
+        PcompLayouts.nth("A", PortSide.LEFT, 0),
+        PcompLayouts.nth("B", PortSide.LEFT, 1),
+        PcompLayouts.nth("SUM", PortSide.RIGHT, 0));
   }
 
   /**
@@ -105,17 +114,17 @@ class PcompLibraryTest {
    */
   @Test
   public void theComponentLoadsWithItsPortsWhereTheLayoutPutThem(@TempDir Path dir) throws Exception {
-    final var file = writeAdder(dir, "Adder", defaultPorts());
+    final var layout = defaultLayout("Adder");
+    final var file = writeAdder(dir, "Adder", layout);
 
     final var library = PcompLibrary.load(file, new Loader(null));
 
     assertEquals(1, library.getTools().size(), "the toolbox should be offered the component alone");
     assertEquals("Adder v1", library.getDisplayName());
 
-    final var layout = new PortLayout("Adder", defaultPorts());
     final var offsets = library.getCircuit().getAppearance().getPortOffsets(Direction.EAST);
     assertEquals(3, offsets.size());
-    for (final var port : defaultPorts()) {
+    for (final var port : layout.placements()) {
       final var expected = layout.offsetOf(port.name());
       assertTrue(
           offsets.containsKey(expected),
@@ -130,14 +139,14 @@ class PcompLibraryTest {
    */
   @Test
   public void theDerivedAppearanceIsTheOneInUse(@TempDir Path dir) throws Exception {
-    final var file = writeAdder(dir, "Adder", defaultPorts());
+    final var layout = defaultLayout("Adder");
+    final var file = writeAdder(dir, "Adder", layout);
 
     final var library = PcompLibrary.load(file, new Loader(null));
 
     assertFalse(
         library.getCircuit().getAppearance().isDefaultAppearance(),
         "the component fell back to the default subcircuit box");
-    final var layout = new PortLayout("Adder", defaultPorts());
     assertEquals(
         com.cburch.logisim.data.Bounds.create(-1, -1, layout.width() + 2, layout.height() + 2),
         library.getCircuit().getAppearance().getOffsetBounds());
@@ -146,18 +155,51 @@ class PcompLibraryTest {
   /** Ports on all four sides survive the trip through the file. */
   @Test
   public void portsOnEverySideSurviveTheFile(@TempDir Path dir) throws Exception {
-    final var ports =
-        List.of(
-            new PortPlacement("A", PortSide.LEFT, 0),
-            new PortPlacement("B", PortSide.TOP, 0),
-            new PortPlacement("SUM", PortSide.BOTTOM, 0));
-    final var file = writeAdder(dir, "Spread", ports);
+    final var layout =
+        PcompLayouts.automatic(
+            "Spread",
+            PcompLayouts.nth("A", PortSide.LEFT, 0),
+            PcompLayouts.nth("B", PortSide.TOP, 0),
+            PcompLayouts.nth("SUM", PortSide.BOTTOM, 0));
+    final var file = writeAdder(dir, "Spread", layout);
 
     final var library = PcompLibrary.load(file, new Loader(null));
 
-    final var layout = new PortLayout("Spread", ports);
     final var offsets = library.getCircuit().getAppearance().getPortOffsets(Direction.EAST);
-    for (final var port : ports) {
+    for (final var port : layout.placements()) {
+      assertTrue(offsets.containsKey(layout.offsetOf(port.name())), port.name() + " moved");
+    }
+  }
+
+  /**
+   * A box the user dragged is drawn as they dragged it, not put back to the default.
+   *
+   * <p>The one thing the whole free-layout half of this feature rests on: the file states the
+   * geometry, and loading it states nothing of its own.
+   */
+  @Test
+  public void theBoxComesBackTheShapeItWasSaved(@TempDir Path dir) throws Exception {
+    final var layout =
+        new PortLayout(
+            "Adder",
+            180,
+            40,
+            90,
+            20,
+            List.of(
+                new PortPlacement("A", PortSide.LEFT, 0, 10),
+                new PortPlacement("B", PortSide.LEFT, 0, 30),
+                new PortPlacement("SUM", PortSide.BOTTOM, 150, 40)));
+    final var file = writeAdder(dir, "Adder", layout);
+
+    final var library = PcompLibrary.load(file, new Loader(null));
+
+    assertEquals(
+        com.cburch.logisim.data.Bounds.create(-1, -1, 182, 42),
+        library.getCircuit().getAppearance().getOffsetBounds(),
+        "the box was not the one the file described");
+    final var offsets = library.getCircuit().getAppearance().getPortOffsets(Direction.EAST);
+    for (final var port : layout.placements()) {
       assertTrue(offsets.containsKey(layout.offsetOf(port.name())), port.name() + " moved");
     }
   }
@@ -168,9 +210,9 @@ class PcompLibraryTest {
    */
   @Test
   public void portsThatNoPinAnswersToAreRefused(@TempDir Path dir) throws Exception {
-    final var ports = new ArrayList<>(defaultPorts());
-    ports.add(new PortPlacement("CARRY", PortSide.RIGHT, 1));
-    final var file = writeAdder(dir, "Wrong", ports);
+    final var ports = new ArrayList<>(defaultLayout("Wrong").placements());
+    ports.add(new PortPlacement("CARRY", PortSide.RIGHT, 0, 10));
+    final var file = writeAdder(dir, "Wrong", PcompLayouts.automatic("Wrong", ports));
 
     final var failure =
         assertThrows(IOException.class, () -> PcompLibrary.load(file, new Loader(null)));
@@ -183,7 +225,7 @@ class PcompLibraryTest {
    */
   @Test
   public void oneBrokenFileIsSkippedRatherThanFatal(@TempDir Path dir) throws Exception {
-    writeAdder(dir, "Good", defaultPorts());
+    writeAdder(dir, "Good", defaultLayout("Good"));
     Files.writeString(dir.resolve("Broken.pcomp"), "not a component", StandardCharsets.UTF_8);
     Files.writeString(dir.resolve("Ignored.circ"), "not scanned either", StandardCharsets.UTF_8);
     final var problems = new ArrayList<String>();
@@ -228,10 +270,10 @@ class PcompLibraryTest {
    */
   @Test
   public void twoComponentsCannotShareACircuitName(@TempDir Path dir) throws Exception {
-    final var first = PcompLibrary.load(writeAdder(dir, "Adder", defaultPorts()), new Loader(null));
+    final var first = PcompLibrary.load(writeAdder(dir, "Adder", defaultLayout("Adder")), new Loader(null));
     final var other = Files.createTempDirectory(dir, "other");
     final var second =
-        PcompLibrary.load(writeAdder(other, "Adder", defaultPorts()), new Loader(null));
+        PcompLibrary.load(writeAdder(other, "Adder", defaultLayout("Adder")), new Loader(null));
 
     final var tools = PcompCatalogLibrary.toolsOf(List.of(first, second));
 
