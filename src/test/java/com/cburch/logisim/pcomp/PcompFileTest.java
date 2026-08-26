@@ -11,7 +11,6 @@ package com.cburch.logisim.pcomp;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -273,6 +272,59 @@ class PcompFileTest {
   public void theCircuitNameOfAVersionIsLegal() {
     assertNull(SyntaxChecker.getErrorMessage(PcompMetadata.circuitNameFor("Adder4", 1)));
     assertNull(SyntaxChecker.getErrorMessage(PcompMetadata.circuitNameFor("My_Adder", 12)));
+  }
+
+  /**
+   * A name may hold spaces, and the circuit inside carries them as underscores.
+   *
+   * <p>The two names have separate jobs. What the user typed is what the box is captioned with and
+   * what the toolbox and the manager panel say; the circuit's name has to survive {@code
+   * SyntaxChecker}, which rejects a space. A run of spaces folds to one underscore because a double
+   * underscore is refused as well.
+   */
+  @Test
+  public void namesMayHoldSpaces() {
+    assertEquals("Half_Adder_v1", PcompMetadata.circuitNameFor("Half Adder", 1));
+    assertEquals("Half_Adder_v3", PcompMetadata.circuitNameFor("  Half   Adder  ", 3));
+    assertNull(SyntaxChecker.getErrorMessage(PcompMetadata.circuitNameFor("Half Adder", 1)));
+    assertNull(SyntaxChecker.getErrorMessage(PcompMetadata.circuitNameFor("Four Bit Adder", 2)));
+  }
+
+  /** Folding the spaces out is not a licence to fold anything else out. */
+  @Test
+  public void namesUnusableForSomeOtherReasonAreStillRefused() {
+    assertNotNull(SyntaxChecker.getErrorMessage(PcompMetadata.circuitNameFor("Half-Adder", 1)),
+        "a hyphen is not a space and is still not allowed in a circuit name");
+    assertNotNull(SyntaxChecker.getErrorMessage(PcompMetadata.circuitNameFor("4 Bit Adder", 1)),
+        "a name starting with a digit is still refused");
+    assertNotNull(SyntaxChecker.getErrorMessage(PcompMetadata.circuitNameFor("Half _ Adder", 1)),
+        "an underscore already sitting between two spaces would make a double underscore");
+  }
+
+  /** The name the user typed is kept whole, spaces and all, through a round trip. */
+  @Test
+  public void theSpacesInANameSurviveTheRoundTrip(@TempDir Path dir) throws Exception {
+    final var metadata =
+        new PcompMetadata(
+            "5f2c1d90-0000-4000-8000-00000000000e",
+            1,
+            "Half Adder",
+            PcompMetadata.circuitNameFor("Half Adder", 1),
+            true,
+            PcompLayouts.automatic(
+                "Half Adder",
+                PcompLayouts.nth("A", PortSide.LEFT, 0),
+                PcompLayouts.nth("SUM", PortSide.RIGHT, 0)));
+    final var file = dir.resolve(metadata.mainCircuit() + PcompFile.EXTENSION).toFile();
+    Files.writeString(file.toPath(), projectXml(elementXml(metadata)), StandardCharsets.UTF_8);
+
+    final var back = PcompFile.read(file);
+
+    assertNotNull(back);
+    assertEquals("Half Adder", back.name());
+    assertEquals("Half_Adder_v1", back.mainCircuit());
+    assertEquals("Half Adder", back.layout().caption(), "the box is captioned with what was typed");
+    assertEquals("Half Adder v1", back.displayName());
   }
 
   @Test

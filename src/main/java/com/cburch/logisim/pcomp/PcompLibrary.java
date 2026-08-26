@@ -75,10 +75,12 @@ public final class PcompLibrary extends Library {
           file.getName() + " names " + metadata.mainCircuit() + ", which it does not contain");
     }
     applyAppearance(circuit, metadata, file.getName());
-    final var tool = project.getAddTool(circuit);
-    if (tool == null) {
+    if (project.getAddTool(circuit) == null) {
       throw new IOException(file.getName() + " has no tool for " + metadata.mainCircuit());
     }
+    // Not the project's own tool: that one is labelled with the circuit's name, which carries the
+    // version suffix and has the user's spaces folded into underscores. See PcompTool.
+    final var tool = new PcompTool(circuit.getSubcircuitFactory(), metadata.displayName());
     return new PcompLibrary(file, metadata, circuit, tool, project.getCircuits());
   }
 

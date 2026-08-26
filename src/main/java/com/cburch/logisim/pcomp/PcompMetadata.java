@@ -76,14 +76,28 @@ public record PcompMetadata(
   /**
    * The name the circuit inside a component file carries.
    *
-   * <p>An underscore rather than a space because this name goes through the same door every other
-   * circuit name does: {@code SyntaxChecker.isVariableNameAcceptable} rejects a space, and a name it
-   * rejects cannot be set on a live circuit at all. A trailing underscore is rejected too, but a
-   * name ending in one could never have been the user's circuit name in the first place, so
-   * appending to it stays inside the rules.
+   * <p>Not the name the user typed. A circuit name goes through {@code
+   * SyntaxChecker.isVariableNameAcceptable}, which rejects a space -- and a rejected name cannot be
+   * set on a live circuit at all, because the {@code NAME_ATTR} listener puts the old name back and
+   * <em>opens a modal dialog</em> while doing it. So the spaces are folded out here and the user's
+   * own name is kept, spaces and all, in {@link #name}: it is what the box is captioned with, what
+   * the manager panel lists and what {@link #displayName} reads.
+   *
+   * <p>A run of spaces folds to one underscore rather than one each, because {@code __} is rejected
+   * too. What this does not do is rescue a name that is unusable for some other reason -- a hyphen,
+   * a leading digit, a trailing underscore -- so those are still refused, at the point where the
+   * user can see why.
+   *
+   * <p>The version suffix is an underscore for the same reason. A name ending in one would make
+   * {@code __v1}, but such a name is refused before it gets here.
    */
   public static String circuitNameFor(String name, int version) {
-    return name.trim() + "_v" + version;
+    return withoutSpaces(name) + "_v" + version;
+  }
+
+  /** The user's name with every run of whitespace folded into a single underscore. */
+  private static String withoutSpaces(String name) {
+    return name.trim().replaceAll("\\s+", "_");
   }
 
   /** A first publication of a component that has never been saved before. */

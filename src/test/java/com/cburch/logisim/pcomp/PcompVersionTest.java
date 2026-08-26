@@ -55,6 +55,15 @@ class PcompVersionTest {
           PcompLayouts.nth("S", PortSide.RIGHT, 0),
           PcompLayouts.nth("C", PortSide.RIGHT, 1));
 
+  /** The same ports under a name with a space in it, for the labelling test. */
+  private static final PortLayout HALF_ADDER =
+      PcompLayouts.automatic(
+          "Half Adder",
+          PcompLayouts.nth("A", PortSide.LEFT, 0),
+          PcompLayouts.nth("B", PortSide.LEFT, 1),
+          PcompLayouts.nth("S", PortSide.RIGHT, 0),
+          PcompLayouts.nth("C", PortSide.RIGHT, 1));
+
   /** {@code C} dragged to the bottom, which is a signature change and so a new version. */
   private static final PortLayout REARRANGED =
       PcompLayouts.moving(
@@ -93,6 +102,26 @@ class PcompVersionTest {
     final var tools = PcompCatalogLibrary.toolsOf(versions);
     assertEquals(2, tools.size(), "one version was dropped for sharing a name with the other");
     assertNotEquals(tools.get(0).getName(), tools.get(1).getName());
+  }
+
+  /**
+   * The toolbox says what the user called the component; the file records the circuit.
+   *
+   * <p>Two different names for two different jobs. A project file resolves a placed component
+   * through the tool's {@code getName}, which has to be the circuit's -- version suffix, spaces
+   * folded to underscores and all -- while the label a person reads should be neither.
+   */
+  @Test
+  public void theToolboxLabelIsTheNameTheUserGaveIt(@TempDir Path dir) throws Exception {
+    final var first = PcompMetadata.firstVersion("Half Adder", HALF_ADDER);
+    PcompCatalog.useDirectory(dir.toFile());
+    final var component = PcompCatalog.install(publish(dir, first), new Loader(null));
+
+    final var tool = PcompCatalogLibrary.toolsOf(List.of(component)).get(0);
+
+    assertEquals("Half Adder v1", tool.getDisplayName());
+    assertEquals("Half_Adder_v1", tool.getName(), "the tool's name is how a project file finds it");
+    assertEquals("Half_Adder_v1", component.getCircuit().getName());
   }
 
   /** A new version draws its box the same size, because the caption never carried the number. */
