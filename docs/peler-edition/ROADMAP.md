@@ -1682,6 +1682,24 @@ name attribute's listener runs `SyntaxChecker.isVariableNameAcceptable` and *ope
 when it rejects one, mid-write. The caption drawn in the box stays the bare name, so a version bump
 does not change the box width.
 
+### The name the user typed and the name the circuit carries
+
+Two names, two jobs. `PcompMetadata.name` is what was typed -- spaces and all -- and is the caption
+in the box, the toolbox label, the manager panel's first column and `displayName`. `mainCircuit` is
+derived from it by `circuitNameFor`, which folds every run of whitespace into a *single* underscore
+(`__` is refused too) and appends the version. That is the whole of how a component name came to
+support spaces: nothing in the naming rules forbade one, the circuit name did.
+
+The derivation rescues spaces and nothing else. A hyphen, a leading digit, an underscore that would
+end up doubled -- all still refused, on the save button, where `pcompProblemBadName` now states the
+rule rather than just saying no.
+
+`PcompTool` exists for the last mile. A toolbox entry is labelled by `AddTool.getDisplayName()`,
+which for a subcircuit is the circuit's name, so without it the toolbox would read `Half_Adder_v1`
+and the feature would look broken. It overrides that one method: `getName` has to stay the circuit's
+name because the catalog dedupes on it and a project file resolves through it, and `cloneTool` is
+left to the superclass so a copy dragged onto the toolbar keeps its full attribute state.
+
 ### Locking
 
 Five doors, all answering to `pcomp/PcompLock.java` so the policy cannot drift between them: the

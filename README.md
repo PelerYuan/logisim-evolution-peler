@@ -152,9 +152,18 @@ whole thing back to a tidy default whenever you have made a mess of it. Name eve
 unnamed one stops the save, because a nameless port on someone else's symbol is a pin you have to
 open the circuit to identify.
 
+![The layout window, with a port being dragged onto another edge of the box](docs/img/peler-edition/CustomComponentLayout.gif)
+
+Name the component whatever reads best -- **Half Adder** is a fine name, spaces included. Letters,
+digits, spaces and underscores are all allowed, starting with a letter; the file on disk turns the
+spaces into underscores so that the circuit inside it is a name Logisim can carry, and everywhere
+you actually read the name it stays the one you typed.
+
 The component then appears under **My Components** in the toolbox of every project on this machine,
 not just the one it was drawn in, and it is still there after a restart. It is a real component:
 rotate it, label it, wire it, drop it inside another component.
+
+![A component placed from My Components and wired into a circuit](docs/img/peler-edition/CustomComponents.png)
 
 **Layouts are fixed once published, versions are not.** A published component's ports do not move
 under the projects using it. To move them, publish again -- the save window notices and offers a new
@@ -165,6 +174,8 @@ top-left corner, so a bigger box leaves every one of them exactly where your wir
 lists what is installed, imports a component someone sent you, opens one for editing, deletes one --
 refusing while the project still has it placed -- and swaps every instance of one version for
 another, showing the port differences first when there are any.
+
+![The Custom Components panel listing two versions of one component](docs/img/peler-edition/CustomComponentManager.png)
 
 **Saving to `.circ` keeps them.** A project that uses custom components saves to official
 Logisim-evolution's format with each component written in as an ordinary circuit carrying the same

@@ -581,3 +581,36 @@ false，NAME_ATTR 是其中之一，所以一个子电路从来就没写过它�
   应该只挪那一个。
 
 顺手加了一条 `resizingTheBoxIsNotAChange`，把上面「框的大小不进签名」那个决定钉住。
+
+### 12.10 元件名支持空格（2026-08-26）
+
+维护者要求元件名能带空格。`5.4` 那三条校验里没有一条禁止空格，挡住它的是别的东西：元件名当时**同时**
+是电路名（`circuitNameFor` 直接拿 `name.trim()` 拼 `_v<N>`），而电路名要过
+`SyntaxChecker.isVariableNameAcceptable`，那条正则 `^([a-zA-Z]+\w*)` 里没有空格。
+
+所以这次做的事是**把两个名字分开**：
+
+- **用户名**（`PcompMetadata.name`）原样保留，空格照留。它是框里的 caption、`displayName()`
+  「Half Adder v1」、管理面板的第一列、以及「这将创建 X v1」那句话。
+- **电路名**（`mainCircuit`）由 `circuitNameFor` 派生：`\s+` 一律折成**一个**下划线，再拼
+  `_v<N>`。折成一个而不是一个空格对一个下划线，是因为 `__` 也在 `SyntaxChecker` 的禁止之列。
+
+派生只处理空格，**不救别的**。`Half-Adder` 里的连字符、`4 Bit Adder` 的首字符数字、
+`Half _ Adder` 折出来的 `__`，仍然在保存按钮上被拦住。`pcompProblemBadName` 因此从
+「这个名称不能用作电路名」改成把规则说出来：字母、数字、空格、下划线，且必须以字母开头——
+用户现在会先试空格成功、再试连字符失败，得让他看得懂这两件事的区别。
+
+一个不做不行的收尾：**元件栏里那一条的文字**。它来自 `AddTool.getDisplayName()`，转手就是
+`SubcircuitFactory` 的 `getDisplayGetter()`，也就是电路名——于是元件栏会写 `Half_Adder_v1`，
+用户会觉得空格根本没支持。新的 `PcompTool extends AddTool` 只覆盖 `getDisplayName()`，
+其余一个不碰：
+
+- `getName()` 故意不覆盖。它是 `PcompCatalogLibrary.toolsOf` 去重的 key，也是
+  `<comp lib name>` 解析的依据，必须是电路名。
+- `cloneTool()` 故意不覆盖。父类的实现走私有拷贝构造，把 `attrs` 完整克隆过去；覆盖它就得从
+  factory 重新造一个，用户在这个工具上配过的属性会丢。代价是拖到工具栏上的那个副本会退回显示
+  电路名——那是一个图标的 tooltip，比丢属性划算。
+
+`~/.logisim-peler/components/` 里的文件名跟着电路名走，所以是 `Half_Adder_v1.pcomp`，没有空格。
+两个不同的名字折出同一个电路名（`My And` 和 `My_And`）会撞车，这由 `destination()` 里那条既有的
+`pcompNameTaken` 检查挡下，不是新问题。
