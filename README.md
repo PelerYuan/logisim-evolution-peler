@@ -85,6 +85,7 @@ altered; the list below is the entire difference.
 | --- | --- |
 | **Drawing** | continuous placement · right-click to rotate · wire auto-snap · <kbd>Ctrl</kbd>+<kbd>F</kbd> component finder |
 | **Reading** | 74xx chips as logic symbols · switch every chip's drawing at once · schematic annotations |
+| **Building** | save a circuit as your own component · a catalog that outlives the project |
 | **Sharing** | its own `.pcirc` format · interactive HTML export |
 | **Other** | one settings page for all of it · an MCP server for AI clients, off by default |
 
@@ -140,6 +141,46 @@ to a wire endpoint where it meets a component. Notes take multiple lines and fol
 are attached to when it is moved, rotated or deleted.
 
 ![Adding a note above a gate with the annotate tool](docs/img/peler-edition/Annotation.gif)
+
+### Making your own components ###
+
+**Save a circuit as a component.** Draw a circuit the way you always would, then **Project → Save as
+Custom Component…**. A window shows the box it will become, laid out for you to start from, and you
+can rearrange all of it: drag a port anywhere on the box, drag the right or bottom edge to resize
+it, drag the name to move it, and double-click a port to rename it. **Arrange for Me** puts the
+whole thing back to a tidy default whenever you have made a mess of it. Name every port -- an
+unnamed one stops the save, because a nameless port on someone else's symbol is a pin you have to
+open the circuit to identify.
+
+![The layout window, with a port being dragged onto another edge of the box](docs/img/peler-edition/CustomComponentLayout.gif)
+
+Name the component whatever reads best -- **Half Adder** is a fine name, spaces included. Letters,
+digits, spaces and underscores are all allowed, starting with a letter; the file on disk turns the
+spaces into underscores so that the circuit inside it is a name Logisim can carry, and everywhere
+you actually read the name it stays the one you typed.
+
+The component then appears under **My Components** in the toolbox of every project on this machine,
+not just the one it was drawn in, and it is still there after a restart. It is a real component:
+rotate it, label it, wire it, drop it inside another component.
+
+![A component placed from My Components and wired into a circuit](docs/img/peler-edition/CustomComponents.png)
+
+**Layouts are fixed once published, versions are not.** A published component's ports do not move
+under the projects using it. To move them, publish again -- the save window notices and offers a new
+version instead of an overwrite, telling you exactly what changed. Both versions stay installed, so
+nothing you already wired moves on its own. Making the box roomier or nudging the name is not a
+change of that kind and replaces the component where it stands: ports are pinned to the box's
+top-left corner, so a bigger box leaves every one of them exactly where your wires already meet it. **Project → Custom Components…**
+lists what is installed, imports a component someone sent you, opens one for editing, deletes one --
+refusing while the project still has it placed -- and swaps every instance of one version for
+another, showing the port differences first when there are any.
+
+![The Custom Components panel listing two versions of one component](docs/img/peler-edition/CustomComponentManager.png)
+
+**Saving to `.circ` keeps them.** A project that uses custom components saves to official
+Logisim-evolution's format with each component written in as an ordinary circuit carrying the same
+drawing, so the ports land on the same coordinates and no wire moves. What is lost over there is
+only the link to your catalog.
 
 ### Handing a circuit to someone else ###
 

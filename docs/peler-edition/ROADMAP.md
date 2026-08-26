@@ -1607,6 +1607,150 @@ already placed are drawn.** Neither reaches the other's chips, deliberately -- a
 rewrote saved files would be a surprise, and a menu command that changed a global default would be a
 different surprise.
 
+## Feature 15 — Custom components (2026-08-26)
+
+A user can save a circuit as their own component, give it a symbol, and have it appear in the
+toolbox of every project on the machine. Designed in
+[docs/peler-edition/design/custom-components.md](design/custom-components.md), which holds the
+investigation, the four decisions the maintainer settled, and a step-by-step implementation record;
+this section is the summary and the things worth knowing before touching it again.
+
+### Four decisions, taken before any code
+
+1. **The internals stay in the file, but are locked by default.** Not a black box -- there is an
+   unlock, and it is "open the component file itself in the main window", which needs no new
+   mechanism because the file is an ordinary project.
+2. ~~**The layout window offers two degrees of freedom**: which of the four sides a port sits on,
+   and where in that side's order. The box sizes itself.~~ **Reversed once the feature was in the
+   maintainer's hands**: the window is a small appearance editor now -- box, ports and caption all
+   drag anywhere, and every position is an absolute coordinate. The sizing arithmetic survives as
+   the starting point for a new component and behind an "Arrange for Me" button. See "The layout is
+   free" below.
+3. **A published layout is fixed.** Changing it means publishing a new version, not editing the old
+   one. This is what makes a component safe to hand to someone.
+4. **Importing is a management panel**, not a menu action.
+
+### What a component actually is
+
+A subcircuit with a *derived* appearance. No new `InstanceFactory`, no new simulation path: a
+`.pcomp` file is a `LogisimFile` holding the component's circuit, every circuit it depends on, and
+one `<pcomp>` element carrying the port layout. State, propagation, rotation and entering are all
+inherited from subcircuits for free; the only thing that had to be written was the locking.
+
+The layout is stored as geometry -- how big the box is, where on it each port sits, where the
+caption goes -- and the drawing is derived from it at load time. Storing the *drawing* instead
+would have given up the guarantee that made decision 3 possible: a `CircuitAppearance` can hold any
+shapes at all, so a user could edit around the layout window and the lock would mean nothing.
+Deriving keeps there being exactly one description of the component.
+
+### The layout is free
+
+Ports carry `(side, x, y)`, both axes measured from the box's top-left corner, which is also the
+appearance anchor. `PortSide` is no longer half of a port's position; it is an orientation derived
+from the coordinate -- which way the stub points, which side of the box the name is written on --
+and `PortSide.nearest` recomputes it while a port is being dragged.
+
+`PortLayout.automatic` is the old sizing arithmetic, kept for two jobs: laying out a component the
+first time, and the "Arrange for Me" button. Three defects in it were fixed on the way through, all
+of them visible in the first component the maintainer built:
+
+- ports were laid from the top band downwards, so every bit of slack collected at the bottom. They
+  are centred between the two bands now -- between the *bands*, not between the box's edges, because
+  the bands are where the other two sides write their names.
+- `PITCH` was `10`, the same as a line of text, so two adjacent port names touched. It is `20` now.
+- the caption widened the box through `captionWidth + 2 * max(left, right)`. The rule is now just
+  `width >= left + captionWidth + right`, with the caption centred in the interior rather than in
+  the box.
+
+Only the right and bottom edges resize. The top-left corner is the anchor every port coordinate is
+measured from, so dragging it would move the whole component rather than reshape it.
+
+Two consequences worth keeping in mind. The box's size and the caption's position are deliberately
+**not** in `PortSignature`: tidying up a published component must not force a new version on the
+projects already using it, and since ports are pinned to the anchor, a wider box moves none of them.
+And `PortLayout` refuses two ports in one place, which a drag necessarily passes through -- so the
+canvas draws from `PortLayoutDraft` directly rather than through a `PortLayout`, and the overlap is
+reported as a `Problem` on the save button instead.
+
+### The part that shaped everything else: two versions must have two circuit names
+
+A project file records a placed component as `<comp lib="N" name="CircuitName"/>`, and the catalog
+library dedupes tools by name. So if v1 and v2 both called their circuit `MyAnd`, a project saved
+against v1 would silently bind to v2 on the next open, and the replace action would have nothing to
+swap between. Hence `mainCircuit = name + "_v" + version` -- with an underscore, because the circuit
+name attribute's listener runs `SyntaxChecker.isVariableNameAcceptable` and *opens a modal dialog*
+when it rejects one, mid-write. The caption drawn in the box stays the bare name, so a version bump
+does not change the box width.
+
+### The name the user typed and the name the circuit carries
+
+Two names, two jobs. `PcompMetadata.name` is what was typed -- spaces and all -- and is the caption
+in the box, the toolbox label, the manager panel's first column and `displayName`. `mainCircuit` is
+derived from it by `circuitNameFor`, which folds every run of whitespace into a *single* underscore
+(`__` is refused too) and appends the version. That is the whole of how a component name came to
+support spaces: nothing in the naming rules forbade one, the circuit name did.
+
+The derivation rescues spaces and nothing else. A hyphen, a leading digit, an underscore that would
+end up doubled -- all still refused, on the save button, where `pcompProblemBadName` now states the
+rule rather than just saying no.
+
+`PcompTool` exists for the last mile. A toolbox entry is labelled by `AddTool.getDisplayName()`,
+which for a subcircuit is the circuit's name, so without it the toolbox would read `Half_Adder_v1`
+and the feature would look broken. It overrides that one method: `getName` has to stay the circuit's
+name because the catalog dedupes on it and a project file resolves through it, and `cloneTool` is
+left to the superclass so a copy dragged onto the toolbar keeps its full attribute state.
+
+### Locking
+
+Five doors, all answering to `pcomp/PcompLock.java` so the policy cannot drift between them: the
+toolbox double-click, the explorer's Edit Layout and Edit Appearance items, the double-click on a
+placed instance, `SubcircuitFactory.configureMenu`'s View entry, and the main menu's appearance
+editor. Edit Circuit Appearance is refused **even when unlocked**, because the appearance is derived
+and hand-editing it would put the drawing and the model out of step.
+
+A double-click in the toolbox arms continuous placement, the way a built-in gate does -- no dialog.
+The explanation is reserved for the one gesture whose only meaning is "let me in".
+
+### Saving to official `.circ`
+
+The one Peler addition a compatible file can keep. `file/PcompLowering.java` plans which circuits to
+inline and under what names; `XmlWriter` writes each component in as an ordinary circuit with its
+derived appearance, and every placed instance as a plain subcircuit reference. Port coordinates are
+identical either side, so no wire moves. Feature 12 could not do this for the 74xx symbols because
+the symbol and the DIP package place their ports differently; here both sides use the same
+coordinates, because this edition defined them.
+
+It is therefore **not** in `PelerCompat.isLossy` and raises no save warning. What the reopened file
+loses is the link to the catalog -- a change in how the project is organised, not a loss of anything
+in it.
+
+### Things that will bite whoever touches this next
+
+- **Setting the derived shapes is not enough.** `CircuitAttributes.APPEARANCE_ATTR` has to be set to
+  `APPEAR_CUSTOM` in the same breath, or `isDefaultAppearance()` stays true and the shapes are
+  quietly replaced by a regenerated default box. The component loads, places and simulates -- and is
+  drawn as an ordinary subcircuit with its ports somewhere else.
+- **The catalog is a process-wide registry with a re-entrancy guard.** Reading a component needs a
+  `Loader`, every `Loader` builds a `Builtin`, and `Builtin` holds the catalog library. The guard is
+  load-bearing, not defensive.
+- **Not every built-in factory is a singleton.** The ones declared through `FactoryDescription` are
+  built per library instance, so an inlined component's parts fail `Library.contains` against the
+  project's own libraries. `XmlWriter.findLibraryOffering` matches by name instead, which is what a
+  `<comp lib name>` pair means anyway.
+- **`PcompCatalog.useDirectory` is a test seam.** Without pointing the catalog at a temporary folder,
+  the catalog tests read whatever the person running them has installed.
+
+### Open items specific to this feature
+
+- Files written before the free layout carry a `slot` attribute instead of `x`/`y`. They still load
+  -- `PcompFile` runs them back through `PortLayout.automatic` -- but through the *corrected*
+  arithmetic, so they come back working rather than pixel-identical to what they were published as.
+  `slot` is read, never written.
+- One component per file; no `.pcompack` bundle format.
+- No preference for the component directory. `PcompCatalog.directory` is a plain field, so
+  `PelerOptionsTest` is not triggered; adding a preference would require a control on a panel under
+  `gui/prefs/`.
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the

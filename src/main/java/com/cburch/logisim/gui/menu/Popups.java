@@ -15,6 +15,7 @@ import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.file.LoadedLibrary;
 import com.cburch.logisim.gui.main.Frame;
 import com.cburch.logisim.gui.main.StatisticsDialog;
+import com.cburch.logisim.pcomp.PcompLock;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.tools.AddTool;
 import com.cburch.logisim.tools.Library;
@@ -83,6 +84,11 @@ public class Popups {
 
       final var canChange = proj.getLogisimFile().contains(circuit);
       final var file = proj.getLogisimFile();
+      // Peler Edition Feature 15. A locked custom component has no layout to show from here, and no
+      // custom component has an appearance worth editing -- it is derived from the port layout
+      // every time the component loads, so an edit here would not survive.
+      if (PcompLock.blocksEntryInto(circuit)) editLayout.setEnabled(false);
+      if (PcompLock.blocksAppearanceEditOf(proj, circuit)) editAppearance.setEnabled(false);
       if (circuit == proj.getCurrentCircuit()) {
         if (proj.getFrame().getEditorView().equals(Frame.EDIT_APPEARANCE)) {
           editAppearance.setEnabled(false);

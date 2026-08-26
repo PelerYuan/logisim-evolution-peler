@@ -37,6 +37,7 @@ import com.cburch.logisim.gui.generic.ZoomControl;
 import com.cburch.logisim.gui.generic.ZoomModel;
 import com.cburch.logisim.gui.menu.MainMenuListener;
 import com.cburch.logisim.prefs.AppPreferences;
+import com.cburch.logisim.pcomp.PcompLock;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.proj.ProjectActions;
 import com.cburch.logisim.proj.ProjectEvent;
@@ -232,6 +233,16 @@ public class Frame extends LFrame.MainWindow implements LocaleListener {
 
     LocaleManager.addLocaleListener(this);
     toolbox.updateStructure();
+  }
+
+  /**
+   * Peler Edition. Rebuilds the toolbox tree after a custom component is installed or removed.
+   *
+   * <p>The library the components live in is a built-in one, so nothing about the project file
+   * changed and no {@code LibraryEvent} will arrive to say the toolbox is out of date.
+   */
+  public void rebuildToolbox() {
+    toolbox.rebuild();
   }
 
   public RegTabContent getRegTabContent() {
@@ -482,6 +493,13 @@ public class Frame extends LFrame.MainWindow implements LocaleListener {
   public void setEditorView(String view) {
     final var curView = mainPanel.getView();
     if (hdlEditor.getHdlModel() == null && curView.equals(view)) return;
+    // Peler Edition Feature 15. The menu item is disabled for a custom component, but this is the
+    // chokepoint every route to the appearance editor goes through, and a route that is only
+    // closed at one end is closed until somebody adds a second one.
+    if (EDIT_APPEARANCE.equals(view)
+        && PcompLock.blocksAppearanceEditOf(project, project.getCurrentCircuit())) {
+      return;
+    }
     editRegion.setFraction(1.0);
     hdlEditor.setHdlModel(null);
 

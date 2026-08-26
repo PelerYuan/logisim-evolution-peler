@@ -11,6 +11,7 @@ package com.cburch.logisim.std;
 
 import static com.cburch.logisim.std.Strings.S;
 
+import com.cburch.logisim.pcomp.PcompCatalogLibrary;
 import com.cburch.logisim.soc.Soc;
 import com.cburch.logisim.std.annotate.AnnotationLibrary;
 import com.cburch.logisim.std.arith.ArithmeticLibrary;
@@ -71,7 +72,10 @@ public class Builtin extends Library {
             // TtlSymbolLibrary above -- a second toolbox entry needs a library of its own.
             new BfhSymbolLibrary(),
             new ExtraIoLibrary(),
-            new Soc());
+            new Soc(),
+            // Peler Edition: the components the user built and saved. Last in the list so
+            // it sits at the bottom of the toolbox, and empty until something is installed.
+            new PcompCatalogLibrary());
   }
 
   @Override

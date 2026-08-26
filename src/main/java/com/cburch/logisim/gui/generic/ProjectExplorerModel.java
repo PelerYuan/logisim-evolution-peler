@@ -111,6 +111,19 @@ class ProjectExplorerModel extends DefaultTreeModel implements ProjectListener {
     fireStructureChanged();
   }
 
+  /**
+   * Peler Edition. Builds the tree again from scratch.
+   *
+   * <p>{@link #updateStructure} is not enough for a library whose contents changed behind the
+   * model's back: a nested {@code ProjectExplorerLibraryNode} builds its children in its
+   * constructor and rebuilds them only on a {@code LibraryEvent}, which only the root node -- the
+   * project file itself -- is listening for. Installing a custom component changes what a built-in
+   * library offers without any project file having changed, so the root is replaced instead.
+   */
+  public void rebuild() {
+    setLogisimFile(proj == null ? null : proj.getLogisimFile());
+  }
+
   abstract static class Node<T> extends DefaultMutableTreeNode {
 
     private static final long serialVersionUID = 1L;

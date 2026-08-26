@@ -43,4 +43,9 @@ class Toolbox extends JPanel {
   public void updateStructure() {
     toolbox.updateStructure();
   }
+
+  /** Peler Edition. See {@link com.cburch.logisim.gui.generic.ProjectExplorerModel#rebuild}. */
+  public void rebuild() {
+    toolbox.rebuild();
+  }
 }
