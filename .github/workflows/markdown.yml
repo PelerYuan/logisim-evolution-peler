@@ -34,9 +34,5 @@ jobs:
       if: steps.filter.outputs.docs == 'true'
       with:
         # LICENSE is externally sourced and we're not going to fix it.
-        # docs/peler-edition/mcp/ is a frozen, dated archive of the MCP
-        # feature's own development QA reports and phase plans (each file
-        # written once and never revised since); it stays exactly as
-        # written rather than being reworded to satisfy a style linter.
-        exclude: "LICENSE.md docs/peler-edition/mcp/"
+        exclude: "LICENSE.md"
         config_file: .markdownlint.yaml

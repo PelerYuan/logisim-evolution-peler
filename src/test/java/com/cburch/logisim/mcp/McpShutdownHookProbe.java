@@ -17,8 +17,8 @@ import javax.swing.SwingUtilities;
  * <p>Reproduces quitting the application: a shutdown hook that wants the circuit model, and a
  * {@code System.exit} issued from the event dispatch thread, which is how {@code
  * ProjectActions.doQuit} has always ended and the only way out on macOS, where the Dock's Quit is
- * the usual one. The hook below stands in for {@code McpProjectService.close}, asking the same
- * question before hopping.
+ * the usual one. The hook below stands in for {@code McpProjectLifecycleTools.close}, asking the
+ * same question before hopping.
  *
  * <p>It has to be a separate process. A shutdown that has begun cannot be called off, so there is
  * no state left to assert on afterwards -- the only observable answer is whether this process ever

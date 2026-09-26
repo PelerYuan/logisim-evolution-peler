@@ -29,7 +29,7 @@ public final class McpServerManager implements AutoCloseable {
   private ExecutorService httpExecutor;
   private McpModelExecutor modelExecutor;
   private McpProjectRegistry projectRegistry;
-  private McpProjectService projectService;
+  private McpProjectLifecycleTools lifecycleTools;
   private McpJsonRpcDispatcher dispatcher;
   private McpHttpHandler httpHandler;
   private McpServerConfig config;
@@ -102,20 +102,20 @@ public final class McpServerManager implements AutoCloseable {
       }
     }
 
-    // Built before the lock is taken, and this is not a style preference. Constructing the project
-    // service hops to the event dispatch thread, and this object is asked questions from that
-    // thread. Holding the lock across the hop deadlocks the two against each other, and the
-    // application then never finishes opening its window -- which is what it did, when the MCP
-    // menu was still asking isRunning() while the main window was being built. Compare
-    // McpModelExecutor, which had the same shape.
+    // Built before the lock is taken, and this is not a style preference. Constructing a blank
+    // or opened project hops to the event dispatch thread (Frame construction), and this object
+    // is asked questions from that thread. Holding the lock across the hop deadlocks the two
+    // against each other, and the application then never finishes opening its window -- which is
+    // what it did, when the MCP menu was still asking isRunning() while the main window was being
+    // built. Compare McpModelExecutor, which had the same shape.
     final var executor = new McpModelExecutor();
     final var registry = new McpProjectRegistry();
-    final McpProjectService service;
+    final McpProjectLifecycleTools tools;
     final McpJsonRpcDispatcher jsonRpc;
     try {
-      service = new McpProjectService(executor, registry);
-      jsonRpc = new McpJsonRpcDispatcher(BuildInfo.name, BuildInfo.version.toString(), service);
-      service.registerTools(jsonRpc);
+      tools = new McpProjectLifecycleTools(executor, registry);
+      jsonRpc = new McpJsonRpcDispatcher(BuildInfo.name, BuildInfo.version.toString(), null);
+      tools.registerTools(jsonRpc);
     } catch (RuntimeException e) {
       executor.close();
       throw e;
@@ -124,14 +124,14 @@ public final class McpServerManager implements AutoCloseable {
     synchronized (lock) {
       if (httpServer != null) {
         // Another caller won the race while this one was building. Theirs is the live one.
-        service.close();
+        tools.close();
         executor.close();
         return;
       }
       config = requested;
       modelExecutor = executor;
       projectRegistry = registry;
-      projectService = service;
+      lifecycleTools = tools;
       dispatcher = jsonRpc;
       final var firstPort = requested.port();
       IOException last = null;
@@ -147,18 +147,16 @@ public final class McpServerManager implements AutoCloseable {
         }
       }
       if (httpServer == null) {
-        // The service has already attached listeners to every open project, so dropping the
-        // executor alone would leave them attached to a server that never started.
-        projectService.close();
+        lifecycleTools.close();
         modelExecutor.close();
-        projectService = null;
+        lifecycleTools = null;
         projectRegistry = null;
         dispatcher = null;
         modelExecutor = null;
         throw last == null ? new IOException("No MCP port available") : last;
       }
       httpExecutor = Executors.newCachedThreadPool(new McpThreadFactory());
-      httpHandler = new McpHttpHandler(dispatcher, projectService, config);
+      httpHandler = new McpHttpHandler(dispatcher, config);
       httpServer.createContext("/mcp", httpHandler);
       httpServer.setExecutor(httpExecutor);
       httpServer.start();
@@ -236,7 +234,7 @@ public final class McpServerManager implements AutoCloseable {
 
   @Override
   public void close() {
-    final McpProjectService service;
+    final McpProjectLifecycleTools tools;
     final McpModelExecutor executor;
     synchronized (lock) {
       if (httpServer != null) {
@@ -251,18 +249,18 @@ public final class McpServerManager implements AutoCloseable {
         httpExecutor.shutdownNow();
         httpExecutor = null;
       }
-      service = projectService;
+      tools = lifecycleTools;
       executor = modelExecutor;
-      projectService = null;
+      lifecycleTools = null;
       modelExecutor = null;
       projectRegistry = null;
       dispatcher = null;
       boundPort = -1;
     }
-    // Detached outside the lock for the reason given in start(): removing the listeners hops to
-    // the event dispatch thread, and that thread asks this object whether it is running. By here
-    // the fields are already cleared, so anyone who asks gets the right answer meanwhile.
-    if (service != null) service.close();
+    // Detached outside the lock for the reason given in start(): closing a project's frame hops
+    // to the event dispatch thread, and that thread asks this object whether it is running. By
+    // here the fields are already cleared, so anyone who asks gets the right answer meanwhile.
+    if (tools != null) tools.close();
     if (executor != null) executor.close();
   }
 
