@@ -9,6 +9,11 @@
 
 package com.cburch.logisim.dsl;
 
+import com.cburch.logisim.analyze.model.AnalyzerModel;
+import com.cburch.logisim.analyze.model.Expression;
+import com.cburch.logisim.analyze.model.Parser;
+import com.cburch.logisim.analyze.model.ParserException;
+import com.cburch.logisim.analyze.model.Var;
 import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.CircuitMutation;
 import com.cburch.logisim.circuit.Wire;
@@ -20,6 +25,7 @@ import com.cburch.logisim.dsl.internal.NetHandle;
 import com.cburch.logisim.dsl.internal.PendingNetlist;
 import com.cburch.logisim.dsl.internal.Router;
 import com.cburch.logisim.proj.Project;
+import com.cburch.logisim.std.gates.CircuitBuilder;
 import com.cburch.logisim.util.StringUtil;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -226,9 +232,53 @@ public final class Space {
     for (final var entry : routed.entrySet()) entry.getKey().markCommitted(entry.getValue());
     final var placed = List.copyOf(pending);
     final var resultNets = nets.stream().map(Net::new).collect(Collectors.toList());
+    // pending components are now real circuit content -- move them into existingComponents (same
+    // Comp, same id) rather than dropping them, so this Space's own later reads (components(),
+    // byLabel(), check()...) see what it just committed without needing a fresh Space#of.
+    existingComponents.addAll(pending);
     pending.clear();
     pendingWires.clear();
     return new CommitResult(action, placed, resultNets);
+  }
+
+  /** Declarative generation (design doc, section 十一): builds this circuit's entire gate-level
+   * content from a truth-table-style spec via {@link CircuitBuilder}, in exactly one undo-log
+   * entry, then immediately re-derives this {@link Space}'s own view of the result the same way
+   * {@link #discoverExisting()} would for a hand-drawn circuit -- so a later {@link #components()}/
+   * {@link #nets()} call in the same session sees what was just built without a fresh {@link
+   * Space#of} round trip. Because {@code CircuitBuilder.build} starts by clearing the destination
+   * circuit, this only ever targets a circuit that is still completely empty: it is a convenience
+   * layered on top of {@link #place}/{@link #connect}, never a replacement, and never an
+   * incremental edit (design doc, closing discussion of 十一). */
+  public SynthesisResult synthesize(Synthesis spec) {
+    if (allComponents().findAny().isPresent() || !pendingWires.isEmpty()) {
+      throw new NonEmptyCircuitException(circuit.getName(), (int) allComponents().count());
+    }
+
+    final var model = new AnalyzerModel();
+    final var inputVars = new ArrayList<Var>();
+    for (final var in : spec.inputs()) inputVars.add(new Var(in.name(), 1));
+    final var outputVars = new ArrayList<Var>();
+    for (final var out : spec.outputs()) outputVars.add(new Var(out.name(), 1));
+    model.setVariables(inputVars, outputVars);
+
+    for (final var out : spec.outputs()) {
+      final Expression expr;
+      try {
+        expr = Parser.parse(out.expression(), model);
+      } catch (ParserException e) {
+        throw new ExpressionSyntaxException(out.name(), out.expression(), e);
+      }
+      model.getOutputExpressions().setExpression(out.name(), expr, out.expression());
+    }
+
+    final var mutation =
+        CircuitBuilder.build(circuit, model, spec.isTwoInputGatesOnly(), spec.isNandOnly());
+    final var action = mutation.toAction(StringUtil.constantGetter("synthesize " + circuit.getName()));
+    proj.doAction(action);
+
+    discoverExisting();
+    return new SynthesisResult(action, List.copyOf(existingComponents));
   }
 
   Project project() {
