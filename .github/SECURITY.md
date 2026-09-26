@@ -1,71 +1,44 @@
 # Security
 
-We take the security of our software seriously, which includes all source code repositories managed through our GitHub
-organizations, which include [Logisim-evolution](https://github.com/logisim-evolution).
+This is an unofficial personal fork of
+[Logisim-evolution](https://github.com/logisim-evolution/logisim-evolution). Almost all of the code
+here is upstream's; the split below follows the same rule as this fork's
+[bug-reporting guidance](../README.md#reporting-problems) — where a vulnerability lives decides who
+should hear about it.
 
-If you believe you have found a security vulnerability in any of our own repository that poses serious threat to the end users and
-you feel that creating regular bug ticket is not enough, please report it to us as described below.
+## Where to report
 
-## Reporting Security Issues
+- **The vulnerability is in code this fork changed or added** — the custom-component system, the
+  embedded MCP server, the file-format handling, or anything else listed under "Where the fork's own
+  code lives" in [`CLAUDE.md`](../CLAUDE.md) — report it **here**, privately if at all possible.
+  If this repository's **Security** tab offers **Report a vulnerability** (GitHub's private
+  vulnerability reporting), use that. If it does not, open a regular issue that says only that a
+  security-relevant report exists without exploit detail, and the maintainer will follow up with a
+  private channel — do not post exploit details or proof-of-concept code in a public issue.
+- **The vulnerability is in unmodified upstream code** — report it to
+  [the upstream project](https://github.com/logisim-evolution/logisim-evolution/security), following
+  their own [security policy](https://github.com/logisim-evolution/logisim-evolution/blob/main/.github/SECURITY.md),
+  so the fix reaches every downstream user, not just this fork's. This fork does not maintain its own
+  copy of upstream's PGP key or reporting process; use theirs directly.
+- **Not sure which side it's on?** Report it here. Distinguishing the two is this fork maintainer's
+  job, not the reporter's.
 
-**Please do not report security vulnerabilities through public GitHub issues in unencrypted form.**
+Because this repository's socket-listening feature (the embedded MCP server, see `mcp/` and
+[`docs/peler-edition/mcp/`](../docs/peler-edition/mcp/)) is entirely this fork's own addition and is
+off by default, any vulnerability in it is always a fork-specific report, never an upstream one.
 
-Instead, please use the GPG key attached to the end of the file to encrypt your message, then export it as ASCII armour and create
-the regular ticket.
+## What to include
 
-```text
------BEGIN PGP PUBLIC KEY BLOCK-----
+- Type of issue (e.g. buffer overflow, SQL injection, cross-site scripting, etc.)
+- Full paths of source file(s) related to the manifestation of the issue
+- The location of the affected source code (tag/branch/commit or direct URL)
+- Any special configuration required to reproduce the issue
+- Step-by-step instructions to reproduce the issue
+- Proof-of-concept or exploit code (if possible)
+- Impact of the issue, including how an attacker might exploit the issue
 
-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
-Z9iZimT6H+eeNqCGo5wqXxPIq3w5c5hb
-=8Tnv
------END PGP PUBLIC KEY BLOCK-----
-```
+This information helps triage a report faster.
 
-Please include the requested information listed below (as much as you can provide) to help us better understand the nature and scope
-of the possible issue:
+## Preferred languages
 
-* Type of issue (e.g. buffer overflow, SQL injection, cross-site scripting, etc.)
-* Full paths of source file(s) related to the manifestation of the issue
-* The location of the affected source code (tag/branch/commit or direct URL)
-* Any special configuration required to reproduce the issue
-* Step-by-step instructions to reproduce the issue
-* Proof-of-concept or exploit code (if possible)
-* Impact of the issue, including how an attacker might exploit the issue
-
-This information will help us triage your report more quickly.
-
-## Preferred Languages
-
-We prefer all communications to be in English.
+English or Chinese are both fine for reports against this fork.

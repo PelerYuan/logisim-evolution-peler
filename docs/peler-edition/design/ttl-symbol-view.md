@@ -35,7 +35,7 @@ TTL 元件目前只有一种几何：**DIP 封装**。芯片名写在中间，�
 
 两种情况下**端口坐标都不变**，仍然是 DIP 排布。以 74283 为例，打开该属性后是：
 
-```
+```text
 上排：Vcc  B3  A3  ∑3  A4  B4  ∑4  C4
 下排：∑2   B2  A2  ∑1  A1  B1  CIN GND
 ```
@@ -84,7 +84,7 @@ TTL 元件目前只有一种几何：**DIP 封装**。芯片名写在中间，�
 
 ### 2.4 左侧新开一栏要动哪些地方
 
-```
+```text
 TtlSymbolLibrary (新)  →  Builtin.java 的 libraries 列表  →  default.templ 的 <lib> 清单
 ```
 
@@ -181,7 +181,7 @@ record PortGroup(String label, int[] portIndices, boolean bubble, boolean clockE
 `portIndices` 里的数字就是 `propagateTtl` 用的那个索引，所以这张表同时也是可读的接线文档。
 以 74175 为例（索引已核对过源码）：
 
-```
+```text
 0=nCLR(pin1) 1=Q1 2=nQ1 3=D1 4=D2 5=nQ2 6=Q2 7=CLK(pin9)
 8=Q3 9=nQ3 10=D3 11=D4 12=nQ4 13=Q4
 ```
@@ -376,10 +376,10 @@ Step 1 和 Step 2 已完成，范围按维护者指示扩到 **全库 61 片**�
 
 维护者问"软件里还有什么芯片封装也能改成这种图"，把各个库过了一遍，答案就是 BFH-Praktika 的两片：
 
-* `BcdToSevenSegmentDisplay` 把七个输出摆在数码管上各段的位置（a、b 在上边，f、g 也在上边，
+- `BcdToSevenSegmentDisplay` 把七个输出摆在数码管上各段的位置（a、b 在上边，f、g 也在上边，
   c、d、e 在下边，BCD 输入在最下面），外框还画成数码管的样子。看懂它得先记住段位图，
   而这张图只有在真的要接一只数码管时才划算。
-* `BinToBcd` 是一个又扁又宽的盒子，各位十进制输出沿上边从左到右排开，二进制输入在左侧面。
+- `BinToBcd` 是一个又扁又宽的盒子，各位十进制输出沿上边从左到右排开，二进制输入在左侧面。
   它画的是一排数码显示。
 
 其余的都已经画的是功能：门有 ANSI / IEC 两套形状，存储器族有 classic / evolution 两种外观，

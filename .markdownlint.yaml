@@ -116,10 +116,12 @@ MD023: true
 
 # MD024/no-duplicate-heading/no-duplicate-header - Multiple headings with the same content
 MD024:
-  # Only check sibling headings
+  # Allow the same heading text under different parent headings
   allow_different_nesting: false
-  # Only check sibling headings
-  siblings_only: false
+  # Only flag duplicates among sibling headings (needed for append-only phase
+  # logs like docs/peler-edition/ROADMAP.md, which legitimately reuse
+  # subheadings such as "Testing" and "Decisions" per phase)
+  siblings_only: true
 
 # MD025/single-title/single-h1 - Multiple top-level headings in the same document
 MD025:

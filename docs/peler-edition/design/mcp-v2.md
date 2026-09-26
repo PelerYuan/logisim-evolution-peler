@@ -38,7 +38,7 @@
 
 三层，职责边界清楚：
 
-```
+```text
 MCP 工具面（3 个工具）
       ↓
 Lua 脚本层        便利与组合：生成器、对齐、批量操作、模型自己写的 helper
@@ -557,6 +557,8 @@ helper。
 
 不是全删。管道是踩过坑换来的，删掉等于把那两个死锁重新挣一遍。
 
+<!-- markdownlint-disable MD013 -- one row below lists every class kept as-is; splitting the class list would make the table harder to check against, not easier -->
+
 | 部分 | 行数 | 处置 |
 | --- | --- | --- |
 | `McpProjectService`（47 个工具） | 2380 | **删**。这就是要换掉的东西 |
@@ -566,6 +568,8 @@ helper。
 | `McpHttpHandler` / `McpServerConfig` / `McpServerManager` / `McpPathPolicy` / `McpModelExecutor` / `McpJsonRpcDispatcher` / `McpStdioServer` | ~1250 | **留**。回环绑定、令牌鉴权、路径白名单、EDT 跳转、两个死锁的修复 |
 | `McpBundleWriter` + `bridge.js` + `MenuMcp` + 12 语种字符串 | ~300 | **留**。已验证通过的安装链路 |
 | `docs/peler-edition/mcp/` 下 11 份旧 QA 文档 | — | **删**。描述的是被删掉的那套设计 |
+
+<!-- markdownlint-enable MD013 -->
 
 对应的测试同步删。旧代码在 git 历史里（`a5d489601` 及之前），删得干净也找得回来。
 

@@ -5,6 +5,7 @@
 # Logisim-evolution — Peler's Edition #
 
 [![Latest release](https://img.shields.io/github/v/release/PelerYuan/logisim-evolution-peler?label=release)](https://github.com/PelerYuan/logisim-evolution-peler/releases/latest)
+[![Build](https://github.com/PelerYuan/logisim-evolution-peler/actions/workflows/build.yml/badge.svg)](https://github.com/PelerYuan/logisim-evolution-peler/actions/workflows/build.yml)
 [![Based on Logisim-evolution](https://img.shields.io/badge/based%20on-Logisim--evolution%20v4.1.0-informational)](https://github.com/logisim-evolution/logisim-evolution/releases/tag/v4.1.0)
 [![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0-blue)](https://www.gnu.org/licenses/gpl-3.0.en.html)
 [![Java 21](https://img.shields.io/badge/Java-21-orange)](https://adoptium.net/temurin/releases/)
@@ -62,7 +63,10 @@ installed separately.
 | Fedora/RHEL/SUSE | `logisim-evolution-peler-<version>-1.x86_64.rpm` · `-1.aarch64.rpm` |
 
 Releases marked *pre-release* are rolling development builds kept only for testing; use the latest
-normal release.
+normal release. Each release's own notes are on its
+[release page](https://github.com/PelerYuan/logisim-evolution-peler/releases); a condensed history
+of what this fork added, version by version, is in
+[`docs/peler-edition/CHANGELOG.md`](docs/peler-edition/CHANGELOG.md).
 
 **macOS**: these packages are not signed with an Apple certificate. On first launch, right-click
 (or <kbd>Ctrl</kbd>+click) the application icon in Finder and choose **Open**, then confirm. See

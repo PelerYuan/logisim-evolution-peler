@@ -35,6 +35,12 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # This repository's default GITHUB_TOKEN permissions are read-only; the action below needs
+    # to read and write PR/issue labels and comments to do its job.
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     steps:
       # https://github.com/marketplace/actions/dependent-issues
       - uses: z0al/dependent-issues@v1
