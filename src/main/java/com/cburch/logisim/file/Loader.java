@@ -314,6 +314,33 @@ public class Loader implements LibraryLoader {
     return file;
   }
 
+  /**
+   * Peler Edition. Directory analogue of {@link #getFileFor(String, FileFilter)}: resolves a
+   * relative path against {@link #getCurrentDirectory()}, and if the directory cannot be found,
+   * interactively re-prompts via a directory-only chooser rather than failing silently -- the same
+   * missing-reference UX a missing {@code .circ}/JAR library already gets.
+   */
+  File getDirectoryFor(String name) {
+    var dir = new File(name);
+    if (!dir.isAbsolute()) {
+      final var currentDirectory = getCurrentDirectory();
+      if (currentDirectory != null) dir = new File(currentDirectory, name);
+    }
+    while (!dir.isDirectory()) {
+      OptionPane.showMessageDialog(
+          parent, String.format(S.get("fileLibraryMissingError"), dir.getName()));
+      final var chooser = createChooser();
+      chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+      chooser.setDialogTitle(S.get("fileLibraryMissingTitle", dir.getName()));
+      int action = chooser.showDialog(parent, S.get("fileLibraryMissingButton"));
+      if (action != JFileChooser.APPROVE_OPTION) {
+        throw new LoaderException(S.get("fileLoadCanceledError"));
+      }
+      dir = chooser.getSelectedFile();
+    }
+    return dir;
+  }
+
   //
   // file chooser related methods
   //
@@ -398,6 +425,13 @@ public class Loader implements LibraryLoader {
       showMessages(retBase);
     }
     return ret;
+  }
+
+  /** Peler Edition. Loads a component library directory -- the directory analogue of {@link
+   * #loadLogisimLibrary(File)}. */
+  public Library loadPcompLibrary(File directory) {
+    final var actual = getSubstitution(directory);
+    return LibraryManager.instance.loadPcompLibrary(this, actual);
   }
 
   public LogisimFile openLogisimFile(File file) throws LoadFailedException {

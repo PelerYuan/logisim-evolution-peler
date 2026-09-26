@@ -11,6 +11,7 @@ package com.cburch.logisim.file;
 
 import static com.cburch.logisim.file.Strings.S;
 
+import com.cburch.logisim.pcomp.PcompComponentLibrary;
 import com.cburch.logisim.tools.Library;
 import com.cburch.logisim.util.LineBuffer;
 
@@ -67,6 +68,52 @@ public final class LibraryManager {
     @Override
     public String toDescriptor(Loader loader) {
       return "jar#" + toRelative(loader, file) + DESC_SEP + className;
+    }
+  }
+
+  /**
+   * Peler Edition. Descriptor for a component library directory (see {@code
+   * docs/peler-edition/design/pcomp-libraries.md} section four), shaped like {@link
+   * LogisimProjectDescriptor} above -- keyed on the directory itself, not on any name inside it,
+   * since {@link PcompComponentLibrary#getName()} is a manifest id and must not double as the
+   * persisted reference.
+   */
+  private static class PcompLibraryDescriptor implements LibraryDescriptor {
+    private final File directory;
+
+    PcompLibraryDescriptor(File directory) {
+      this.directory = directory;
+    }
+
+    @Override
+    public boolean concernsFile(File query) {
+      return directory.equals(query);
+    }
+
+    @Override
+    public boolean equals(Object other) {
+      return (other instanceof PcompLibraryDescriptor o)
+             ? this.directory.equals(o.directory)
+             : false;
+    }
+
+    @Override
+    public int hashCode() {
+      return directory.hashCode();
+    }
+
+    @Override
+    public void setBase(Loader loader, LoadedLibrary lib) throws LoadFailedException {
+      try {
+        lib.setBase(PcompComponentLibrary.load(directory, loader));
+      } catch (IOException e) {
+        throw new LoadFailedException(e.getMessage());
+      }
+    }
+
+    @Override
+    public String toDescriptor(Loader loader) {
+      return "pcomplib#" + toRelative(loader, directory);
     }
   }
 
@@ -276,6 +323,10 @@ public final class LibraryManager {
         final var toRead = loader.getFileFor(fileName, Loader.JAR_FILTER);
         return loadJarLibrary(loader, toRead, className);
       }
+      case "pcomplib" -> {
+        final var toRead = loader.getDirectoryFor(name);
+        return loadPcompLibrary(loader, toRead);
+      }
       default -> {
         loader.showError(S.get("fileTypeError", type, desc));
         return null;
@@ -337,6 +388,39 @@ public final class LibraryManager {
     final var desc = new LogisimProjectDescriptor(toRead);
     fileMap.put(desc, new WeakReference<>(ret));
     invMap.put(ret, desc);
+    return ret;
+  }
+
+  /**
+   * Peler Edition. Loads a component library directory, sharing one {@link LoadedLibrary} instance
+   * across every project that references the same directory -- the identity {@code
+   * LogisimProjectDescriptor}/{@code JarDescriptor} are meant to give too, via {@link #fileMap}.
+   *
+   * <p>Deliberately does not go through {@link #findKnown}: that helper looks {@code fileMap} up by
+   * the raw {@link File}, but the map is keyed by {@link LibraryDescriptor}, and {@code
+   * File.equals} rejects anything that is not itself a {@code File} -- so a lookup by {@code File}
+   * can never match a stored descriptor and {@code findKnown} silently always misses for this map.
+   * Looking the descriptor itself up here sidesteps that rather than propagating it into new code.
+   */
+  public LoadedLibrary loadPcompLibrary(Loader loader, File directory) {
+    final var descriptor = new PcompLibraryDescriptor(directory);
+    final var cachedRef = fileMap.get(descriptor);
+    if (cachedRef != null) {
+      final var cached = cachedRef.get();
+      if (cached != null) return cached;
+      fileMap.remove(descriptor);
+    }
+
+    LoadedLibrary ret;
+    try {
+      ret = new LoadedLibrary(PcompComponentLibrary.load(directory, loader));
+    } catch (IOException e) {
+      loader.showError(e.getMessage());
+      return null;
+    }
+
+    fileMap.put(descriptor, new WeakReference<>(ret));
+    invMap.put(ret, descriptor);
     return ret;
   }
 

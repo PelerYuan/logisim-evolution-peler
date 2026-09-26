@@ -110,6 +110,22 @@ public class ProjectLibraryActions {
     }
   }
 
+  /** Peler Edition. Directory analogue of {@link #doLoadLogisimLibrary(Project)}. */
+  public static void doLoadPcompLibrary(Project proj) {
+    final var loader = proj.getLogisimFile().getLoader();
+    final var chooser = loader.createChooser();
+    chooser.setDialogTitle(S.get("loadPcompLibraryDialogTitle"));
+    chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+    final var check = chooser.showOpenDialog(proj.getFrame());
+    if (check == JFileChooser.APPROVE_OPTION) {
+      final var dir = chooser.getSelectedFile();
+      final var lib = loader.loadPcompLibrary(dir);
+      if (lib != null) {
+        proj.doAction(LogisimFileActions.loadLibrary(lib, proj.getLogisimFile()));
+      }
+    }
+  }
+
   public static void doUnloadLibraries(Project proj) {
     final var file = proj.getLogisimFile();
     final var canUnload = new ArrayList<Library>();
