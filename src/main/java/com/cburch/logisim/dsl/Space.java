@@ -92,6 +92,13 @@ public final class Space {
     return pending.stream().filter(c -> c.label().equals(Optional.of(label))).findFirst();
   }
 
+  /** Looks up a component by the stable id it was given at placement (design doc, 13.1): the
+   * correct way to reach a component from a later, possibly-fresh script session, since a Lua local
+   * variable is not something a dropped session can recover. */
+  public Optional<Comp> byId(String id) {
+    return pending.stream().filter(c -> c.id().equals(id)).findFirst();
+  }
+
   public List<Comp> near(Comp c, int cells) {
     final var origin = c.origin();
     return pending.stream()

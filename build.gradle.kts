@@ -52,6 +52,13 @@ dependencies {
   implementation("com.vladsch.flexmark:flexmark-all:0.64.8")
   implementation("org.apache.commons:commons-text:1.15.0")
 
+  // Sandboxed scripting for the embedded MCP server's Lua layer (design doc,
+  // section 8). Pure Java, ~500 KB, MIT-licensed (compatible with GPLv3).
+  // Deliberately never load JsePlatform.standardGlobals() -- see
+  // McpLuaSandbox for why (os/io/luajava/PackageLib/DebugLib are all RCE
+  // surface on a network-reachable server).
+  implementation("org.luaj:luaj-jse:3.0.1")
+
   // NOTE: Be aware of reported issues with Eclipse and Batik
   // See: https://github.com/logisim-evolution/logisim-evolution/issues/709
   // implementation("org.apache.xmlgraphics:batik-swing:1.14")
