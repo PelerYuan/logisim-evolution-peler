@@ -313,7 +313,7 @@ final class LuaBindings {
 
   // ---- Space ----------------------------------------------------------------
 
-  static LuaValue wrap(Space space) {
+  static LuaValue wrap(Space space, Runnable onCommit) {
     final var methods = new LuaTable();
     methods.set("circuitName", bind(a -> LuaValue.valueOf(space.circuitName())));
     methods.set("summary", bind(a -> {
@@ -369,6 +369,7 @@ final class LuaBindings {
     methods.set("commit", bind(a -> {
       final var name = a.subargs(2).checkjstring(1);
       final var result = space.commit(name);
+      onCommit.run();
       final var t = new LuaTable();
       t.set("placed", toLua(result.placed()));
       t.set("nets", toLua(result.nets()));
