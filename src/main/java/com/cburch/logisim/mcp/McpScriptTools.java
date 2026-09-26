@@ -290,6 +290,15 @@ final class McpScriptTools implements AutoCloseable {
           and/or/xor/not (or symbolic +,*,',~) and parentheses, e.g. "A xor B xor Cin". Every
           input/output is 1 bit. Result components are immediately visible via
           space:components()/byLabel() in the same session, no fresh call needed.
+        space:tidyWires() -> boolean: re-routes every wire already in the circuit for readability,
+          without moving, adding, or removing a single component -- the fix when connections are
+          correct but the layout drawn by place()/connect()'s own router looks cluttered. Requires
+          space:commit(...) to have already been called (errors if space:isDirty()); returns false
+          with nothing changed if there was no wiring worth touching. Component ids and labels are
+          unaffected and space:byId(id)/space:byLabel(label) still resolve the same components
+          afterward -- just call it right after commit, e.g.:
+            space:commit("build full adder")
+            space:tidyWires()
 
       Placement (returned by space:place): anchorAt(col,row) / at(col,row), rightOf(comp,gap) /
         below(comp,gap), with(attrTable) (e.g. {type="input"} or {inputs="3"}), facing(dir)

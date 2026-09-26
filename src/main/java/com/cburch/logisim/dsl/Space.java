@@ -18,6 +18,7 @@ import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.CircuitMutation;
 import com.cburch.logisim.circuit.Wire;
 import com.cburch.logisim.circuit.WireSet;
+import com.cburch.logisim.circuit.WireTidier;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.dsl.internal.KindRegistry;
@@ -241,6 +242,54 @@ public final class Space {
     return new CommitResult(action, placed, resultNets);
   }
 
+  /** Re-routes every wire already in this circuit for readability -- see {@link WireTidier} -- as
+   * exactly one undo-log entry, without moving, adding, or removing a single component. This is the
+   * remedy for a circuit whose connections are correct but whose layout is not (design doc, 十二):
+   * where {@link #commit(String)}'s own router only ever draws the nets it is asked to route, this
+   * discards and rebuilds every wire the circuit already has, including ones drawn by a human,
+   * loaded from a file, or committed in an earlier session.
+   *
+   * <p>Requires nothing pending: {@link WireTidier} works from the circuit's own committed state,
+   * so a component placed or connected this session but not yet committed would simply be invisible
+   * to it and its wiring silently dropped -- {@link #isDirty()} must be false, or this throws {@link
+   * UncommittedChangesException} rather than doing that.
+   *
+   * <p>Returns {@code false} with nothing changed if the circuit had nothing to tidy (matching
+   * {@link WireTidier#buildTidyMutation}'s own {@code null}-means-nothing-to-do contract) --
+   * for instance an empty circuit, or one with no multi-terminal nets at all.
+   *
+   * <p>Only {@link Net}s go stale: a previously-held one still names wire geometry that no longer
+   * exists, mirroring the documented across-session risk in design doc 13.1 (a dropped Lua session
+   * loses its local variables) rather than introducing a new kind of staleness -- the safe pattern is
+   * the same: look nets back up by rereading a {@link Comp}'s ports afterward rather than holding
+   * onto an old {@link Net}. {@link Comp} identity and ids are entirely unaffected, and deliberately
+   * not rederived from scratch: since {@link WireTidier} never adds, removes, or moves a component,
+   * this reuses the exact same {@link Comp} objects it already handed out rather than rescanning the
+   * circuit, which would sort by (possibly changed) visual position and could hand two components
+   * each other's former ids. */
+  public boolean tidyWires() {
+    if (isDirty()) {
+      throw new UncommittedChangesException(pending.size());
+    }
+    final var mutation = WireTidier.buildTidyMutation(circuit);
+    if (mutation == null) {
+      return false;
+    }
+    proj.doAction(mutation.toAction(StringUtil.constantGetter("tidy wires")));
+
+    // Only wires changed -- WireTidier never adds, removes, or moves a component -- so the already-
+    // identified existingComponents (same Comp objects, same ids) are still completely valid; only
+    // the connectivity derived from wire geometry is stale. Re-running full discoverExisting() here
+    // would look like the safe, simple option but is actually wrong: it re-sorts by visual position
+    // and hands out fresh ids in that order, which silently diverges from the placement-order ids a
+    // caller placed this session might already be holding, reassigning old ids to different
+    // components entirely (caught by SpaceTidyWiresAcceptanceTest).
+    netlist.clear();
+    existingNetCounter = 0;
+    seedConnectivity(existingComponents);
+    return true;
+  }
+
   /** Declarative generation (design doc, section 十一): builds this circuit's entire gate-level
    * content from a truth-table-style spec via {@link CircuitBuilder}, in exactly one undo-log
    * entry, then immediately re-derives this {@link Space}'s own view of the result the same way
@@ -331,7 +380,6 @@ public final class Space {
    * (splitters, tunnels, probes, ...) is left out of the DSL's view entirely -- P4 reads circuits
    * built from the same component families the DSL can place, not arbitrary Logisim content. */
   private void discoverExisting() {
-    final var byLocation = new LinkedHashMap<Dot, List<Port>>();
     final var raw = new ArrayList<>(circuit.getNonWires());
     raw.sort(Comparator.<Component>comparingInt(c -> c.getLocation().getY())
         .thenComparingInt(c -> c.getLocation().getX()));
@@ -339,8 +387,20 @@ public final class Space {
       final var resolved = KindRegistry.resolveExisting(proj, component);
       if (resolved.isEmpty()) continue;
       final var kind = new Kind(resolved.get().key(), resolved.get().factory(), resolved.get().subcircuit());
-      final var comp = new Comp(this, kind, nextId(kind.key()), component);
-      existingComponents.add(comp);
+      existingComponents.add(new Comp(this, kind, nextId(kind.key()), component));
+    }
+    seedConnectivity(existingComponents);
+  }
+
+  /** The connectivity half of {@link #discoverExisting()}, split out so {@link #tidyWires()} can
+   * re-derive connectivity for the same, already-identified {@link Comp}s after their wires are
+   * rebuilt -- without also re-running the id-assigning half, which sorts by visual position and so
+   * would silently hand existing {@link Comp} objects different ids than the ones a caller may
+   * already be holding (component discovery order at construction time need not match the visual
+   * order this scan uses, since it instead follows placement order within this session). */
+  private void seedConnectivity(List<Comp> comps) {
+    final var byLocation = new LinkedHashMap<Dot, List<Port>>();
+    for (final var comp : comps) {
       for (final var port : comp.ports()) {
         byLocation.computeIfAbsent(port.at(), ignored -> new ArrayList<>()).add(port);
       }
