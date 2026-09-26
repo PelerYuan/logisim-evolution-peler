@@ -34,7 +34,7 @@ public final class PcompLock {
   private PcompLock() {}
 
   /** The locked component {@code circuit} belongs to, or null if it is not closed to the user. */
-  public static PcompLibrary lockedOwnerOf(Circuit circuit) {
+  public static PcompComponent lockedOwnerOf(Circuit circuit) {
     final var component = PcompCatalog.componentOf(circuit);
     return component != null && component.isLocked() ? component : null;
   }
@@ -65,7 +65,7 @@ public final class PcompLock {
   }
 
   /** Tells the user why a door did not open, naming the component so the message is actionable. */
-  public static void explainLocked(Component parent, PcompLibrary component) {
+  public static void explainLocked(Component parent, PcompComponent component) {
     OptionPane.showMessageDialog(
         parent,
         S.get("pcompLockedMessage", component.getMetadata().displayName()),

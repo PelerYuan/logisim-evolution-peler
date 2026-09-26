@@ -38,7 +38,7 @@ import org.junit.jupiter.api.io.TempDir;
  * pins in the circuit, the derived appearance has to reach the circuit rather than be quietly
  * replaced by the default box, and the toolbox has to be offered the component and not its parts.
  */
-class PcompLibraryTest {
+class PcompComponentTest {
 
   /**
    * A component with two inputs and one output, written the way the writer will write one.
@@ -117,7 +117,7 @@ class PcompLibraryTest {
     final var layout = defaultLayout("Adder");
     final var file = writeAdder(dir, "Adder", layout);
 
-    final var library = PcompLibrary.load(file, new Loader(null));
+    final var library = PcompComponent.load(file, new Loader(null));
 
     assertEquals(1, library.getTools().size(), "the toolbox should be offered the component alone");
     assertEquals("Adder v1", library.getDisplayName());
@@ -142,7 +142,7 @@ class PcompLibraryTest {
     final var layout = defaultLayout("Adder");
     final var file = writeAdder(dir, "Adder", layout);
 
-    final var library = PcompLibrary.load(file, new Loader(null));
+    final var library = PcompComponent.load(file, new Loader(null));
 
     assertFalse(
         library.getCircuit().getAppearance().isDefaultAppearance(),
@@ -163,7 +163,7 @@ class PcompLibraryTest {
             PcompLayouts.nth("SUM", PortSide.BOTTOM, 0));
     final var file = writeAdder(dir, "Spread", layout);
 
-    final var library = PcompLibrary.load(file, new Loader(null));
+    final var library = PcompComponent.load(file, new Loader(null));
 
     final var offsets = library.getCircuit().getAppearance().getPortOffsets(Direction.EAST);
     for (final var port : layout.placements()) {
@@ -192,7 +192,7 @@ class PcompLibraryTest {
                 new PortPlacement("SUM", PortSide.BOTTOM, 150, 40)));
     final var file = writeAdder(dir, "Adder", layout);
 
-    final var library = PcompLibrary.load(file, new Loader(null));
+    final var library = PcompComponent.load(file, new Loader(null));
 
     assertEquals(
         com.cburch.logisim.data.Bounds.create(-1, -1, 182, 42),
@@ -215,7 +215,7 @@ class PcompLibraryTest {
     final var file = writeAdder(dir, "Wrong", PcompLayouts.automatic("Wrong", ports));
 
     final var failure =
-        assertThrows(IOException.class, () -> PcompLibrary.load(file, new Loader(null)));
+        assertThrows(IOException.class, () -> PcompComponent.load(file, new Loader(null)));
     assertTrue(failure.getMessage().contains("CARRY"), "the message should name the missing pin");
   }
 
@@ -270,10 +270,10 @@ class PcompLibraryTest {
    */
   @Test
   public void twoComponentsCannotShareACircuitName(@TempDir Path dir) throws Exception {
-    final var first = PcompLibrary.load(writeAdder(dir, "Adder", defaultLayout("Adder")), new Loader(null));
+    final var first = PcompComponent.load(writeAdder(dir, "Adder", defaultLayout("Adder")), new Loader(null));
     final var other = Files.createTempDirectory(dir, "other");
     final var second =
-        PcompLibrary.load(writeAdder(other, "Adder", defaultLayout("Adder")), new Loader(null));
+        PcompComponent.load(writeAdder(other, "Adder", defaultLayout("Adder")), new Loader(null));
 
     final var tools = PcompCatalogLibrary.toolsOf(List.of(first, second));
 

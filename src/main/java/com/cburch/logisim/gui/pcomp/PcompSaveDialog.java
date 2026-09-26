@@ -17,7 +17,7 @@ import com.cburch.logisim.gui.generic.OptionPane;
 import com.cburch.logisim.instance.StdAttr;
 import com.cburch.logisim.pcomp.PcompCatalog;
 import com.cburch.logisim.pcomp.PcompFile;
-import com.cburch.logisim.pcomp.PcompLibrary;
+import com.cburch.logisim.pcomp.PcompComponent;
 import com.cburch.logisim.pcomp.PcompMetadata;
 import com.cburch.logisim.pcomp.PortLayoutDraft;
 import com.cburch.logisim.pcomp.PortSignature;
@@ -192,7 +192,7 @@ public class PcompSaveDialog extends JDialog {
     try {
       final var metadata = PcompFile.read(source);
       if (metadata == null || !metadata.mainCircuit().equals(circuit.getName())) return null;
-      final var published = PcompLibrary.load(source, new Loader(null));
+      final var published = PcompComponent.load(source, new Loader(null));
       return new Republish(source, metadata, PortSignature.of(published));
     } catch (IOException e) {
       // The file the user has open cannot be read back as a component. Publishing a new one is

@@ -62,7 +62,7 @@ class PcompReplacementTest {
   }
 
   /** Places one instance of a component in a circuit, facing south and labelled. */
-  private static void place(Circuit circuit, PcompLibrary component, int x, String label) {
+  private static void place(Circuit circuit, PcompComponent component, int x, String label) {
     final var factory = component.getCircuit().getSubcircuitFactory();
     final var attributes = factory.createAttributeSet();
     attributes.setValue(StdAttr.FACING, Direction.SOUTH);
@@ -72,7 +72,7 @@ class PcompReplacementTest {
     mutation.execute();
   }
 
-  private record TwoVersions(Project host, PcompLibrary v1, PcompLibrary v2) {}
+  private record TwoVersions(Project host, PcompComponent v1, PcompComponent v2) {}
 
   /** A project with one instance of v1 in each of two circuits, and both versions installed. */
   private static TwoVersions setUp(Path dir) throws Exception {

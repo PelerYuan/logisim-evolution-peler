@@ -29,7 +29,7 @@ import org.junit.jupiter.api.io.TempDir;
  *
  * <p>The two halves that only meet here: the writer has to carry the circuits the component needs
  * and leave behind the ones it does not, and what it writes has to be exactly what {@link
- * PcompLibrary} can load. Everything else in this package tests one side of that.
+ * PcompComponent} can load. Everything else in this package tests one side of that.
  */
 class PcompWriterTest {
 
@@ -122,7 +122,7 @@ class PcompWriterTest {
   public void theSavedComponentLoadsBackWithItsPortsInPlace(@TempDir Path dir) throws Exception {
     final var file = saveTop(dir, "Top");
 
-    final var component = PcompLibrary.load(file.toFile(), new Loader(null));
+    final var component = PcompComponent.load(file.toFile(), new Loader(null));
 
     assertEquals(1, component.getTools().size());
     assertEquals("Top v1", component.getDisplayName());
@@ -147,7 +147,7 @@ class PcompWriterTest {
   public void theCircuitsItDependsOnAreLoadedWithIt(@TempDir Path dir) throws Exception {
     final var file = saveTop(dir, "Top");
 
-    final var component = PcompLibrary.load(file.toFile(), new Loader(null));
+    final var component = PcompComponent.load(file.toFile(), new Loader(null));
 
     var found = false;
     for (final var inside : component.getCircuit().getNonWires()) {
