@@ -247,4 +247,63 @@ class PcompLoweringTest {
 
     assertTrue(PcompLowering.plan(project).isEmpty());
   }
+
+  /**
+   * The default catalog is not the only place a component can come from any more: it may equally
+   * come from a component library the project loaded through {@code LibraryManager} (see {@code
+   * docs/peler-edition/design/pcomp-libraries.md}). Lowering has to reach it there too -- this
+   * points the default catalog at an unrelated, empty directory so the component can only be found
+   * through the loaded library, not by accident through the old fixed path.
+   */
+  @Test
+  public void componentFromALoadedLibraryIsAlsoLoweredCompatibly(@TempDir Path dir)
+      throws Exception {
+    PcompCatalog.useDirectory(dir.resolve("emptyCatalog").toFile());
+    final var libraryDir = dir.resolve("mylib").toFile();
+    PcompLibraryFile.create(libraryDir, "My Gates");
+    final var source = PcompProjects.read(PcompProjects.THREE_CIRCUITS);
+    PcompWriter.write(
+        new File(libraryDir, "Top.pcomp"),
+        source,
+        source.getCircuit("Top"),
+        PcompMetadata.firstVersion("Top", PORTS),
+        new Loader(null));
+
+    final var loader = new Loader(null);
+    final var projectFile = dir.resolve("project.circ").toFile();
+    Files.writeString(
+        projectFile.toPath(),
+        """
+        <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+        <project source="4.1.0" version="1.0">
+          <lib desc="#Wiring" name="0"/>
+          <lib desc="#Gates" name="1"/>
+          <lib desc="#Base" name="2"/>
+          <lib desc="pcomplib#mylib" name="3"/>
+          <main name="main"/>
+          <circuit name="main">
+            <comp lib="0" loc="(100,110)" name="Pin">
+              <a name="label" val="IN"/>
+            </comp>
+            <comp lib="3" loc="(300,200)" name="Top_v1">
+              <a name="facing" val="north"/>
+              <a name="label" val="U1"/>
+            </comp>
+          </circuit>
+        </project>
+        """,
+        StandardCharsets.UTF_8);
+    final var project = loader.openLogisimFile(projectFile);
+
+    final var written = saveTo(project, dir.resolve("out.circ").toFile());
+
+    assertTrue(written.contains("<circuit name=\"Top_v1\""), "the component circuit is missing");
+    assertTrue(written.contains("<circuit name=\"Half\""), "the component's dependency is missing");
+    assertFalse(
+        written.contains("pcomplib"),
+        "the compatible file still names a library upstream does not have");
+    assertTrue(
+        written.contains("<comp loc=\"(300,200)\" name=\"Top_v1\">"),
+        "the placed component should carry no library: " + written);
+  }
 }

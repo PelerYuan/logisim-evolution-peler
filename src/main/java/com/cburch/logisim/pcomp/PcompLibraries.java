@@ -29,14 +29,22 @@ import com.cburch.logisim.tools.Library;
 public final class PcompLibraries {
   private PcompLibraries() {}
 
-  /** The component owning {@code circuit}, searching every open project's library tree. */
+  /**
+   * The component owning {@code circuit}, searching every open project's library tree.
+   *
+   * <p>Falls back to the default catalog even when no project is open to search: {@link
+   * #componentOf(LogisimFile, Circuit)} checks it unconditionally for exactly this reason (it is
+   * reachable from every file, open or not), and a caller with no open project in hand -- {@link
+   * PcompLock}'s callers mostly are not -- should see the same answer for a default-catalog
+   * component as one that does have a project to search.
+   */
   public static PcompComponent componentOf(Circuit circuit) {
     if (circuit == null) return null;
     for (final var project : Projects.getOpenProjects()) {
       final var found = componentOf(project.getLogisimFile(), circuit);
       if (found != null) return found;
     }
-    return null;
+    return PcompCatalog.componentOf(circuit);
   }
 
   /** The component owning {@code circuit}, searching only {@code file}'s own libraries. */

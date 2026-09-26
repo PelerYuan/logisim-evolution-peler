@@ -23,6 +23,7 @@ import com.cburch.logisim.fpga.data.MapComponent;
 import com.cburch.logisim.generated.BuildInfo;
 import com.cburch.logisim.instance.StdAttr;
 import com.cburch.logisim.pcomp.PcompCatalogLibrary;
+import com.cburch.logisim.pcomp.PcompComponentLibrary;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.std.annotate.Annotation;
 import com.cburch.logisim.std.annotate.AnnotationAttributes;
@@ -572,6 +573,15 @@ final class XmlWriter {
     // its entry comes from the new-project template, so it is in every file this edition writes.
     // Whatever was placed from it has already been inlined by PcompLowering.
     if (compatMode && lib instanceof PcompCatalogLibrary) return null;
+    // Peler Edition: any other component library the project loaded (see
+    // docs/peler-edition/design/pcomp-libraries.md) gets the same treatment -- it is never a
+    // built-in and so always arrives wrapped in a LoadedLibrary, unlike the catalog above.
+    // Whatever was placed from it has already been inlined by PcompLowering too.
+    if (compatMode
+        && lib instanceof LoadedLibrary loaded
+        && loaded.getBase() instanceof PcompComponentLibrary) {
+      return null;
+    }
 
     final var ret = doc.createElement("lib");
     if (libs.containsKey(lib)) return null;

@@ -58,7 +58,11 @@ class PcompLibraryLoadingTest {
       throws Exception {
     final var libraryDir = dir.resolve("mylib").toFile();
     final var manifest = PcompLibraryFile.create(libraryDir, "My Gates");
-    final var projectFile = writeEmptyProject(dir, "project.circ");
+    // The native format, not .circ: a compat-mode save deliberately drops a pcomplib reference the
+    // same way it drops the default catalog's -- see XmlWriter.fromLibrary -- since whatever was
+    // placed from it would have been inlined by PcompLowering instead. This test is about the
+    // fork's own native round trip, where the reference is exactly what should survive.
+    final var projectFile = writeEmptyProject(dir, "project.pcirc");
 
     final var loader = new Loader(null);
     final var file = loader.openLogisimFile(projectFile);
