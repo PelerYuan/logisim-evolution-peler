@@ -169,17 +169,8 @@ rotate it, label it, wire it, drop it inside another component.
 
 ![A component placed from My Components and wired into a circuit](docs/img/peler-edition/CustomComponents.gif)
 
-**Layouts are fixed once published, versions are not.** A published component's ports do not move
-under the projects using it. To move them, publish again -- the save window notices and offers a new
-version instead of an overwrite, telling you exactly what changed. Both versions stay installed, so
-nothing you already wired moves on its own. Making the box roomier or nudging the name is not a
-change of that kind and replaces the component where it stands: ports are pinned to the box's
-top-left corner, so a bigger box leaves every one of them exactly where your wires already meet it. **Project → Custom Components…**
-lists what is installed, imports a component someone sent you, opens one for editing, deletes one --
-refusing while the project still has it placed -- and swaps every instance of one version for
-another, showing the port differences first when there are any.
-
-![The Custom Components panel listing two versions of one component](docs/img/peler-edition/CustomComponentManager.png)
+**Project → Custom Components…** lists what is installed, imports a component someone sent you,
+opens one for editing, and deletes one -- refusing while the project still has it placed.
 
 **Saving to `.circ` keeps them.** A project that uses custom components saves to official
 Logisim-evolution's format with each component written in as an ordinary circuit carrying the same
