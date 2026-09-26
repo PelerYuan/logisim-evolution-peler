@@ -16,7 +16,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.cburch.logisim.data.Direction;
 import com.cburch.logisim.file.Loader;
+import com.cburch.logisim.file.LogisimFileActions;
 import com.cburch.logisim.file.PcompWriter;
+import com.cburch.logisim.proj.Project;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -98,6 +100,68 @@ class PcompWriterTest {
 
     assertEquals(3, project.getCircuits().size(), "the project lost circuits it still needs");
     assertNotNull(project.getCircuit("Unrelated"));
+  }
+
+  /**
+   * The source project is cloned whole, libraries included, so a component library the host
+   * project happens to have loaded -- but the component itself does not place anything from --
+   * must not ride along as a {@code <lib>} entry. Left in, saving a component into a library while
+   * that same library is loaded (the ordinary case: the manager window's own library list is always
+   * loaded into the project it manages) would write a {@code pcomplib#...} reference naming the
+   * component's own containing directory, a dependency on itself. See {@code
+   * PcompWriter.trimUnusedLibraries}.
+   */
+  @Test
+  public void loadedLibraryTheComponentDoesNotUseIsNotCarriedAlong(@TempDir Path dir)
+      throws Exception {
+    final var project = PcompProjects.read(PcompProjects.THREE_CIRCUITS);
+    final var top = project.getCircuit("Top");
+    final var draft = PortLayoutDraft.of(top);
+    final var metadata = PcompMetadata.firstVersion(top.getName(), draft.layout());
+
+    final var loader = new Loader(null);
+    final var libraryDir = dir.resolve("otherLib").toFile();
+    PcompLibraryFile.create(libraryDir, "Other Library");
+    final var otherLibrary = loader.loadPcompLibrary(libraryDir);
+    final var proj = new Project(project);
+    proj.doAction(LogisimFileActions.loadLibraryQuiet(otherLibrary, project));
+    assertTrue(project.getLibraries().contains(otherLibrary), "the fixture did not load");
+
+    final var destination = dir.resolve("Top" + PcompFile.EXTENSION);
+    PcompWriter.write(destination.toFile(), project, top, metadata, loader);
+
+    final var written = Files.readString(destination, StandardCharsets.UTF_8);
+    assertFalse(written.contains("pcomplib#"), "an unused, unrelated library became a dependency");
+  }
+
+  /**
+   * A toolbar separator is a {@code null} entry in {@code ToolbarData.getContents()} -- real
+   * projects have them. {@code PcompComponentLibrary.getTools()} returns {@code List.copyOf(...)},
+   * which throws on {@code contains(null)} rather than the plain {@code ArrayList} most {@code
+   * Library} implementations use, so a separator must be skipped before checking toolbar usage,
+   * not passed straight to {@code contains}.
+   */
+  @Test
+  public void toolbarSeparatorDoesNotBreakTheUnusedLibraryCheck(@TempDir Path dir)
+      throws Exception {
+    final var project = PcompProjects.read(PcompProjects.THREE_CIRCUITS);
+    project.getOptions().getToolbarData().addSeparator();
+    final var top = project.getCircuit("Top");
+    final var draft = PortLayoutDraft.of(top);
+    final var metadata = PcompMetadata.firstVersion(top.getName(), draft.layout());
+
+    final var loader = new Loader(null);
+    final var libraryDir = dir.resolve("otherLib").toFile();
+    PcompLibraryFile.create(libraryDir, "Other Library");
+    final var otherLibrary = loader.loadPcompLibrary(libraryDir);
+    final var proj = new Project(project);
+    proj.doAction(LogisimFileActions.loadLibraryQuiet(otherLibrary, project));
+
+    final var destination = dir.resolve("Top" + PcompFile.EXTENSION);
+    PcompWriter.write(destination.toFile(), project, top, metadata, loader);
+
+    final var written = Files.readString(destination, StandardCharsets.UTF_8);
+    assertFalse(written.contains("pcomplib#"), "an unused, unrelated library became a dependency");
   }
 
   /** The closure is over subcircuits, and it includes the circuit it starts from. */

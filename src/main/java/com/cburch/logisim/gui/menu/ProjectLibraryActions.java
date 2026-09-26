@@ -14,6 +14,7 @@ import static com.cburch.logisim.gui.Strings.S;
 import com.cburch.logisim.file.Loader;
 import com.cburch.logisim.file.LogisimFileActions;
 import com.cburch.logisim.gui.generic.OptionPane;
+import com.cburch.logisim.pcomp.PcompLibraryFile;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.tools.Library;
 import java.io.IOException;
@@ -123,6 +124,49 @@ public class ProjectLibraryActions {
       if (lib != null) {
         proj.doAction(LogisimFileActions.loadLibrary(lib, proj.getLogisimFile()));
       }
+    }
+  }
+
+  /**
+   * Peler Edition. Turns an empty (or not-yet-existing) folder into a new component library and
+   * loads it, in one action. See {@code docs/peler-edition/design/pcomp-libraries.md}.
+   *
+   * <p>The name is asked first, separately from the folder: {@link PcompLibraryFile}'s manifest
+   * name is a display label a user can change at will, never part of any project's persisted
+   * reference (that goes through the directory path instead, see {@code pcomplib#} descriptors), so
+   * there is no reason to make the OS folder name and the library's display name the same thing.
+   */
+  public static void doNewPcompLibrary(Project proj) {
+    final var name =
+        OptionPane.showInputDialog(
+            proj.getFrame(),
+            S.get("newPcompLibraryNamePrompt"),
+            S.get("newPcompLibraryDialogTitle"),
+            OptionPane.QUESTION_MESSAGE);
+    if (name == null) return;
+    final var trimmed = name.toString().trim();
+    if (trimmed.isEmpty()) return;
+
+    final var loader = proj.getLogisimFile().getLoader();
+    final var chooser = loader.createChooser();
+    chooser.setDialogTitle(S.get("newPcompLibraryChooseDirTitle"));
+    chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+    if (chooser.showOpenDialog(proj.getFrame()) != JFileChooser.APPROVE_OPTION) return;
+    final var dir = chooser.getSelectedFile();
+
+    try {
+      PcompLibraryFile.create(dir, trimmed);
+    } catch (IOException e) {
+      OptionPane.showMessageDialog(
+          proj.getFrame(),
+          S.get("newPcompLibraryFailed", String.valueOf(e.getMessage())),
+          S.get("newPcompLibraryDialogTitle"),
+          OptionPane.ERROR_MESSAGE);
+      return;
+    }
+    final var lib = loader.loadPcompLibrary(dir);
+    if (lib != null) {
+      proj.doAction(LogisimFileActions.loadLibrary(lib, proj.getLogisimFile()));
     }
   }
 

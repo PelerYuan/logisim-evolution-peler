@@ -15,7 +15,7 @@ import com.cburch.logisim.file.Loader;
 import com.cburch.logisim.file.PcompWriter;
 import com.cburch.logisim.gui.generic.OptionPane;
 import com.cburch.logisim.instance.StdAttr;
-import com.cburch.logisim.pcomp.PcompCatalog;
+import com.cburch.logisim.pcomp.PcompComponentLibrary;
 import com.cburch.logisim.pcomp.PcompFile;
 import com.cburch.logisim.pcomp.PcompComponent;
 import com.cburch.logisim.pcomp.PcompMetadata;
@@ -36,6 +36,7 @@ import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -82,23 +83,40 @@ public class PcompSaveDialog extends JDialog {
   private final Project project;
   private final Circuit circuit;
   private final Republish republish;
+  /**
+   * Peler Edition. Fixed for a republish -- see {@code docs/peler-edition/design/pcomp-libraries.md}
+   * -- the library a new version has to stay in, resolved from whichever open project (not
+   * necessarily this one) happens to have it loaded. Null either when this is not a republish, or
+   * when it is one but no open project currently has that library loaded to resolve against; the
+   * second case falls back to the file's own directory with no library to notify of the new version.
+   */
+  private final PcompLibraryTarget republishTarget;
   private final PortLayoutDraft draft;
   private final PcompLayoutCanvas canvas;
   private final PortTable model = new PortTable();
   private final JTable table = new JTable(model);
   private final JLabel nameLabel = new JLabel();
   private final JTextField name = new JTextField(18);
+  private final JLabel targetLabel = new JLabel();
+  private final JComboBox<PcompLibraryTarget> targetChooser = new JComboBox<>();
+  private final JLabel targetFixed = new JLabel();
   private final JLabel problem = new JLabel(" ");
   private final JLabel plan = new JLabel(" ");
   private final JButton arrange = new JButton();
   private final JButton save = new JButton();
   private final JButton cancel = new JButton();
 
-  private PcompSaveDialog(Window parent, Project project, Circuit circuit, Republish republish) {
+  private PcompSaveDialog(
+      Window parent,
+      Project project,
+      Circuit circuit,
+      Republish republish,
+      PcompComponentLibrary defaultTarget) {
     super(parent, S.get("pcompSaveTitle"), ModalityType.APPLICATION_MODAL);
     this.project = project;
     this.circuit = circuit;
     this.republish = republish;
+    this.republishTarget = republish == null ? null : resolveRepublishTarget(republish.file());
     this.draft =
         republish == null
             ? PortLayoutDraft.of(circuit)
@@ -118,10 +136,36 @@ public class PcompSaveDialog extends JDialog {
     nameRow.setBorder(BorderFactory.createEmptyBorder(0, 6, 8, 10));
     nameRow.add(nameLabel);
     nameRow.add(name);
+
+    // Peler Edition: which library this goes into. Fixed rather than offered when republishing --
+    // see the field javadoc on republishTarget for why a new version cannot move libraries.
+    targetChooser.setRenderer(
+        (list, value, index, isSelected, hasFocus) ->
+            new JLabel(value == null ? " " : value.displayName()));
+    final var targets = republish == null ? PcompLibraryTarget.allIn(project.getLogisimFile())
+        : List.<PcompLibraryTarget>of();
+    for (final var target : targets) targetChooser.addItem(target);
+    if (republish == null) {
+      targetChooser.setSelectedItem(initialTarget(targets, defaultTarget));
+      targetFixed.setVisible(false);
+    } else {
+      targetChooser.setVisible(false);
+      targetFixed.setText(
+          republishTarget != null
+              ? republishTarget.displayName()
+              : republish.file().getParentFile().getName());
+    }
+    final var targetRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+    targetRow.setBorder(BorderFactory.createEmptyBorder(0, 6, 8, 10));
+    targetRow.add(targetLabel);
+    targetRow.add(targetChooser);
+    targetRow.add(targetFixed);
+
     final var top = new JPanel();
     top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
     top.add(hint);
     top.add(nameRow);
+    top.add(targetRow);
 
     table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
     table.setRowHeight(table.getRowHeight() + 4);
@@ -165,8 +209,19 @@ public class PcompSaveDialog extends JDialog {
     setLocationRelativeTo(parent);
   }
 
-  /** Opens the window for the circuit the user is looking at. */
+  /** Opens the window for the circuit the user is looking at, defaulting into My Components. */
   public static void open(Project project) {
+    open(project, null);
+  }
+
+  /**
+   * Peler Edition. As {@link #open(Project)}, but the target-library dropdown starts on {@code
+   * defaultTarget} instead of the built-in catalog -- used by the library manager window's "save
+   * current circuit here", so picking a library there and saving into it is not a two-step trip
+   * through this dialog's own dropdown as well. See {@code
+   * docs/peler-edition/design/pcomp-libraries.md}.
+   */
+  public static void open(Project project, PcompComponentLibrary defaultTarget) {
     final var circuit = project == null ? null : project.getCurrentCircuit();
     final var parent = project == null ? null : project.getFrame();
     if (circuit == null) {
@@ -174,7 +229,42 @@ public class PcompSaveDialog extends JDialog {
           OptionPane.WARNING_MESSAGE);
       return;
     }
-    new PcompSaveDialog(parent, project, circuit, republishOf(project, circuit)).setVisible(true);
+    new PcompSaveDialog(parent, project, circuit, republishOf(project, circuit), defaultTarget)
+        .setVisible(true);
+  }
+
+  /** The entry in {@code targets} to preselect: {@code defaultTarget} if it is one of them, else My Components. */
+  private static PcompLibraryTarget initialTarget(
+      List<PcompLibraryTarget> targets, PcompComponentLibrary defaultTarget) {
+    if (defaultTarget != null) {
+      for (final var target : targets) {
+        if (target instanceof PcompLibraryTarget.OfLibrary of && of.library() == defaultTarget) {
+          return target;
+        }
+      }
+    }
+    for (final var target : targets) {
+      if (target instanceof PcompLibraryTarget.OfCatalog) return target;
+    }
+    return targets.isEmpty() ? null : targets.get(0);
+  }
+
+  /**
+   * The library {@code file} lives in, if any open project (not necessarily this dialog's own) has
+   * it loaded right now. A component's own file never lists the library it is a member of as one of
+   * its own dependencies -- there is no reason for it to -- so this cannot be answered by looking at
+   * {@code file}'s own project the way {@link PcompLibraryTarget#allIn} normally would; it has to be
+   * searched for the same way {@code PcompLibraries.componentOf(Circuit)} searches for an owning
+   * component with no project in hand.
+   */
+  private static PcompLibraryTarget resolveRepublishTarget(File file) {
+    final var directory = file.getParentFile();
+    for (final var openProject : Projects.getOpenProjects()) {
+      for (final var target : PcompLibraryTarget.allIn(openProject.getLogisimFile())) {
+        if (target.directory().equals(directory)) return target;
+      }
+    }
+    return null;
   }
 
   /**
@@ -213,6 +303,7 @@ public class PcompSaveDialog extends JDialog {
 
   private void localeChanged() {
     nameLabel.setText(S.get("pcompNameLabel"));
+    targetLabel.setText(S.get("pcompTargetLabel"));
     cancel.setText(S.get("pcompCancelButton"));
     arrange.setText(S.get("pcompArrangeButton"));
   }
@@ -273,6 +364,11 @@ public class PcompSaveDialog extends JDialog {
     return S.get("pcompPlanNewVersion", planned.displayName(), String.join("; ", changes));
   }
 
+  /** Which library is actually being saved into right now: fixed for a republish, else chosen. */
+  private PcompLibraryTarget currentTarget() {
+    return republish != null ? republishTarget : (PcompLibraryTarget) targetChooser.getSelectedItem();
+  }
+
   private void onSave() {
     if (whatIsWrong() != null) return;
     final var metadata = plannedMetadata();
@@ -283,8 +379,11 @@ public class PcompSaveDialog extends JDialog {
       PcompWriter.write(destination, project.getLogisimFile(), circuit, metadata,
           project.getLogisimFile().getLoader());
       // A loader of its own: the project's one carries the state of the file it is in the middle
-      // of, and reading the component back has nothing to do with that.
-      PcompCatalog.install(destination, new Loader(null));
+      // of, and reading the component back has nothing to do with that. Null only for a republish
+      // whose library nothing currently has loaded -- see republishTarget's javadoc -- in which case
+      // there is nothing loaded to bring up to date either.
+      final var target = currentTarget();
+      if (target != null) target.install(destination, new Loader(null));
     } catch (IOException e) {
       OptionPane.showMessageDialog(this, S.get("pcompSaveFailed", String.valueOf(e.getMessage())),
           S.get("pcompSaveTitle"), OptionPane.ERROR_MESSAGE);
@@ -314,15 +413,20 @@ public class PcompSaveDialog extends JDialog {
    * refused rather than confirmed, because there would be no way back from saying yes.
    */
   private File destination(PcompMetadata metadata) {
-    final var directory = PcompCatalog.directoryFile();
+    final var target = currentTarget();
+    // Null only for a republish whose library nothing has loaded right now -- see republishTarget's
+    // javadoc -- in which case there is nowhere else to look but where the file already is.
+    final var directory = target != null ? target.directory() : republish.file().getParentFile();
     if (!directory.isDirectory() && !directory.mkdirs()) {
       OptionPane.showMessageDialog(this, S.get("pcompNoDirectory", directory.getAbsolutePath()),
           S.get("pcompSaveTitle"), OptionPane.ERROR_MESSAGE);
       return null;
     }
-    for (final var installed : PcompCatalog.installed()) {
-      final var other = installed.getMetadata();
-      if (other.mainCircuit().equals(metadata.mainCircuit()) && !other.id().equals(metadata.id())) {
+    final var installed = target != null ? target.installed() : List.<PcompComponent>of();
+    for (final var other : installed) {
+      final var otherMetadata = other.getMetadata();
+      if (otherMetadata.mainCircuit().equals(metadata.mainCircuit())
+          && !otherMetadata.id().equals(metadata.id())) {
         OptionPane.showMessageDialog(this, S.get("pcompNameTaken", metadata.displayName()),
             S.get("pcompSaveTitle"), OptionPane.ERROR_MESSAGE);
         return null;
