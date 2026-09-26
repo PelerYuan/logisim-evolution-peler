@@ -112,6 +112,17 @@ public final class PendingNetlist {
     for (final var member : net.members()) byPort.remove(member);
   }
 
+  /** Drops every net this instance knows about, as if newly constructed. Used only when the
+   * circuit's wires are about to be rebuilt out from under it (see {@link
+   * com.cburch.logisim.dsl.Space#tidyWires()}), where the old {@link NetHandle}s describe wire
+   * geometry ({@code path()}) that is about to stop existing -- rediscovering from scratch is the
+   * only correct way forward, not something {@link #connect}/{@link #seedExisting} could safely
+   * patch up in place. */
+  public void clear() {
+    byPort.clear();
+    nextNetId = 0;
+  }
+
   private static boolean isDriver(Port p) {
     return p.dir() == Port.Dir.OUT || p.dir() == Port.Dir.INOUT;
   }

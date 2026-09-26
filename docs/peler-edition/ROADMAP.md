@@ -169,26 +169,47 @@ upgradeable from everything before it. One transitional gap: upgrading from `v1.
 used jpackage's undocumented default UUID) to the first release carrying this pinned UUID may still not
 be recognized as an upgrade — from that release onward, all upgrades work correctly.
 
-## Feature 4 — Tidy Wires (Phase 4, implemented 2026-08-07, **deferred from default build 2026-08-07**)
+## Feature 4 — Tidy Wires (Phase 4, implemented 2026-08-07, deferred 2026-08-07, **re-enabled 2026-09-27**)
 
-**Status: deferred.** Shipped active in `v1.0.7`, but pulled from the default toolset the same day at
-user request — it hasn't had enough hands-on mileage yet to be trusted as an on-by-default tool, and a
-mis-route is the one failure mode of this feature that would actually be bad (see the correctness
-invariant below; the invariant itself is believed sound and was independently reviewed, but "reviewed"
-and "battle-tested across real user circuits" are different bars, and this feature only clears the
-first one so far). The engine (`WireTidier.java`) and UI glue (`TidyWiresTool.java`) are untouched and
-still compile — only the three registration points that expose them to the user were removed:
-`BaseLibrary.java` (tool no longer in the Base palette list), `default.templ` (toolbar button removed),
-`MenuProject.java` (Project-menu item, field, and dispatch branch removed). To re-enable: reverse those
-three edits. Re-enabling should happen after a dedicated testing pass — at minimum a fan-out net (one
-output to 3+ inputs) and an obstacle-between-two-components case, per the original test plan that was
-never actually run by a human before `v1.0.7` shipped.
+**Status: re-enabled, on by default.** Deferred the same day it first shipped (`v1.0.7`) pending a
+dedicated testing pass; that pass is now done. `WireTidierTest` (new,
+`src/test/java/com/cburch/logisim/dsl/WireTidierTest.java`) covers exactly the two scenarios the
+deferral note called out as required before re-enabling: a fan-out net (one output driving 3+ inputs
+stays one net after tidying) and an obstacle-between-two-components case (a route is forced around a
+gate's bounding box rather than through it). Both pass. The three registration points removed at
+deferral time are restored: `BaseLibrary.java` (tool back in the Base palette), `default.templ`
+(toolbar button back), `MenuProject.java` (Project-menu item, field, and dispatch branch back).
 
-One known edge case from having shipped it active in `v1.0.7`: a user who customized their own toolbar/
-template to include `Tidy Wires Tool` while running `v1.0.7` will have that reference silently unresolved
-by `BaseLibrary.getTool()` once they upgrade past this point (expected to warn/skip on load, not crash —
-not separately verified). Not fixed; deferring is itself the fix for the underlying maturity concern, and
-this only affects a self-customized toolbar, not the default one.
+Also new: `Space.tidyWires()` (`src/main/java/com/cburch/logisim/dsl/Space.java`), an MCP/Lua-facing
+entry point onto the same `WireTidier` engine, so a script can build a circuit and immediately clean up
+its own layout in the same session (`space:tidyWires()` from Lua, via
+`src/main/java/com/cburch/logisim/script/LuaBindings.java`). Requires nothing pending — it throws
+`UncommittedChangesException` if `isDirty()`, rather than silently tidying only what's already
+committed and dropping the rest — and returns `false` with nothing changed if the circuit had no wires
+worth touching, matching `WireTidier.buildTidyMutation`'s own null-means-no-op contract. Covered by
+`SpaceTidyWiresAcceptanceTest`.
+
+One real bug surfaced and fixed while writing that acceptance test: `tidyWires()` originally
+re-derived its component bookkeeping the same way the constructor's initial `discoverExisting()` does
+— clear everything, rescan `circuit.getNonWires()` sorted by visual position (top-to-bottom, then
+left-to-right), and hand out fresh ids in that order. That sort order has no reason to match the order
+components were originally placed in during the same session, so a full adder built via `place()` calls
+in logical order (A, B, Cin, gates, Sum, Cout) but laid out with Sum sitting above B on screen would
+have "Sum"'s and "B"'s ids silently swap after a `tidyWires()` call — a caller holding an id captured
+before tidying would get back a *different pin* after, with no error. Root-caused via
+`AnalyzerModel`/`Analyze.computeTable` reporting `Sum` classified as an input and `B` as an output post
+-tidy, which only makes sense if the ids resolved to each other's original components. Fixed by
+splitting `discoverExisting()` into id-assignment and a separate `seedConnectivity(List<Comp>)` that
+only rebuilds connectivity from wire geometry; `tidyWires()` now calls just the latter, over the exact
+same `Comp` objects it already had (`WireTidier` never adds, removes, or moves a component, so nothing
+about component identity actually needs rediscovering — only the wiring around them changed). Ids are
+now provably stable across a tidy because they are never reassigned, not because two independent sort
+orders happen to agree.
+
+One known edge case carried over from `v1.0.7`: a user who customized their own toolbar/template to
+include `Tidy Wires Tool` while running a version where it was deferred will have had that reference
+silently unresolved by `BaseLibrary.getTool()` in the interim (expected to warn/skip on load, not
+crash — not separately verified). Moot again now that the tool is back in the default set.
 
 New user request: a menu item + toolbar button that re-routes all wiring in the current circuit for
 readability, without moving any components. Upstream has nothing like this.

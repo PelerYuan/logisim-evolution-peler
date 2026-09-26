@@ -407,6 +407,11 @@ final class LuaBindings {
       return LuaValue.NONE;
     }));
     methods.set("isDirty", bind(a -> LuaValue.valueOf(space.isDirty())));
+    methods.set("tidyWires", bind(a -> {
+      final var changed = space.tidyWires();
+      if (changed) onCommit.run();
+      return LuaValue.valueOf(changed);
+    }));
     methods.set("synthesize", bind(a -> {
       final var result = space.synthesize(synthesisFromTable(a.subargs(2).checktable(1)));
       onCommit.run();

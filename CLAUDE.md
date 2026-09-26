@@ -177,7 +177,7 @@ written into every saved file and `displayName` into file headers and generated 
 | Quick rotate | `tools/QuickRotateTool.java`, `std/base/BaseLibrary.java` |
 | Wire auto-snap | `tools/WiringTool.java` |
 | Annotations | `std/annotate/`, `tools/AbstractAnnotateTool.java` and its two subclasses |
-| Tidy wires (deferred, unregistered) | `circuit/WireTidier.java`, `tools/TidyWiresTool.java` |
+| Tidy wires (re-enabled, on by default) | `circuit/WireTidier.java`, `tools/TidyWiresTool.java`, `dsl/Space.java` (`tidyWires()`, MCP/Lua-facing) |
 | Dual file format | `file/PelerCompat.java`, `file/Loader.java`, `file/XmlWriter.java`, `proj/ProjectActions.java` |
 | Component finder | `gui/find/ToolSearch.java`, `gui/find/FindToolDialog.java` |
 | Settings isolation | `prefs/PelerPreferences.java`, `prefs/AppPreferences.java`, `Main.java` |
