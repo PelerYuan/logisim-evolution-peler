@@ -1,9 +1,10 @@
-**What does this change and why**
+#### What does this change and why
 
-**Testing**
+#### Testing
+
 <!-- e.g. `./gradlew check`, manual steps in the GUI -->
 
-**Checklist**
+#### Checklist
 
 - [ ] Branched off `main` (not committed directly to it)
 - [ ] Added an entry to `docs/peler-edition/CHANGELOG.md` if this is more than a minor fix

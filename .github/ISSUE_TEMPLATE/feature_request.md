@@ -14,9 +14,10 @@ it likely belongs upstream instead:
 https://github.com/logisim-evolution/logisim-evolution/issues
 -->
 
-**What would you like this fork to do**
+#### What would you like this fork to do
 
-**Why isn't the existing behavior enough**
+#### Why isn't the existing behavior enough
 
-**How would you expect it to be configured or turned off**
-(This fork keeps new behavior optional or preference-gated wherever practical.)
+#### How would you expect it to be configured or turned off
+
+This fork keeps new behavior optional or preference-gated wherever practical.
