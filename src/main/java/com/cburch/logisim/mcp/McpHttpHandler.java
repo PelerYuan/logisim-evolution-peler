@@ -28,17 +28,12 @@ final class McpHttpHandler implements HttpHandler, AutoCloseable {
   private static final long SSE_HEARTBEAT_MILLIS = 15_000;
 
   private final McpJsonRpcDispatcher dispatcher;
-  private final McpProjectService projectService;
   private final McpServerConfig config;
   private final ConcurrentHashMap<String, Session> sessions = new ConcurrentHashMap<>();
   private final AtomicBoolean closed = new AtomicBoolean();
 
-  McpHttpHandler(
-      McpJsonRpcDispatcher dispatcher,
-      McpProjectService projectService,
-      McpServerConfig config) {
+  McpHttpHandler(McpJsonRpcDispatcher dispatcher, McpServerConfig config) {
     this.dispatcher = dispatcher;
-    this.projectService = projectService;
     this.config = config;
   }
 
@@ -119,7 +114,7 @@ final class McpHttpHandler implements HttpHandler, AutoCloseable {
       return;
     }
 
-    final var stream = new EventStream(exchange, session.startSequence());
+    final var stream = new EventStream(exchange);
     if (!session.streams().add(stream)) {
       sendError(exchange, 503, "Unable to open MCP event stream");
       return;
@@ -146,11 +141,7 @@ final class McpHttpHandler implements HttpHandler, AutoCloseable {
   private Session createSession() {
     Session session;
     do {
-      session =
-          new Session(
-              UUID.randomUUID().toString(),
-              projectService.latestChangeSequence(),
-              ConcurrentHashMap.newKeySet());
+      session = new Session(UUID.randomUUID().toString(), ConcurrentHashMap.newKeySet());
     } while (sessions.putIfAbsent(session.id(), session) != null);
     return session;
   }
@@ -173,14 +164,12 @@ final class McpHttpHandler implements HttpHandler, AutoCloseable {
     final var session = sessions.remove(id);
     if (session == null) return;
     for (final var stream : session.streams()) stream.close();
-    projectService.closeSession(id);
   }
 
   @Override
   public void close() {
     if (!closed.compareAndSet(false, true)) return;
     for (final var id : sessions.keySet()) closeSession(id);
-    projectService.wakeEventStreams();
   }
 
   private static boolean isInitialize(JsonObject request) {
@@ -231,11 +220,6 @@ final class McpHttpHandler implements HttpHandler, AutoCloseable {
     output.flush();
   }
 
-  private static void writeSseData(java.io.OutputStream output, String json) throws IOException {
-    output.write(("event: message\ndata: " + json + "\n\n").getBytes(StandardCharsets.UTF_8));
-    output.flush();
-  }
-
   private static void sendJson(HttpExchange exchange, int status, JsonObject response)
       throws IOException {
     final var data = response.toString().getBytes(StandardCharsets.UTF_8);
@@ -259,42 +243,31 @@ final class McpHttpHandler implements HttpHandler, AutoCloseable {
   private final class EventStream {
     private final HttpExchange exchange;
     private final AtomicBoolean open = new AtomicBoolean(true);
-    private long sequence;
 
-    private EventStream(HttpExchange exchange, long sequence) {
+    private EventStream(HttpExchange exchange) {
       this.exchange = exchange;
-      this.sequence = sequence;
     }
 
+    // P0 has nothing left that produces resource-change events -- the change journal that fed
+    // this stream is gone (see docs/peler-edition/design/mcp-v2.md section 十). This loop only
+    // keeps the connection alive with heartbeats; a real notification source returns in a later
+    // phase, once the new tool surface actually mutates a project. Sleeping rather than blocking
+    // on a wakeable condition means shutdown is noticed within one heartbeat interval instead of
+    // immediately -- an acceptable trade for not needing a wake signal with nothing to wake for.
     private void run(Session session) throws IOException {
       final var output = exchange.getResponseBody();
       writeSseComment(output, "connected");
       try {
-        final var initial = projectService.resourceNotifications(session.id(), sequence);
-        writeNotifications(output, initial);
         while (open.get() && !closed.get() && sessions.get(session.id()) == session) {
-          final var batch =
-              projectService.waitForResourceNotifications(
-                  session.id(), sequence, SSE_HEARTBEAT_MILLIS);
-          if (batch.notifications().isEmpty()) {
-            writeSseComment(output, "keepalive");
-            continue;
-          }
-          writeNotifications(output, batch);
+          Thread.sleep(SSE_HEARTBEAT_MILLIS);
+          if (!(open.get() && !closed.get() && sessions.get(session.id()) == session)) break;
+          writeSseComment(output, "keepalive");
         }
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
       } catch (IOException ignored) {
         // Closing the client response body is the normal way to end an SSE connection.
       }
-    }
-
-    private void writeNotifications(
-        java.io.OutputStream output, McpChangeJournal.EventBatch batch) throws IOException {
-      for (final var notification : batch.notifications()) {
-        writeSseData(output, notification.toString());
-      }
-      sequence = batch.nextSequence();
     }
 
     private void close() {
@@ -307,5 +280,5 @@ final class McpHttpHandler implements HttpHandler, AutoCloseable {
     }
   }
 
-  private record Session(String id, long startSequence, java.util.Set<EventStream> streams) {}
+  private record Session(String id, java.util.Set<EventStream> streams) {}
 }
