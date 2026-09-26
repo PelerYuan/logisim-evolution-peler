@@ -10,7 +10,7 @@ package com.cburch.logisim.file;
 
 import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.SubcircuitFactory;
-import com.cburch.logisim.pcomp.PcompCatalog;
+import com.cburch.logisim.pcomp.PcompLibraries;
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -69,7 +69,7 @@ public final class PcompLowering {
         final var inner = factory.getSubcircuit();
         pending.add(inner);
         if (planned.containsKey(inner)) continue;
-        if (PcompCatalog.componentOf(inner) == null) continue;
+        if (PcompLibraries.componentOf(file, inner) == null) continue;
         planned.put(inner, unusedName(taken, inner.getName()));
       }
     }

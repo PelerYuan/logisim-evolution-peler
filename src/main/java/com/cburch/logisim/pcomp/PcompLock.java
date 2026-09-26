@@ -35,7 +35,7 @@ public final class PcompLock {
 
   /** The locked component {@code circuit} belongs to, or null if it is not closed to the user. */
   public static PcompComponent lockedOwnerOf(Circuit circuit) {
-    final var component = PcompCatalog.componentOf(circuit);
+    final var component = PcompLibraries.componentOf(circuit);
     return component != null && component.isLocked() ? component : null;
   }
 
@@ -56,9 +56,9 @@ public final class PcompLock {
    */
   public static boolean blocksAppearanceEditOf(Project project, Circuit circuit) {
     if (circuit == null) return false;
-    if (PcompCatalog.componentOf(circuit) != null) return true;
+    final var file = project == null ? null : project.getLogisimFile();
+    if (PcompLibraries.componentOf(file, circuit) != null) return true;
     if (project == null) return false;
-    final var file = project.getLogisimFile();
     final var loader = file == null ? null : file.getLoader();
     final var source = loader == null ? null : loader.getMainFile();
     return PcompFile.isPcompFile(source) && file.getMainCircuit() == circuit;

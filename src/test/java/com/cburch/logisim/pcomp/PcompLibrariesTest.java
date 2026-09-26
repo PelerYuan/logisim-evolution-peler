@@ -23,11 +23,13 @@ import org.junit.jupiter.api.io.TempDir;
  * Peler Edition. "Which component owns this circuit", asked against a specific project's own
  * library tree rather than the fixed default catalog alone.
  *
- * <p>Only the {@code (LogisimFile, Circuit)} form is exercised here. The other form -- searching
- * every <em>open</em> project -- needs a real {@code Frame} to open before {@code
- * Projects.getOpenProjects()} sees anything (a headless {@code new Project(file)} alone never
- * registers), so it is exercised end to end once there is a GUI-reachable scenario to run it
- * against, in the phase that wires {@link PcompLock} to this class.
+ * <p>The {@code Circuit}-only form's open-projects search is not exercised here: {@code
+ * Projects.getOpenProjects()} only sees a project once a real {@code Frame} for it has opened (a
+ * headless {@code new Project(file)} alone never registers), so that branch is only reachable
+ * end to end from a GUI scenario. What is exercised here is that the same form still falls back to
+ * the default catalog even with zero open projects to search -- the {@code (LogisimFile, Circuit)}
+ * form promises that fallback unconditionally, and {@link PcompLock}'s callers, which mostly have
+ * no project in hand at all, must see it too.
  */
 class PcompLibrariesTest {
 
@@ -95,5 +97,35 @@ class PcompLibrariesTest {
     final var file = PcompProjects.read(PcompProjects.THREE_CIRCUITS);
 
     assertSame(installed, PcompLibraries.componentOf(file, installed.getCircuit()));
+  }
+
+  /**
+   * {@link PcompLock}'s callers are mostly type-level code with no {@code Project} in hand, so they
+   * go through the {@code Circuit}-only form. With no project open to search, it must still find a
+   * default-catalog component rather than reporting every circuit as unowned -- the same thing
+   * {@link #theDefaultCatalogIsReachableEvenWithoutBeingInTheFilesLibraries} checks for the
+   * {@code (LogisimFile, Circuit)} form.
+   */
+  @Test
+  public void theCircuitOnlyFormAlsoReachesTheDefaultCatalogWithNoProjectOpen(@TempDir Path dir)
+      throws Exception {
+    final var source = PcompProjects.read(PcompProjects.THREE_CIRCUITS);
+    PcompWriter.write(
+        dir.resolve("Top.pcomp").toFile(),
+        source,
+        source.getCircuit("Top"),
+        PcompMetadata.firstVersion("Top", TOP_PORTS),
+        new Loader(null));
+    PcompCatalog.useDirectory(dir.toFile());
+    final var installed = PcompCatalog.installed().get(0);
+
+    assertSame(installed, PcompLibraries.componentOf(installed.getCircuit()));
+  }
+
+  @Test
+  public void theCircuitOnlyFormIsNullWhenNothingOwnsTheCircuit() throws Exception {
+    final var file = PcompProjects.read(PcompProjects.THREE_CIRCUITS);
+
+    assertNull(PcompLibraries.componentOf(file.getCircuit("Unrelated")));
   }
 }
