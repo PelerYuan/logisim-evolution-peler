@@ -15,7 +15,7 @@ import com.cburch.logisim.file.PcompReplacement;
 import com.cburch.logisim.gui.generic.OptionPane;
 import com.cburch.logisim.pcomp.PcompCatalog;
 import com.cburch.logisim.pcomp.PcompFile;
-import com.cburch.logisim.pcomp.PcompLibrary;
+import com.cburch.logisim.pcomp.PcompComponent;
 import com.cburch.logisim.pcomp.PortSignature;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.proj.ProjectActions;
@@ -147,14 +147,14 @@ public class PcompManagerDialog extends JDialog {
     replace.setEnabled(chosen != null && !otherVersionsOf(chosen).isEmpty());
   }
 
-  private PcompLibrary selected() {
+  private PcompComponent selected() {
     final var row = table.getSelectedRow();
     return row < 0 || row >= model.rows.size() ? null : model.rows.get(row);
   }
 
   /** The installed components sharing this one's identity, which a replacement can choose from. */
-  private List<PcompLibrary> otherVersionsOf(PcompLibrary component) {
-    final var others = new ArrayList<PcompLibrary>();
+  private List<PcompComponent> otherVersionsOf(PcompComponent component) {
+    final var others = new ArrayList<PcompComponent>();
     for (final var sibling : PcompCatalog.versionsOf(component.getMetadata().id())) {
       if (sibling != component) others.add(sibling);
     }
@@ -316,14 +316,14 @@ public class PcompManagerDialog extends JDialog {
         S.get("pcompReplaceTitle"), OptionPane.INFORMATION_MESSAGE);
   }
 
-  private int usesOf(PcompLibrary component) {
+  private int usesOf(PcompComponent component) {
     return project == null ? 0 : PcompReplacement.countUses(project.getLogisimFile(), component);
   }
 
   /** One row per installed version, versions of one component together and in order. */
   private class ComponentTable extends AbstractTableModel {
     private static final long serialVersionUID = 1L;
-    private List<PcompLibrary> rows = List.of();
+    private List<PcompComponent> rows = List.of();
 
     private void reload() {
       rows =

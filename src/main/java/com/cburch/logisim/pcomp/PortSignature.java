@@ -78,7 +78,7 @@ public record PortSignature(
   }
 
   /** The signature of an installed component, read off the circuit it was published with. */
-  public static List<PortSignature> of(PcompLibrary component) {
+  public static List<PortSignature> of(PcompComponent component) {
     final var pins = new LinkedHashMap<String, Instance>();
     for (final var pin : component.getCircuit().getAppearance().getCircuitPins().getPins()) {
       final var label = pin.getAttributeValue(StdAttr.LABEL);

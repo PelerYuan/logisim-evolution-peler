@@ -69,7 +69,7 @@ public final class PcompCatalog {
     reload();
   }
 
-  private static List<PcompLibrary> installed;
+  private static List<PcompComponent> installed;
   private static Map<String, String> lastProblems = Map.of();
   private static boolean scanning;
 
@@ -87,7 +87,7 @@ public final class PcompCatalog {
    * that is loading it. Answering empty while a scan is in progress ends that, at the price of a
    * component built out of other components not seeing them; nothing writes such a file yet.
    */
-  public static synchronized List<PcompLibrary> installed() {
+  public static synchronized List<PcompComponent> installed() {
     if (installed != null) return installed;
     if (scanning) return List.of();
     scanning = true;
@@ -107,7 +107,7 @@ public final class PcompCatalog {
    * Adds one component to what is already loaded, without re-reading the rest.
    *
    * <p>Appending rather than rescanning is the point. A rescan would replace every {@link
-   * PcompLibrary}, and with it every {@code SubcircuitFactory} -- while an open project still holds
+   * PcompComponent}, and with it every {@code SubcircuitFactory} -- while an open project still holds
    * components built from the old ones. {@code XmlWriter.findLibrary} asks each library whether it
    * contains a component's factory, so those placed components would belong to no library any
    * more and the project would refuse to save.
@@ -115,8 +115,8 @@ public final class PcompCatalog {
    * @return the component that was added
    * @throws IOException if the file is not a component this program can load
    */
-  public static synchronized PcompLibrary install(File file, Loader loader) throws IOException {
-    final var component = PcompLibrary.load(file, loader);
+  public static synchronized PcompComponent install(File file, Loader loader) throws IOException {
+    final var component = PcompComponent.load(file, loader);
     final var next = new ArrayList<>(installed());
     next.removeIf(other -> other.getSource().equals(component.getSource()));
     next.add(component);
@@ -134,7 +134,7 @@ public final class PcompCatalog {
    *
    * @throws IOException if the file is still there afterwards
    */
-  public static synchronized void uninstall(PcompLibrary component) throws IOException {
+  public static synchronized void uninstall(PcompComponent component) throws IOException {
     final var file = component.getSource();
     if (file.exists() && !file.delete()) {
       throw new IOException(file.getName() + " could not be deleted");
@@ -151,7 +151,7 @@ public final class PcompCatalog {
    * by hand -- and an index would have to be kept in step with {@link #install} and {@link
    * #uninstall} for no measurable gain on a question only ever asked in answer to a click.
    */
-  public static synchronized PcompLibrary componentOf(Circuit circuit) {
+  public static synchronized PcompComponent componentOf(Circuit circuit) {
     if (circuit == null) return null;
     for (final var component : installed()) {
       if (component.ownsCircuit(circuit)) return component;
@@ -160,12 +160,12 @@ public final class PcompCatalog {
   }
 
   /** The installed component that {@code factory} places, or null if it places something else. */
-  public static PcompLibrary componentOf(ComponentFactory factory) {
+  public static PcompComponent componentOf(ComponentFactory factory) {
     return factory instanceof SubcircuitFactory sub ? componentOf(sub.getSubcircuit()) : null;
   }
 
   /** Every installed version of one component id, oldest first. */
-  public static synchronized List<PcompLibrary> versionsOf(String id) {
+  public static synchronized List<PcompComponent> versionsOf(String id) {
     return installed().stream()
         .filter(component -> component.getMetadata().id().equals(id))
         .sorted((a, b) -> a.getMetadata().version() - b.getMetadata().version())
@@ -190,15 +190,15 @@ public final class PcompCatalog {
    * @return the ones that loaded, in file-name order so the toolbox does not reshuffle itself
    *     between runs
    */
-  public static List<PcompLibrary> scan(File directory, Loader loader, BiConsumer<File, String> onProblem) {
-    final var found = new ArrayList<PcompLibrary>();
+  public static List<PcompComponent> scan(File directory, Loader loader, BiConsumer<File, String> onProblem) {
+    final var found = new ArrayList<PcompComponent>();
     if (directory == null || !directory.isDirectory()) return found;
     final var files = directory.listFiles(PcompCatalog::looksLikeAComponent);
     if (files == null) return found;
     Arrays.sort(files, (a, b) -> a.getName().compareToIgnoreCase(b.getName()));
     for (final var file : files) {
       try {
-        found.add(PcompLibrary.load(file, loader));
+        found.add(PcompComponent.load(file, loader));
       } catch (Exception e) {
         // Deliberately broad. A component file is user-supplied and reaches a whole project reader;
         // anything it throws is a reason to skip that one file, never to fail the scan.

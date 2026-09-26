@@ -38,7 +38,7 @@ import org.xml.sax.SAXException;
  * what makes the layout the single description of the component: there is no second copy of the
  * geometry for the appearance editor to change out from under it.
  */
-public final class PcompLibrary extends Library {
+public final class PcompComponent extends Library {
 
   private final PcompMetadata metadata;
   private final Circuit circuit;
@@ -46,7 +46,7 @@ public final class PcompLibrary extends Library {
   private final File source;
   private final Set<Circuit> circuits;
 
-  private PcompLibrary(
+  private PcompComponent(
       File source, PcompMetadata metadata, Circuit circuit, Tool tool, List<Circuit> circuits) {
     this.source = source;
     this.metadata = metadata;
@@ -63,7 +63,7 @@ public final class PcompLibrary extends Library {
    * @throws IOException if the file is not a component, names a main circuit it does not contain,
    *     or describes ports its circuit has no pins for
    */
-  public static PcompLibrary load(File file, Loader loader) throws IOException {
+  public static PcompComponent load(File file, Loader loader) throws IOException {
     final var metadata = PcompFile.read(file);
     if (metadata == null) {
       throw new IOException(file.getName() + " is not a custom component");
@@ -81,7 +81,7 @@ public final class PcompLibrary extends Library {
     // Not the project's own tool: that one is labelled with the circuit's name, which carries the
     // version suffix and has the user's spaces folded into underscores. See PcompTool.
     final var tool = new PcompTool(circuit.getSubcircuitFactory(), metadata.displayName());
-    return new PcompLibrary(file, metadata, circuit, tool, project.getCircuits());
+    return new PcompComponent(file, metadata, circuit, tool, project.getCircuits());
   }
 
   /**

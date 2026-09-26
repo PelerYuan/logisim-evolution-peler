@@ -236,7 +236,7 @@ class PcompVersionTest {
   }
 
   /** The circuit the component is built from: the one subcircuit placed inside it. */
-  private static Circuit dependencyOf(PcompLibrary component) {
+  private static Circuit dependencyOf(PcompComponent component) {
     for (final var inside : component.getCircuit().getNonWires()) {
       if (inside.getFactory() instanceof SubcircuitFactory factory) return factory.getSubcircuit();
     }

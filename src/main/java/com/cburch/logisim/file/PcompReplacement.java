@@ -10,7 +10,7 @@ package com.cburch.logisim.file;
 
 import com.cburch.logisim.circuit.CircuitMutation;
 import com.cburch.logisim.comp.Component;
-import com.cburch.logisim.pcomp.PcompLibrary;
+import com.cburch.logisim.pcomp.PcompComponent;
 import com.cburch.logisim.proj.Action;
 import com.cburch.logisim.util.StringGetter;
 import java.util.ArrayList;
@@ -37,7 +37,7 @@ public final class PcompReplacement {
   private PcompReplacement() {}
 
   /** How many instances of {@code component} the project holds, across all of its circuits. */
-  public static int countUses(LogisimFile file, PcompLibrary component) {
+  public static int countUses(LogisimFile file, PcompComponent component) {
     var count = 0;
     for (final var circuit : file.getCircuits()) {
       count += usesIn(circuit.getNonWires(), component).size();
@@ -53,7 +53,7 @@ public final class PcompReplacement {
    * tell which instances had been reached.
    */
   public static Action replace(
-      LogisimFile file, PcompLibrary from, PcompLibrary to, StringGetter name) {
+      LogisimFile file, PcompComponent from, PcompComponent to, StringGetter name) {
     final var newFactory = to.getCircuit().getSubcircuitFactory();
     Action joined = null;
     for (final var circuit : file.getCircuits()) {
@@ -74,7 +74,7 @@ public final class PcompReplacement {
   }
 
   private static List<Component> usesIn(
-      Iterable<? extends Component> components, PcompLibrary component) {
+      Iterable<? extends Component> components, PcompComponent component) {
     final var factory = component.getCircuit().getSubcircuitFactory();
     final var found = new ArrayList<Component>();
     for (final var candidate : components) {

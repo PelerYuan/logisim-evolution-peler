@@ -50,7 +50,7 @@ public class PcompCatalogLibrary extends Library {
   }
 
   /** Flattens the installed components into one category, first claim on a name winning. */
-  static List<Tool> toolsOf(List<PcompLibrary> components) {
+  static List<Tool> toolsOf(List<PcompComponent> components) {
     final var tools = new ArrayList<Tool>();
     final var taken = new HashSet<String>();
     for (final var component : components) {
