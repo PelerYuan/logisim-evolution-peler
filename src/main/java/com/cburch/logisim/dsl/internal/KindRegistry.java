@@ -10,6 +10,8 @@
 package com.cburch.logisim.dsl.internal;
 
 import com.cburch.logisim.circuit.Circuit;
+import com.cburch.logisim.circuit.SubcircuitFactory;
+import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentFactory;
 import com.cburch.logisim.dsl.UnknownKindException;
 import com.cburch.logisim.proj.Project;
@@ -18,6 +20,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Not part of the DSL's public surface -- see {@link com.cburch.logisim.dsl.Kind}, which is.
@@ -70,6 +73,29 @@ public final class KindRegistry {
     final var tool = library.getTool(entry.factoryName());
     if (!(tool instanceof AddTool addTool)) throw unknown(proj, key);
     return new Resolved(key, addTool.getFactory(), false);
+  }
+
+  /** The reverse of {@link #resolve}, for P4 (design doc, section 十一): a hand-drawn circuit's
+   * components arrive as raw {@link Component}s, not keys, so reading one back needs to go from
+   * factory to key instead of key to factory. Empty for anything this table does not curate
+   * (splitters, tunnels, probes, ...) -- P4 only has to read circuits built from component
+   * families the DSL can also place, not arbitrary Logisim content. */
+  public static Optional<Resolved> resolveExisting(Project proj, Component component) {
+    final var factory = component.getFactory();
+    if (factory instanceof SubcircuitFactory subcircuitFactory) {
+      final var key = CIRCUIT_PREFIX + subcircuitFactory.getSubcircuit().getName();
+      return Optional.of(new Resolved(key, factory, true));
+    }
+    for (final var key : TABLE.keySet()) {
+      final Resolved candidate;
+      try {
+        candidate = resolve(proj, key);
+      } catch (UnknownKindException e) {
+        continue;
+      }
+      if (candidate.factory() == factory) return Optional.of(candidate);
+    }
+    return Optional.empty();
   }
 
   public static List<String> curatedKeys() {

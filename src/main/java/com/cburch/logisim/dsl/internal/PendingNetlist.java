@@ -80,6 +80,22 @@ public final class PendingNetlist {
     return fresh;
   }
 
+  /** Registers a net discovered by reading an already-drawn circuit (P4, design doc section 十一)
+   * rather than built up through {@link #connect}: the connection is already real and already
+   * valid Logisim state, so none of {@code connect}'s width/direction/exclusivity checks apply --
+   * this only has to make {@link #netOf} find it. {@code committedPath} is the net's real routed
+   * geometry, so {@link com.cburch.logisim.dsl.Net#isCommitted()} and {@code path()} read true and
+   * correct for it immediately, exactly as they would for a net this session committed itself. */
+  public NetHandle seedExisting(String id, List<Port> members, List<int[]> committedPath) {
+    final var handle = new NetHandle(id);
+    for (final var member : members) {
+      handle.add(member);
+      byPort.put(member, handle);
+    }
+    handle.markCommitted(committedPath);
+    return handle;
+  }
+
   public Optional<NetHandle> netOf(Port p) {
     return Optional.ofNullable(byPort.get(p));
   }
