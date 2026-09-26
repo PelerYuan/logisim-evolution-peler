@@ -19,6 +19,7 @@ import com.cburch.logisim.dsl.Net;
 import com.cburch.logisim.dsl.Placement;
 import com.cburch.logisim.dsl.Port;
 import com.cburch.logisim.dsl.Space;
+import com.cburch.logisim.dsl.Synthesis;
 import com.cburch.logisim.dsl.WireOps;
 import java.util.ArrayList;
 import java.util.List;
@@ -107,6 +108,32 @@ final class LuaBindings {
       pairs.add(next.arg(2).tojstring());
     }
     return Attrs.of(pairs.toArray());
+  }
+
+  /** {@code {inputs = {"A", "B"}, outputs = {Sum = "A xor B"}, twoInputGatesOnly = true}} --
+   * {@code inputs} is a plain array, {@code outputs} a name-to-expression map, both other fields
+   * optional (design doc, section 十一/P5). */
+  private static Synthesis synthesisFromTable(LuaTable table) {
+    final var spec = Synthesis.of();
+    final var inputs = table.get("inputs");
+    if (inputs.istable()) {
+      final var arr = inputs.checktable();
+      for (var i = 1; i <= arr.length(); i++) spec.input(arr.get(i).checkjstring());
+    }
+    final var outputs = table.get("outputs");
+    if (outputs.istable()) {
+      final var map = outputs.checktable();
+      LuaValue key = LuaValue.NIL;
+      while (true) {
+        final var next = map.next(key);
+        if (next.arg1().isnil()) break;
+        key = next.arg1();
+        spec.output(key.tojstring(), next.arg(2).tojstring());
+      }
+    }
+    if (table.get("twoInputGatesOnly").toboolean()) spec.twoInputGatesOnly();
+    if (table.get("nandOnly").toboolean()) spec.nandOnly();
+    return spec;
   }
 
   // ---- Dot ----------------------------------------------------------------
@@ -380,6 +407,13 @@ final class LuaBindings {
       return LuaValue.NONE;
     }));
     methods.set("isDirty", bind(a -> LuaValue.valueOf(space.isDirty())));
+    methods.set("synthesize", bind(a -> {
+      final var result = space.synthesize(synthesisFromTable(a.subargs(2).checktable(1)));
+      onCommit.run();
+      final var t = new LuaTable();
+      t.set("placed", toLua(result.placed()));
+      return t;
+    }));
     final var meta = new LuaTable();
     meta.set("__index", methods);
     return new LuaUserdata(space, meta);

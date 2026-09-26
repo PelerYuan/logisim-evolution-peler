@@ -283,6 +283,13 @@ final class McpScriptTools implements AutoCloseable {
         space:check() -> {ok, unconnected, undriven, multiplyDriven}.
         space:commit(actionName) -> {placed, nets}: stages since the last commit/rollback become one
           undo-log entry. space:rollback() discards them instead.
+        space:synthesize(spec) -> {placed}: generates an entire gate-level circuit from a
+          truth-table-style spec in one call, as an alternative to place()/connect() -- only works on
+          a still-empty circuit. spec = {inputs = {"A","B",...}, outputs = {Name = "boolean expr",
+          ...}, twoInputGatesOnly = false, nandOnly = false}. Expressions use input names with
+          and/or/xor/not (or symbolic +,*,',~) and parentheses, e.g. "A xor B xor Cin". Every
+          input/output is 1 bit. Result components are immediately visible via
+          space:components()/byLabel() in the same session, no fresh call needed.
 
       Placement (returned by space:place): anchorAt(col,row) / at(col,row), rightOf(comp,gap) /
         below(comp,gap), with(attrTable) (e.g. {type="input"} or {inputs="3"}), facing(dir)
