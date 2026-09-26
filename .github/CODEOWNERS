@@ -1,5 +1,12 @@
-# Logisim-evolution code owners
-# See: https://docs.github.com/en/github/creating-cloning-and-archiving-repositories/creating-a-repository-on-github/about-code-owners
+# Code owners for this fork.
+#
+# Upstream Logisim-evolution's own CODEOWNERS lists its maintainers
+# (@BFH-ktt1 @davidhutchens @maehne @MarcinOrlowski @zdimension) — see
+# https://github.com/logisim-evolution/logisim-evolution/blob/main/.github/CODEOWNERS.
+# They have no relationship to this personal fork and are not listed below;
+# almost all of the code they own is still theirs, this file only records
+# who reviews changes in this repository.
+#
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
-# Default owners or everything in the repo. Unless a later match takes precedence,
-*	@BFH-ktt1 @davidhutchens @maehne @MarcinOrlowski @zdimension
+*	@PelerYuan

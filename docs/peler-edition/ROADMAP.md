@@ -1489,7 +1489,7 @@ Three new layers over the BFH symbols, 102 tests, plus the compat sweep:
 | Test | Covers | Blind to |
 | --- | --- | --- |
 | `BfhSymbolEquivalenceTest` | symbol and component agree index for index, every input value, every width | which index is which name |
-| `BfhSymbolLayoutTest` | ports complete, unique, correctly sided, bus-width, on the grid, on the box in every facing; the digit count per width; the layout cache | behaviour |
+| `BfhSymbolLayoutTest` | ports complete, unique, correctly sided, bus-width, on-grid, on-box in every facing; digit count per width; layout cache | behaviour |
 | `BfhSymbolSemanticsTest` | vectors addressed by the labels drawn on the symbol | breadth |
 
 The semantics layer states its expectations from outside: the seven-segment patterns are the standard

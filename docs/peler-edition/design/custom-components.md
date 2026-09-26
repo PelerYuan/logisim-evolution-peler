@@ -116,7 +116,7 @@
 
 ### 4.2 `.pcomp` 里装什么
 
-```
+```text
 <project>                        <- 就是一个普通的 LogisimFile，官方版也读得懂
   <lib .../>                     <- 它依赖的库
   <circuit name="Adder4"/>       <- 主电路，就是这个元件本身
@@ -164,7 +164,7 @@ inout 归右边。
 
 按 3.2，全部来自固定常数，一个 `FontMetrics` 都不许出现。
 
-```
+```text
 rows = max(左端口数, 右端口数)
 cols = max(上端口数, 下端口数)
 
@@ -536,7 +536,7 @@ false，NAME_ATTR 是其中之一，所以一个子电路从来就没写过它�
 
 `<pcomp>` 上多了 `width` / `height` / `caption-x` / `caption-y`，`<port>` 上多了 `x` / `y`：
 
-```
+```text
 <pcomp id="..." version="1" main="halfadder_v1" name="halfadder" locked="true"
        width="160" height="70" caption-x="75" caption-y="30">
   <port name="Sum"  side="top"    x="100" y="0"/>
