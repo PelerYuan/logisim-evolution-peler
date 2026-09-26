@@ -49,10 +49,21 @@ public final class LuaSandbox {
   private final Globals globals;
 
   public LuaSandbox(Space space) {
-    this(space, DEFAULT_INSTRUCTION_BUDGET);
+    this(space, DEFAULT_INSTRUCTION_BUDGET, () -> {});
   }
 
   public LuaSandbox(Space space, long instructionBudget) {
+    this(space, instructionBudget, () -> {});
+  }
+
+  /** Runs {@code onCommit} after every successful {@code space:commit(...)} inside a script (the
+   * {@code eval} MCP tool's optional {@code stream} parameter -- design doc, 13.4 -- uses this to
+   * repaint the canvas progressively instead of only after the whole script returns). */
+  public LuaSandbox(Space space, Runnable onCommit) {
+    this(space, DEFAULT_INSTRUCTION_BUDGET, onCommit);
+  }
+
+  private LuaSandbox(Space space, long instructionBudget, Runnable onCommit) {
     this.globals = new Globals();
     globals.load(new BaseLib());
 
@@ -91,7 +102,7 @@ public final class LuaSandbox {
       }
     });
 
-    globals.set("space", LuaBindings.wrap(space));
+    globals.set("space", LuaBindings.wrap(space, onCommit));
   }
 
   /** Runs {@code script} to completion and returns whatever it returns, coerced to a

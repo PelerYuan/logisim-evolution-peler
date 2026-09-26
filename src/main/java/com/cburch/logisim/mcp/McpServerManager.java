@@ -30,6 +30,7 @@ public final class McpServerManager implements AutoCloseable {
   private McpModelExecutor modelExecutor;
   private McpProjectRegistry projectRegistry;
   private McpProjectLifecycleTools lifecycleTools;
+  private McpScriptTools scriptTools;
   private McpJsonRpcDispatcher dispatcher;
   private McpHttpHandler httpHandler;
   private McpServerConfig config;
@@ -111,11 +112,14 @@ public final class McpServerManager implements AutoCloseable {
     final var executor = new McpModelExecutor();
     final var registry = new McpProjectRegistry();
     final McpProjectLifecycleTools tools;
+    final McpScriptTools scripts;
     final McpJsonRpcDispatcher jsonRpc;
     try {
       tools = new McpProjectLifecycleTools(executor, registry);
+      scripts = new McpScriptTools(executor, registry);
       jsonRpc = new McpJsonRpcDispatcher(BuildInfo.name, BuildInfo.version.toString(), null);
       tools.registerTools(jsonRpc);
+      scripts.registerTools(jsonRpc);
     } catch (RuntimeException e) {
       executor.close();
       throw e;
@@ -125,6 +129,7 @@ public final class McpServerManager implements AutoCloseable {
       if (httpServer != null) {
         // Another caller won the race while this one was building. Theirs is the live one.
         tools.close();
+        scripts.close();
         executor.close();
         return;
       }
@@ -132,6 +137,7 @@ public final class McpServerManager implements AutoCloseable {
       modelExecutor = executor;
       projectRegistry = registry;
       lifecycleTools = tools;
+      scriptTools = scripts;
       dispatcher = jsonRpc;
       final var firstPort = requested.port();
       IOException last = null;
@@ -148,8 +154,10 @@ public final class McpServerManager implements AutoCloseable {
       }
       if (httpServer == null) {
         lifecycleTools.close();
+        scriptTools.close();
         modelExecutor.close();
         lifecycleTools = null;
+        scriptTools = null;
         projectRegistry = null;
         dispatcher = null;
         modelExecutor = null;
@@ -235,6 +243,7 @@ public final class McpServerManager implements AutoCloseable {
   @Override
   public void close() {
     final McpProjectLifecycleTools tools;
+    final McpScriptTools scripts;
     final McpModelExecutor executor;
     synchronized (lock) {
       if (httpServer != null) {
@@ -250,8 +259,10 @@ public final class McpServerManager implements AutoCloseable {
         httpExecutor = null;
       }
       tools = lifecycleTools;
+      scripts = scriptTools;
       executor = modelExecutor;
       lifecycleTools = null;
+      scriptTools = null;
       modelExecutor = null;
       projectRegistry = null;
       dispatcher = null;
@@ -261,6 +272,7 @@ public final class McpServerManager implements AutoCloseable {
     // to the event dispatch thread, and that thread asks this object whether it is running. By
     // here the fields are already cleared, so anyone who asks gets the right answer meanwhile.
     if (tools != null) tools.close();
+    if (scripts != null) scripts.close();
     if (executor != null) executor.close();
   }
 
