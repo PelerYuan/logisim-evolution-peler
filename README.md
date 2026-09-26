@@ -167,7 +167,7 @@ The component then appears under **My Components** in the toolbox of every proje
 not just the one it was drawn in, and it is still there after a restart. It is a real component:
 rotate it, label it, wire it, drop it inside another component.
 
-![A component placed from My Components and wired into a circuit](docs/img/peler-edition/CustomComponents.png)
+![A component placed from My Components and wired into a circuit](docs/img/peler-edition/CustomComponents.gif)
 
 **Layouts are fixed once published, versions are not.** A published component's ports do not move
 under the projects using it. To move them, publish again -- the save window notices and offers a new
