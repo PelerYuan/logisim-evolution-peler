@@ -230,6 +230,8 @@ project being worked on rather than a file being rewritten behind your back.
 requires a token generated for you; file access stays inside the open project's directory unless you
 name other locations with `-Dlogisim.mcp.allowedPaths`.
 
+![An AI client building a circuit over MCP](docs/img/peler-edition/Mcp.png)
+
 The **MCP** menu holds the two ways to connect a client: **Copy MCP Configuration** for a client that
 takes an HTTP endpoint (Claude Code, Codex, VS Code), and **Export MCP Bundle** for Claude Desktop,
 which installs a `.mcpb` by double-click and needs Node.js available to relay its standard input to

@@ -11,6 +11,23 @@ canonical, fuller description (see
 [Releases](https://github.com/PelerYuan/logisim-evolution-peler/releases)). All releases are based
 on upstream **Logisim-evolution v4.1.0**.
 
+## v1.6.0 — 2026-09-26
+
+- **MCP tool surface redesigned.** The AI-client integration is now three tools — `eval` (run a Lua
+  script against the circuit), `describe` (a live example plus a summary of the current circuit),
+  and `reset` (drop the current script session) — replacing the previous 47 flat operations. A
+  script drives the circuit through a small object API (`Space`, `Comp`, `Port`, `Net`) instead of
+  one request per component or wire, so building something like a full adder now takes a single
+  round trip instead of dozens.
+- **Editing an already-drawn circuit.** An AI client can now open a hand-drawn circuit, correctly
+  read back its existing components and wiring, and build onto it — place a new gate and wire it
+  into an existing connection — without disturbing anything already there.
+- **Declarative circuit generation.** A script can hand over a truth-table-style specification
+  (named inputs, boolean expressions for named outputs) and get a synthesized gate-level circuit
+  back in one call, instead of placing and wiring every gate by hand.
+- The sandbox is unchanged: no filesystem, network, or reflection access from a script, and a fixed
+  instruction budget interrupts a runaway one.
+
 ## v1.5.0 — 2026-08-26
 
 - **Save a circuit as your own component.** `Project -> Save as Custom Component...` turns a circuit
