@@ -12,6 +12,8 @@ import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.SubcircuitFactory;
 import com.cburch.logisim.pcomp.PcompFile;
 import com.cburch.logisim.pcomp.PcompMetadata;
+import com.cburch.logisim.std.base.BaseLibrary;
+import com.cburch.logisim.tools.Library;
 import com.cburch.logisim.util.XmlUtil;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -67,7 +69,9 @@ public final class PcompWriter {
     }
     clone.setMainCircuit(mainClone);
     clone.setName(metadata.name());
-    trimTo(clone, dependencyClosure(mainClone));
+    final var closure = dependencyClosure(mainClone);
+    trimTo(clone, closure);
+    trimUnusedLibraries(clone, closure);
     for (final var circuit : clone.getCircuits()) {
       if (circuit != mainClone && circuit.getName().equals(metadata.mainCircuit())) {
         throw new IOException(
@@ -111,6 +115,49 @@ public final class PcompWriter {
     for (final var circuit : new ArrayList<>(file.getCircuits())) {
       if (!keep.contains(circuit)) file.removeCircuit(circuit);
     }
+  }
+
+  /**
+   * Drops every library the kept circuits do not actually place a component from.
+   *
+   * <p>{@code source} is cloned whole, so it carries every library the host project happened to
+   * have loaded -- including, once a component library can itself be loaded into a project (see
+   * {@code docs/peler-edition/design/pcomp-libraries.md}), the very library this component is being
+   * saved into. Left in, that becomes a {@code <lib desc="pcomplib#...">} entry naming the
+   * component's own containing directory, which is a dependency on itself: opening the file stand-
+   * alone later tries to load that library and, depending on timing, either succeeds pointlessly or
+   * asks the user to locate a folder that was never truly missing. A component's dependencies are
+   * its own circuit's components, not whatever else the author's project window happened to have
+   * open, so anything unused goes -- mirroring the {@code isUsed} check {@code XmlWriter.fromLibrary}
+   * already makes for a compatible {@code .circ} save, done here unconditionally rather than behind
+   * {@code AppPreferences.REMOVE_UNUSED_LIBRARIES} since a component file should never carry a
+   * library it does not need.
+   */
+  private static void trimUnusedLibraries(LogisimFile file, Set<Circuit> circuits) {
+    for (final var lib : new ArrayList<>(file.getLibraries())) {
+      if (lib instanceof BaseLibrary) continue;
+      if (isLibraryUsed(lib, file, circuits)) continue;
+      file.removeLibrary(lib);
+    }
+  }
+
+  private static boolean isLibraryUsed(Library lib, LogisimFile file, Set<Circuit> circuits) {
+    for (final var circuit : circuits) {
+      for (final var component : circuit.getNonWires()) {
+        if (lib.contains(component.getFactory())) return true;
+      }
+    }
+    final var tools = lib.getTools();
+    for (final var tool : file.getOptions().getToolbarData().getContents()) {
+      // A separator in the toolbar is represented as a null entry; some Library
+      // implementations (e.g. PcompComponentLibrary) return List.copyOf(...) from getTools(),
+      // which throws on contains(null) rather than just answering false.
+      if (tool != null && tools.contains(tool)) return true;
+    }
+    for (final var tool : file.getOptions().getMouseMappings().getMappings().values()) {
+      if (tool != null && tools.contains(tool)) return true;
+    }
+    return false;
   }
 
   /** Drops the text nodes that are nothing but the previous pass's line breaks and spaces. */

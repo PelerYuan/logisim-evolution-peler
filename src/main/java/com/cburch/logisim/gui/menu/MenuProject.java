@@ -12,7 +12,7 @@ package com.cburch.logisim.gui.menu;
 import static com.cburch.logisim.gui.Strings.S;
 
 import com.cburch.logisim.gui.find.FindToolDialog;
-import com.cburch.logisim.gui.pcomp.PcompManagerDialog;
+import com.cburch.logisim.gui.pcomp.PcompLibraryManagerFrame;
 import com.cburch.logisim.gui.pcomp.PcompSaveDialog;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.prefs.PrefMonitorKeyStroke;
@@ -37,8 +37,6 @@ class MenuProject extends Menu {
   private final JMenuItem loadBuiltin = new JMenuItem();
   private final JMenuItem loadLogisim = new JMenuItem();
   private final JMenuItem loadJar = new JMenuItem();
-  /** Peler Edition. See {@code docs/peler-edition/design/pcomp-libraries.md}. */
-  private final JMenuItem loadPcompLibrary = new JMenuItem();
   private final JMenuItem unload = new JMenuItem();
   private final MenuItemImpl moveUp = new MenuItemImpl(this, LogisimMenuBar.MOVE_CIRCUIT_UP);
   private final MenuItemImpl moveDown = new MenuItemImpl(this, LogisimMenuBar.MOVE_CIRCUIT_DOWN);
@@ -77,7 +75,15 @@ class MenuProject extends Menu {
    * with its own listener, for the same reason as `findTool` above.
    */
   private final JMenuItem saveAsComponent = new JMenuItem();
-  private final JMenuItem manageComponents = new JMenuItem();
+  /**
+   * Peler Edition. See {@code docs/peler-edition/design/pcomp-libraries.md} section five. Replaces
+   * the single "Custom Components..." item: managing more than one library needs more than one
+   * command, so this is a submenu rather than a single item opening a dialog.
+   */
+  private final JMenu components = new JMenu();
+  private final JMenuItem manageComponentLibraries = new JMenuItem();
+  private final JMenuItem newPcompLibrary = new JMenuItem();
+  private final JMenuItem loadPcompLibrary = new JMenuItem();
 
   MenuProject(LogisimMenuBar menubar) {
     this.menubar = menubar;
@@ -94,7 +100,6 @@ class MenuProject extends Menu {
     loadBuiltin.addActionListener(myListener);
     loadLogisim.addActionListener(myListener);
     loadJar.addActionListener(myListener);
-    loadPcompLibrary.addActionListener(myListener);
     unload.addActionListener(myListener);
     menubar.registerItem(LogisimMenuBar.MOVE_CIRCUIT_UP, moveUp);
     menubar.registerItem(LogisimMenuBar.MOVE_CIRCUIT_DOWN, moveDown);
@@ -113,15 +118,20 @@ class MenuProject extends Menu {
     ttlShowGates.addActionListener(myListener);
     ttlShowPackage.addActionListener(myListener);
     saveAsComponent.addActionListener(myListener);
-    manageComponents.addActionListener(myListener);
+    manageComponentLibraries.addActionListener(myListener);
+    newPcompLibrary.addActionListener(myListener);
+    loadPcompLibrary.addActionListener(myListener);
     ttlDrawing.add(ttlShowGates);
     ttlDrawing.add(ttlShowPackage);
 
     loadLibrary.add(loadBuiltin);
     loadLibrary.add(loadLogisim);
     loadLibrary.add(loadJar);
-    loadLibrary.addSeparator();
-    loadLibrary.add(loadPcompLibrary);
+
+    components.add(manageComponentLibraries);
+    components.addSeparator();
+    components.add(newPcompLibrary);
+    components.add(loadPcompLibrary);
 
     /* add myself to hotkey sync */
     AppPreferences.gui_sync_objects.add(this);
@@ -145,7 +155,7 @@ class MenuProject extends Menu {
     add(ttlDrawing);
     addSeparator();
     add(saveAsComponent);
-    add(manageComponents);
+    add(components);
     addSeparator();
     add(analyze);
     add(stats);
@@ -157,13 +167,16 @@ class MenuProject extends Menu {
     loadBuiltin.setEnabled(known);
     loadLogisim.setEnabled(known);
     loadJar.setEnabled(known);
-    loadPcompLibrary.setEnabled(known);
     unload.setEnabled(known);
     options.setEnabled(known);
     findTool.setEnabled(known);
     saveAsComponent.setEnabled(known);
-    // The manager is about what is installed, which is true whether or not a project is open.
-    manageComponents.setEnabled(true);
+    // Unlike the flat dialog this replaces, the manager window reads the current project's own
+    // library list, so it needs a project the same way every other item here does.
+    components.setEnabled(known);
+    manageComponentLibraries.setEnabled(known);
+    newPcompLibrary.setEnabled(known);
+    loadPcompLibrary.setEnabled(known);
     // Whether the project holds any TTL chip is only true until the next edit, so the answer is
     // taken when the menu opens rather than kept up to date. That keeps this off the edit path,
     // where a per-component sweep on every change would be paid for constantly and read never.
@@ -260,7 +273,6 @@ class MenuProject extends Menu {
     loadBuiltin.setText(S.get("projectLoadBuiltinItem"));
     loadLogisim.setText(S.get("projectLoadLogisimItem"));
     loadJar.setText(S.get("projectLoadJarItem"));
-    loadPcompLibrary.setText(S.get("projectLoadPcompLibraryItem"));
     unload.setText(S.get("projectUnloadLibrariesItem"));
     moveUp.setText(S.get("projectMoveCircuitUpItem"));
     moveDown.setText(S.get("projectMoveCircuitDownItem"));
@@ -278,7 +290,10 @@ class MenuProject extends Menu {
     ttlShowGates.setText(S.get("projectTtlShowGatesItem"));
     ttlShowPackage.setText(S.get("projectTtlShowPackageItem"));
     saveAsComponent.setText(S.get("projectSaveAsComponentItem"));
-    manageComponents.setText(S.get("projectManageComponentsItem"));
+    components.setText(S.get("projectComponentsMenu"));
+    manageComponentLibraries.setText(S.get("projectManageComponentLibrariesItem"));
+    newPcompLibrary.setText(S.get("projectNewPcompLibraryItem"));
+    loadPcompLibrary.setText(S.get("projectLoadPcompLibraryItem"));
   }
 
   private class MyListener implements ActionListener {
@@ -307,8 +322,10 @@ class MenuProject extends Menu {
         setTtlDrawing(proj, true);
       } else if (src == ttlShowPackage) {
         setTtlDrawing(proj, false);
-      } else if (src == manageComponents) {
-        PcompManagerDialog.open(proj);
+      } else if (src == manageComponentLibraries) {
+        PcompLibraryManagerFrame.open(proj);
+      } else if (src == newPcompLibrary) {
+        ProjectLibraryActions.doNewPcompLibrary(proj);
       } else if (src == saveAsComponent) {
         PcompSaveDialog.open(proj);
       }
