@@ -37,6 +37,8 @@ class MenuProject extends Menu {
   private final JMenuItem loadBuiltin = new JMenuItem();
   private final JMenuItem loadLogisim = new JMenuItem();
   private final JMenuItem loadJar = new JMenuItem();
+  /** Peler Edition. See {@code docs/peler-edition/design/pcomp-libraries.md}. */
+  private final JMenuItem loadPcompLibrary = new JMenuItem();
   private final JMenuItem unload = new JMenuItem();
   private final MenuItemImpl moveUp = new MenuItemImpl(this, LogisimMenuBar.MOVE_CIRCUIT_UP);
   private final MenuItemImpl moveDown = new MenuItemImpl(this, LogisimMenuBar.MOVE_CIRCUIT_DOWN);
@@ -92,6 +94,7 @@ class MenuProject extends Menu {
     loadBuiltin.addActionListener(myListener);
     loadLogisim.addActionListener(myListener);
     loadJar.addActionListener(myListener);
+    loadPcompLibrary.addActionListener(myListener);
     unload.addActionListener(myListener);
     menubar.registerItem(LogisimMenuBar.MOVE_CIRCUIT_UP, moveUp);
     menubar.registerItem(LogisimMenuBar.MOVE_CIRCUIT_DOWN, moveDown);
@@ -117,6 +120,8 @@ class MenuProject extends Menu {
     loadLibrary.add(loadBuiltin);
     loadLibrary.add(loadLogisim);
     loadLibrary.add(loadJar);
+    loadLibrary.addSeparator();
+    loadLibrary.add(loadPcompLibrary);
 
     /* add myself to hotkey sync */
     AppPreferences.gui_sync_objects.add(this);
@@ -152,6 +157,7 @@ class MenuProject extends Menu {
     loadBuiltin.setEnabled(known);
     loadLogisim.setEnabled(known);
     loadJar.setEnabled(known);
+    loadPcompLibrary.setEnabled(known);
     unload.setEnabled(known);
     options.setEnabled(known);
     findTool.setEnabled(known);
@@ -254,6 +260,7 @@ class MenuProject extends Menu {
     loadBuiltin.setText(S.get("projectLoadBuiltinItem"));
     loadLogisim.setText(S.get("projectLoadLogisimItem"));
     loadJar.setText(S.get("projectLoadJarItem"));
+    loadPcompLibrary.setText(S.get("projectLoadPcompLibraryItem"));
     unload.setText(S.get("projectUnloadLibrariesItem"));
     moveUp.setText(S.get("projectMoveCircuitUpItem"));
     moveDown.setText(S.get("projectMoveCircuitDownItem"));
@@ -288,6 +295,8 @@ class MenuProject extends Menu {
         ProjectLibraryActions.doLoadLogisimLibrary(proj);
       } else if (src == loadJar) {
         ProjectLibraryActions.doLoadJarLibrary(proj);
+      } else if (src == loadPcompLibrary) {
+        ProjectLibraryActions.doLoadPcompLibrary(proj);
       } else if (src == unload) {
         ProjectLibraryActions.doUnloadLibraries(proj);
       } else if (src == options) {
