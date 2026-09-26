@@ -12,19 +12,24 @@ package com.cburch.logisim.dsl;
 import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.CircuitMutation;
 import com.cburch.logisim.circuit.Wire;
+import com.cburch.logisim.circuit.WireSet;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.data.Location;
+import com.cburch.logisim.dsl.internal.KindRegistry;
 import com.cburch.logisim.dsl.internal.NetHandle;
 import com.cburch.logisim.dsl.internal.PendingNetlist;
 import com.cburch.logisim.dsl.internal.Router;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.util.StringUtil;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * The façade over one circuit (design doc, section 五). Placement is immediate -- every {@link
@@ -32,22 +37,37 @@ import java.util.stream.Collectors;
  * {@link Circuit} until {@link #commit(String)}, which submits everything placed and connected
  * since the last commit as exactly one undo-log entry (design doc, section 六).
  *
- * <p>Reading an already-populated, hand-drawn circuit's existing components is P4's job (design
- * doc, section 十一); this first cut only tracks what the DSL itself places in this session.
+ * <p>P4 (design doc, section 十一): every component already in the circuit when a {@link Space} is
+ * constructed is discovered and wrapped too, alongside whatever the DSL places in this session, so
+ * the read side (component/net queries) sees a hand-drawn circuit correctly rather than only this
+ * session's own diffs. Connectivity for that pre-existing content is derived from
+ * {@link Circuit#getWireSet(Wire)} (a per-net bundle of wires the circuit already computes) plus
+ * exact-location coincidence for two ports that touch directly with no wire between them, per
+ * design doc 3.10 -- deliberately not a from-scratch union-find over {@code WireBundle}, which is
+ * package-private and unnecessary once the circuit's own bundle computation is reused.
+ *
+ * <p>Known scope limit: existing {@link Wire} geometry is not fed to the {@link Router} as an
+ * obstacle, only existing components' ports are. A newly routed net therefore avoids landing on an
+ * existing pin but is not guaranteed to avoid crossing an existing wire's path; per design doc 3.3
+ * a plain crossing is electrically safe (only endpoints connect), so this only matters if a new
+ * route's segment would run exactly along an existing wire's own line.
  */
 public final class Space {
   private final Project proj;
   private final Circuit circuit;
   private final List<Comp> pending = new ArrayList<>();
+  private final List<Comp> existingComponents = new ArrayList<>();
   private final PendingNetlist netlist = new PendingNetlist();
   private final Router router = new Router();
   private final Map<String, Integer> idCounters = new HashMap<>();
   private final List<int[]> pendingWires = new ArrayList<>();
   private int autoLayoutCol;
+  private int existingNetCounter;
 
   private Space(Project proj, Circuit circuit) {
     this.proj = proj;
     this.circuit = circuit;
+    discoverExisting();
   }
 
   public static Space of(Project proj) {
@@ -70,7 +90,7 @@ public final class Space {
     final var counts = new HashMap<String, Integer>();
     var inputs = 0;
     var outputs = 0;
-    for (final var c : pending) {
+    for (final var c : allComponents().collect(Collectors.toList())) {
       counts.merge(c.kind().key(), 1, Integer::sum);
       for (final var p : c.ports()) {
         if (p.dir() == Port.Dir.IN) inputs++;
@@ -81,27 +101,27 @@ public final class Space {
   }
 
   public List<Comp> components() {
-    return List.copyOf(pending);
+    return allComponents().collect(Collectors.toList());
   }
 
   public List<Comp> componentsOf(Kind kind) {
-    return pending.stream().filter(c -> c.kind().key().equals(kind.key())).collect(Collectors.toList());
+    return allComponents().filter(c -> c.kind().key().equals(kind.key())).collect(Collectors.toList());
   }
 
   public Optional<Comp> byLabel(String label) {
-    return pending.stream().filter(c -> c.label().equals(Optional.of(label))).findFirst();
+    return allComponents().filter(c -> c.label().equals(Optional.of(label))).findFirst();
   }
 
   /** Looks up a component by the stable id it was given at placement (design doc, 13.1): the
    * correct way to reach a component from a later, possibly-fresh script session, since a Lua local
    * variable is not something a dropped session can recover. */
   public Optional<Comp> byId(String id) {
-    return pending.stream().filter(c -> c.id().equals(id)).findFirst();
+    return allComponents().filter(c -> c.id().equals(id)).findFirst();
   }
 
   public List<Comp> near(Comp c, int cells) {
     final var origin = c.origin();
-    return pending.stream()
+    return allComponents()
         .filter(other -> other != c)
         .filter(other -> Math.abs(other.origin().rawX() - origin.rawX()) <= cells * 10
             && Math.abs(other.origin().rawY() - origin.rawY()) <= cells * 10)
@@ -114,7 +134,7 @@ public final class Space {
 
   public CheckReport check() {
     final var unconnected = new ArrayList<Port>();
-    for (final var c : pending) {
+    for (final var c : allComponents().collect(Collectors.toList())) {
       for (final var p : c.ports()) {
         if (p.net().isEmpty()) unconnected.add(p);
       }
@@ -175,6 +195,7 @@ public final class Space {
     final var nets = netlist.allNets();
     final var allPorts = new ArrayList<Port>();
     for (final var c : pending) allPorts.addAll(c.ports());
+    for (final var c : existingComponents) allPorts.addAll(c.ports());
 
     final var mutation = new CircuitMutation(circuit);
     final var components = new ArrayList<Component>();
@@ -218,8 +239,14 @@ public final class Space {
     return circuit;
   }
 
+  /** Every component a new placement must not collide with -- this session's own staged
+   * components and whatever the circuit already had (design doc, P4, section 十一). */
   List<Comp> pendingComponents() {
-    return pending;
+    return allComponents().collect(Collectors.toList());
+  }
+
+  private Stream<Comp> allComponents() {
+    return Stream.concat(pending.stream(), existingComponents.stream());
   }
 
   Optional<Net> netOf(Port p) {
@@ -227,18 +254,89 @@ public final class Space {
   }
 
   Comp register(Kind kind, Component component) {
-    final var simple = kind.key().contains("/") ? kind.key().substring(kind.key().lastIndexOf('/') + 1) : kind.key();
-    final var n = idCounters.merge(simple, 0, Integer::sum);
-    idCounters.put(simple, n + 1);
-    final var comp = new Comp(this, kind, simple + "_" + n, component);
+    final var comp = new Comp(this, kind, nextId(kind.key()), component);
     pending.add(comp);
     return comp;
+  }
+
+  private String nextId(String kindKey) {
+    final var simple = kindKey.contains("/") ? kindKey.substring(kindKey.lastIndexOf('/') + 1) : kindKey;
+    final var n = idCounters.merge(simple, 0, Integer::sum);
+    idCounters.put(simple, n + 1);
+    return simple + "_" + n;
   }
 
   int[] nextAutoLayoutDot() {
     final var col = autoLayoutCol;
     autoLayoutCol += 3;
     return new int[] {col, 0};
+  }
+
+  /** P4 discovery (design doc, section 十一): wraps every component already in {@link #circuit} as
+   * a {@link Comp} -- in visual reading order (top-to-bottom, then left-to-right) so repeated reads
+   * of an unchanged circuit tend to hand out the same ids, though nothing relies on that across a
+   * {@code reset()} -- then derives the pre-existing connectivity between their ports and seeds it
+   * into {@link #netlist} so {@link Port#net()} reads it exactly like a net this session made
+   * itself. Anything whose factory {@link KindRegistry#resolveExisting} does not recognize
+   * (splitters, tunnels, probes, ...) is left out of the DSL's view entirely -- P4 reads circuits
+   * built from the same component families the DSL can place, not arbitrary Logisim content. */
+  private void discoverExisting() {
+    final var byLocation = new LinkedHashMap<Dot, List<Port>>();
+    final var raw = new ArrayList<>(circuit.getNonWires());
+    raw.sort(Comparator.<Component>comparingInt(c -> c.getLocation().getY())
+        .thenComparingInt(c -> c.getLocation().getX()));
+    for (final var component : raw) {
+      final var resolved = KindRegistry.resolveExisting(proj, component);
+      if (resolved.isEmpty()) continue;
+      final var kind = new Kind(resolved.get().key(), resolved.get().factory(), resolved.get().subcircuit());
+      final var comp = new Comp(this, kind, nextId(kind.key()), component);
+      existingComponents.add(comp);
+      for (final var port : comp.ports()) {
+        byLocation.computeIfAbsent(port.at(), ignored -> new ArrayList<>()).add(port);
+      }
+    }
+    if (byLocation.isEmpty()) return;
+
+    final var wires = new ArrayList<>(circuit.getWires());
+    final var handled = new boolean[wires.size()];
+    final var consumed = new java.util.HashSet<Dot>();
+    for (var i = 0; i < wires.size(); i++) {
+      if (handled[i]) continue;
+      final var bundle = circuit.getWireSet(wires.get(i));
+      final var memberWires = new ArrayList<Wire>();
+      for (var j = 0; j < wires.size(); j++) {
+        if (!handled[j] && bundle.containsWire(wires.get(j))) {
+          handled[j] = true;
+          memberWires.add(wires.get(j));
+        }
+      }
+      final var members = new ArrayList<Port>();
+      for (final var entry : byLocation.entrySet()) {
+        final var dot = entry.getKey();
+        if (bundle.containsLocation(Location.create(dot.rawX(), dot.rawY(), false))) {
+          members.addAll(entry.getValue());
+          consumed.add(dot);
+        }
+      }
+      if (members.isEmpty()) continue;
+      final var path = new ArrayList<int[]>();
+      for (final var wire : memberWires) {
+        final var ends = wire.getEnds();
+        final var a = ends.get(0).getLocation();
+        final var b = ends.get(1).getLocation();
+        path.add(new int[] {a.getX(), a.getY(), b.getX(), b.getY()});
+      }
+      netlist.seedExisting("wire_" + (existingNetCounter++), members, path);
+    }
+
+    // Two ports that coincide exactly with no wire between them are still electrically one node
+    // (design doc, 3.1/3.10) -- e.g. a gate's output placed directly against another gate's input.
+    for (final var entry : byLocation.entrySet()) {
+      if (consumed.contains(entry.getKey())) continue;
+      final var members = entry.getValue();
+      if (members.size() < 2) continue;
+      netlist.seedExisting("wire_" + (existingNetCounter++), members, List.of());
+    }
   }
 
   /** Component-kind counts plus a pin count -- a cheap outline before pulling any component list
