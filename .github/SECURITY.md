@@ -10,9 +10,11 @@ should hear about it.
 
 - **The vulnerability is in code this fork changed or added** — the custom-component system, the
   embedded MCP server, the file-format handling, or anything else listed under "Where the fork's own
-  code lives" in [`CLAUDE.md`](../CLAUDE.md) — report it **here**, using this repository's private
-  vulnerability reporting (the **Security** tab → **Report a vulnerability**). Do not open a public
-  issue for it.
+  code lives" in [`CLAUDE.md`](../CLAUDE.md) — report it **here**, privately if at all possible.
+  If this repository's **Security** tab offers **Report a vulnerability** (GitHub's private
+  vulnerability reporting), use that. If it does not, open a regular issue that says only that a
+  security-relevant report exists without exploit detail, and the maintainer will follow up with a
+  private channel — do not post exploit details or proof-of-concept code in a public issue.
 - **The vulnerability is in unmodified upstream code** — report it to
   [the upstream project](https://github.com/logisim-evolution/logisim-evolution/security), following
   their own [security policy](https://github.com/logisim-evolution/logisim-evolution/blob/main/.github/SECURITY.md),

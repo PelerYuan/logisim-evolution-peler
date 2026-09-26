@@ -15,20 +15,20 @@ https://github.com/logisim-evolution/logisim-evolution/releases
 - Only happens here -> you're in the right place, please continue below.
 -->
 
-#### Fork version and platform
+## Fork version and platform
 
 e.g. v1.5.0, Windows 11 / macOS 14 / Ubuntu 24.04
 
-#### What happened
+## What happened
 
-#### Steps to reproduce
+## Steps to reproduce
 
 1.
 2.
 3.
 
-#### Expected behavior
+## Expected behavior
 
-#### `.pcirc` or `.circ` file, if relevant
+## `.pcirc` or `.circ` file, if relevant
 
 Attach the file, or describe the circuit if it's simple enough.
