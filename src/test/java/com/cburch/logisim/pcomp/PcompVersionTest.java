@@ -20,6 +20,7 @@ import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.SubcircuitFactory;
 import com.cburch.logisim.file.Loader;
 import com.cburch.logisim.file.PcompWriter;
+import com.cburch.logisim.tools.ContinuousPlacement;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
@@ -122,6 +123,31 @@ class PcompVersionTest {
     assertEquals("Half Adder v1", tool.getDisplayName());
     assertEquals("Half_Adder_v1", tool.getName(), "the tool's name is how a project file finds it");
     assertEquals("Half_Adder_v1", component.getCircuit().getName());
+  }
+
+  /**
+   * A component keeps placing after the first one, the way a built-in component does.
+   *
+   * <p>It is a subcircuit underneath, and continuous placement refuses subcircuits because their
+   * double-click already means "open this". A component's does not -- the door is locked -- so the
+   * refusal has to make an exception or the gesture arms nothing and the component places once.
+   */
+  @Test
+  public void componentsStayArmedForThePlacementAfterThem(@TempDir Path dir) throws Exception {
+    final var first = PcompMetadata.firstVersion("Half Adder", HALF_ADDER);
+    PcompCatalog.useDirectory(dir.toFile());
+    final var component = PcompCatalog.install(publish(dir, first), new Loader(null));
+
+    final var tool = PcompCatalogLibrary.toolsOf(List.of(component)).get(0);
+
+    assertTrue(
+        ContinuousPlacement.canStayArmed(tool),
+        "a component would place once and then drop the tool");
+
+    final var stranger = PcompProjects.read(PcompProjects.THREE_CIRCUITS);
+    assertFalse(
+        ContinuousPlacement.canStayArmed(stranger.getAddTool(stranger.getCircuit("Top"))),
+        "an ordinary subcircuit opens on a double-click and must not arm on one");
   }
 
   /** A new version draws its box the same size, because the caption never carried the number. */

@@ -614,3 +614,46 @@ false，NAME_ATTR 是其中之一，所以一个子电路从来就没写过它�
 `~/.logisim-peler/components/` 里的文件名跟着电路名走，所以是 `Half_Adder_v1.pcomp`，没有空格。
 两个不同的名字折出同一个电路名（`My And` 和 `My_And`）会撞车，这由 `destination()` 里那条既有的
 `pcompNameTaken` 检查挡下，不是新问题。
+
+### 12.11 自定义元件放一个就掉工具（2026-08-26）
+
+维护者报的：从元件栏双击自定义元件，只能放下一个，第二次点画布没反应，工具已经退回 Edit。
+
+原因是两个特性的边界没对上。`ContinuousPlacement.arm` 里有一条早于自定义元件的规则：
+子电路和 VHDL 实体一律不进连续放置模式，理由写在它自己的注释里——**双击子电路的含义是「打开它」**，
+所以没有多余的手势能表示「继续放」。而自定义元件在底下就是一个子电路，于是被这条规则一并挡住。
+
+`ToolboxManip.doubleClicked` 其实已经处理过这件事：碰到被锁住的自定义元件，它不去开电路，而是
+「给这个手势它对内建元件的含义」，直接调 `ContinuousPlacement.arm`。但 `arm` 自己不同意，
+双击于是什么也没武装上——两处各自讲得通，合起来就是放一次。
+
+改法是把判断收成一个可以单测的谓词 `ContinuousPlacement.canStayArmed(Tool)`，`arm` 调它：
+
+- VHDL 实体：不行。
+- 子电路：只有 `PcompLock.blocksEntryInto` 为真才行，也就是**锁住的**自定义元件。
+- 其余：行。
+
+用「锁住」而不是「是自定义元件」，是因为没锁的元件双击确实会打开它，那第一条理由对它照样成立。
+这样一来工具栏上那个副本也跟着好了——`cloneTool()` 出来的是普通 `AddTool`，但工厂还是同一个
+锁住的电路，谓词照样为真（见 12.10 里为什么不覆盖 `cloneTool`）。
+
+回归测试在 `PcompVersionTest.componentsStayArmedForThePlacementAfterThem`：装一个真元件断言
+`canStayArmed` 为真，再拿一个同名的普通子电路断言为假。
+
+### 12.12 多位端口（2026-08-26）
+
+问过一次「自定义元件能不能有八位输入」，答案是本来就能，这里记一下为什么不用改任何东西。
+
+**位宽不在布局里**。`PortLayout` 只存 `(side, x, y)`，位宽在 `PortSignature.of` 那一步从引脚上读
+（`pin.getAttributeValue(StdAttr.WIDTH).getWidth()`），每次加载现取。`com/cburch/logisim/pcomp/`
+和 `gui/pcomp/` 里再没有第二处碰 `StdAttr.WIDTH`。所以八位端口就是「电路里那个 Pin 的 Data Bits
+设成 8」，`.pcomp` 的 `<port>` 元素里不会多出任何东西。
+
+实测过一遍：三个八位 Pin 加两个一位 Pin 的电路存成元件，放进新工程，八位端口画成粗总线，
+一位端口是细线，八路 Splitter 直接接得上，没有位宽不匹配。
+
+改位宽算签名变化（`PortSignature.Kind.WIDTH`），所以是要发新版本的——这是对的，接线两头的位宽
+必须对得上，把一位端口悄悄换成八位会让已经用了它的工程接错。
+
+**已知的缺口**：布局窗口那张表只有 Name / Direction / Side 三列，八位端口在窗口里看不出来。
+不影响功能，但用户在确认布局的时候看不到自己端口的位宽。要补的话就是加一列。

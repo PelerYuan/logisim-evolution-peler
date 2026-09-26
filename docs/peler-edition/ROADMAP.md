@@ -1739,6 +1739,11 @@ in it.
   `<comp lib name>` pair means anyway.
 - **`PcompCatalog.useDirectory` is a test seam.** Without pointing the catalog at a temporary folder,
   the catalog tests read whatever the person running them has installed.
+- **A custom component is a subcircuit, and rules written about subcircuits will catch it.**
+  `ContinuousPlacement.arm` refused every `SubcircuitFactory` because double-clicking one means
+  "open it", so custom components placed exactly once even though `ToolboxManip` had already
+  decided their double-click should arm placement. The rule now asks `PcompLock.blocksEntryInto`
+  instead, through `ContinuousPlacement.canStayArmed`.
 
 ### Open items specific to this feature
 
@@ -1750,6 +1755,11 @@ in it.
 - No preference for the component directory. `PcompCatalog.directory` is a plain field, so
   `PelerOptionsTest` is not triggered; adding a preference would require a control on a panel under
   `gui/prefs/`.
+- The layout window's port table has Name / Direction / Side columns only, so a multi-bit port is
+  not marked as one while the user is confirming the layout. Port widths themselves work: they are
+  read off the pin at signature time (`PortSignature.of`) rather than stored in the layout, so an
+  8-bit port needs nothing from `.pcomp` and a Splitter attaches to it like any other bus. Only the
+  table is silent about it.
 
 ## Known open items
 
