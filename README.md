@@ -169,8 +169,18 @@ rotate it, label it, wire it, drop it inside another component.
 
 ![A component placed from My Components and wired into a circuit](docs/img/peler-edition/CustomComponents.gif)
 
-**Project → Custom Components…** lists what is installed, imports a component someone sent you,
-opens one for editing, and deletes one -- refusing while the project still has it placed.
+**Project → Components → Manage Component Libraries…** lists what is installed, imports a
+component someone sent you, opens one for editing, and deletes one -- refusing while the project
+still has it placed.
+
+**More than one library.** A component doesn't have to live in the always-present **My
+Components** catalog -- **Project → Components → New Library…** creates another one, and **Load
+Component Library…** loads a folder someone else made, the same way this fork already loads an
+external `.circ`/JAR library. Each loaded library shows up as its own category in the toolbox, and
+the save dialog lets you pick which library a new component goes into. Sharing one is just sending
+the folder (or the manager window's **Export…** button, which zips it up for you) -- there is no
+new file format to learn, since a library is just a manifest plus the same `.pcomp` files this
+feature already writes.
 
 **Saving to `.circ` keeps them.** A project that uses custom components saves to official
 Logisim-evolution's format with each component written in as an ordinary circuit carrying the same

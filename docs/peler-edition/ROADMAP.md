@@ -1828,6 +1828,90 @@ in it.
   8-bit port needs nothing from `.pcomp` and a Splitter attaches to it like any other bus. Only the
   table is silent about it.
 
+## Feature 16 — Custom component libraries (2026-09-28)
+
+Feature 15's custom components lived in exactly one place: a process-wide static directory
+(`~/.logisim-peler/components/`), no second directory, no way to share a set of them without
+handing over the whole catalog folder. The maintainer used the feature, found that too limiting, and
+asked for three specific things -- shareable, multiple named libraries, saving directly into whichever
+library you want -- explicitly comparing it to the "load an external library" behaviour upstream
+already had. Designed in
+[docs/peler-edition/design/pcomp-libraries.md](design/pcomp-libraries.md), which holds the full
+investigation; this section is the summary.
+
+### The idea: make a library a real `Library`, not a second parallel system
+
+Upstream already has everything "shareable, multiple, per-project" needs:
+`LibraryManager`/`Loader` load and cache a library by a `type#path` descriptor,
+`LogisimFile.getLibraries()` is each project's own loaded-library list, `LogisimFileActions
+.loadLibrary`/`unloadLibrary` are generic undoable actions for any `Library`, and
+`ProjectExplorerLibraryNode` renders any `Library`'s `getTools()`/`getLibraries()` into a toolbox
+category with zero special-casing. That machinery had simply never been connected to `.pcomp` files.
+The whole redesign is making a component library a `PcompComponentLibrary extends Library` --
+a directory holding a manifest (`library.pcomplib`, an id that survives the folder being renamed, and
+a display name) plus the same `.pcomp` files the feature already wrote -- and then plugging that
+into the existing loader/undo/toolbox machinery instead of inventing a parallel one.
+
+The old fixed My Components catalog (`PcompCatalog`/`PcompCatalogLibrary`) is untouched: it is still
+the one directory `default.templ` always loads, still a process-wide static registry. It just becomes
+one of possibly several libraries a project has loaded, not the only kind that can exist.
+
+### What had to change, and what did not
+
+- **Renamed** `PcompLibrary` (an installed component) to `PcompComponent`, purely to free the name
+  `PcompLibrary` for the new concept -- a mechanical rename with no behaviour change, but one that
+  touched every corner of the old feature (both dialogs, the lock, the lowering plan, the tests).
+- **New model classes**, `pcomp/PcompLibraryManifest`, `PcompLibraryFile`, `PcompComponentLibrary`,
+  `PcompLibraries` (see the design doc section three).
+- **A third `LibraryDescriptor`** in `file/LibraryManager.java` (`pcomplib#<path>`), alongside the
+  existing `file#`/`jar#` ones, and a `Loader.loadPcompLibrary`/`getDirectoryFor` pair mirroring the
+  existing missing-file relocation flow. `LogisimFileActions.loadLibrary`/`unloadLibrary` needed no
+  changes at all -- they were already generic.
+- **Nothing new for the toolbox.** A loaded `PcompComponentLibrary` becomes its own top-level toolbox
+  category automatically, the same way loading an external `.circ` library always has.
+- **`PcompLock`/`PcompLowering.plan`** moved off `PcompCatalog.componentOf` (which only ever knew
+  about the one fixed directory) onto `PcompLibraries.componentOf`, which resolves a circuit's owning
+  component by searching whichever libraries the *actual* project in question has loaded.
+- **A new `PcompLibraryManagerFrame`** (non-modal `JFrame`, replacing the old modal
+  `PcompManagerDialog`) lists every loaded library on the left and that library's installed
+  components on the right, with New/Load/Unload/Export buttons and a "save the current circuit into
+  this library" action. Reachable from a new **Project → Components →** submenu next to the existing
+  **Load Library…** item.
+- **Export** zips a library's directory (`pcomp/PcompLibraryExport`) so sharing one really is just
+  handing over a file; unzipping it and pointing **Load Component Library…** at the result
+  reconstructs the exact same library, since a library's manifest and `.pcomp` files were already
+  self-contained, ordinary XML on disk.
+
+### A side effect worth knowing: circuit names are no longer global
+
+Feature 15 depended on the catalog library deduping tools by circuit name, which meant every custom
+component's underlying circuit name had to be unique across the one directory that existed. Now that
+`XmlWriter.findLibrary` resolves a component to whichever of the project's *own* top-level libraries
+contains it (checked non-recursively, by object identity, not by name), two different libraries are
+free to each have a component whose circuit happens to be named the same thing -- they are different
+`ComponentFactory` objects living in different `Library` objects, and nothing about save/load ever
+compares their names against each other. This was not a design goal; it fell out of building each
+library as its own flat `Library` rather than merging everything into one namespace, and is a real
+loosening of a limit Feature 15 imposed.
+
+### Things that will bite whoever touches this next
+
+- **A library must stay a flat, top-level `Library`.** `XmlWriter.findLibrary` only checks
+  `file.getLibraries()` directly, one level deep, never recursing into a library's own nested
+  libraries -- so a `PcompComponentLibrary` can never be wrapped inside another `Library` without its
+  components silently becoming unsavable.
+- **`KindRegistry` (the DSL/MCP-facing component resolver) does not go through a project's own
+  `getLibraries()` at all** -- it resolves built-in kinds via the loader's shared `Builtin` tree,
+  documented in its own javadoc as deliberate. This does not affect pcomp libraries directly (DSL
+  scripts do not place custom components), but it is the same "resolves via the loader, not via what
+  this project actually has loaded" shape as the old `PcompCatalog.componentOf`, and was the source of
+  a related but separate bug fixed by `Space.commit`'s `withMissingLibrariesLoaded` -- see
+  `SpaceLoadsMissingLibrariesAcceptanceTest`.
+- **The manager window's toolbox category refresh relies on `LibraryEvent.ADD_LIBRARY`/
+  `REMOVE_LIBRARY` firing.** It has no separate "refresh" button by design -- if a future change loads
+  or unloads a library through some path that does not fire those events, the window's left list will
+  quietly go stale.
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the

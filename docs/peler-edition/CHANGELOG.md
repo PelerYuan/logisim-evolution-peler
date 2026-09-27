@@ -13,6 +13,15 @@ on upstream **Logisim-evolution v4.1.0**.
 
 ## v1.6.0 — 2026-09-26
 
+- **Custom components can now live in multiple, named, shareable libraries.** The single fixed **My
+  Components** directory from v1.5.0 still works exactly as before, but a project can now also load
+  any number of additional component libraries — its own folder of `.pcomp` files with a manifest —
+  the same way it loads an external `.circ`/JAR library: each shows up as its own toolbox category,
+  and loading/unloading is a normal undoable project action. A new **Component Libraries** window
+  (`Project -> Manage Component Libraries...`) creates, loads, unloads, and exports libraries (as a
+  plain `.zip`, so handing one to someone else is just sending a file), and lets a saved circuit be
+  filed into any loaded library instead of always going to My Components. See
+  [pcomp-libraries.md](design/pcomp-libraries.md) for the design.
 - **MCP tool surface redesigned.** The AI-client integration is now three tools — `eval` (run a Lua
   script against the circuit), `describe` (a live example plus a summary of the current circuit),
   and `reset` (drop the current script session) — replacing the previous 47 flat operations. A
