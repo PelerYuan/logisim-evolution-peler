@@ -301,7 +301,12 @@ final class McpScriptTools implements AutoCloseable {
       Global `space` (a com.cburch.logisim.dsl.Space):
         space:place(kind) -> Placement: kind is one of "wiring/pin", "gates/and_gate",
           "gates/or_gate", "gates/nand_gate", "gates/nor_gate", "gates/not_gate", "gates/xor_gate",
-          "gates/xnor_gate", "gates/buffer", "memory/register".
+          "gates/xnor_gate", "gates/buffer", "memory/register" for these common ones, or -- for
+          anything else built in, loaded into the project, or already placed by hand -- the raw
+          "<library>/<component>" pair Logisim itself uses internally (e.g. "Plexers/Multiplexer",
+          "Memory/RAM"), or "circuit/<name>" for a subcircuit. Kind.of on a wrong or misspelled key
+          throws with the nearest real keys attached, so a typo is self-correcting without a
+          separate lookup call.
         space:byId(id) / space:byLabel(label) -> Comp or nil. Use these, not a saved Lua local, to
           address a component from a later eval() call: a script's locals never survive past the
           single call they were declared in.
@@ -333,6 +338,118 @@ final class McpScriptTools implements AutoCloseable {
           window is open for this project, zooms/centers its Layout canvas to fit the circuit --
           same as clicking the toolbar's "Auto" zoom button. Call it yourself only if a script needs
           the tidied result mid-eval, e.g. to inspect wire geometry before returning.
+        space:exportImage(path, format[, scale[, printerView]]): renders this circuit to an image
+          or vector file at an absolute path. format is one of "png", "gif", "jpg", "svg", "tikz"
+          (case-insensitive); scale defaults to 1.0 (a linear size multiplier, not a percentage);
+          printerView defaults to false (true draws in black-on-white print style rather than
+          on-screen colors). Needs no open GUI window -- works the same headless. Throws
+          InvalidExportFormatException for an unrecognized format, ExportFailedException (wrapping
+          the underlying I/O error) if writing the file fails.
+        space:exportHtml(path): writes this circuit out as a self-contained, interactively-
+          simulatable HTML page (absolute path). Refuses up front with UnsupportedForHtmlExportException
+          (details.unsupportedKinds lists every offending component's kind, looking inside
+          subcircuits too) if the circuit uses a component this export cannot simulate -- fix or
+          remove those first rather than getting a page that would silently compute the wrong
+          answer. ExportFailedException wraps any I/O failure while writing.
+
+      Global `circuits` (a com.cburch.logisim.dsl.Circuits): project-level circuit management,
+        independent of whichever circuit `space` is currently open on.
+        circuits:list() -> {name,...} (file order); circuits:mainName() -> string or nil.
+        circuits:create(name); circuits:remove(name); circuits:rename(oldName, newName);
+        circuits:setMain(name) -- each is its own immediate, undo-logged action, not staged like
+        space:place()/commit(). To then work inside a circuit this call just created or renamed,
+        pass its name as this tool's own top-level "circuit" argument on the next call (eval,
+        describe and reset all accept it) -- `space` is always bound to one specific circuit for
+        the lifetime of a single eval() call and cannot be redirected mid-script.
+
+      Global `libraries` (a com.cburch.logisim.dsl.Libraries): project-level library management --
+        load an external file/directory as a top-level library of this project, or unload one.
+        libraries:list() -> {name,...}: every top-level library currently loaded (not recursive).
+        libraries:loadCircuit(path) -> name: loads an external .circ/.pcirc file as a library.
+        libraries:loadJar(path, className) -> name: loads a Library/ComponentFactory class out of
+          an external JAR; className is the fully-qualified class the JAR exposes.
+        libraries:loadPcomp(path) -> name: loads a Peler Edition component-library directory (one
+          created via the GUI's "New Library..."), the multi-library successor to the single
+          built-in "My Components" catalog.
+        libraries:unload(name): removes a top-level library, refusing with a structured reason if
+          anything in the project still places a component from it.
+        All four loads/unload are their own immediate, undo-logged action, like `circuits`'
+        methods, not staged like space:place()/commit(). A name collision, an unreadable/malformed
+        file, or an unload while still in use each throw a structured exception (Duplicate
+        LibraryNameException, LibraryLoadFailedException, LibraryInUseException,
+        UnknownLibraryException) rather than ever popping a GUI dialog.
+
+      Global `vhdlEntities` (a com.cburch.logisim.dsl.VhdlEntities): project-level VHDL entity
+        management -- a VHDL entity is a named "black box" component backed by hand-written VHDL
+        source, placeable into a circuit exactly like a subcircuit, via kind key "vhdl/<name>".
+        vhdlEntities:list() -> {name,...} (file order).
+        vhdlEntities:create(name): adds a new entity from the same blank template the GUI's "Add
+          VHDL Entity" menu item uses.
+        vhdlEntities:importFile(path) -> name: reads path as a VHDL source file and adds it as a
+          new entity named after its own "entity ... is" declaration (need not match the file
+          name); returns that name.
+        vhdlEntities:remove(name): removes an entity, refusing with a structured reason if any
+          circuit in the project still places it as a component.
+        vhdlEntities:rename(oldName, newName): renames an entity, independent of whether it has any
+          placed instance (the GUI only exposes renaming through a placed instance's attribute
+          table).
+        create/importFile/remove/rename are each their own immediate, undo-logged action, like
+        `circuits`'/`libraries`' methods, not staged like space:place()/commit(). An invalid or
+        already-used name, a file that is not valid VHDL, an unknown entity name, or a remove while
+        still in use each throw a structured exception (InvalidVhdlNameException, Duplicate
+        VhdlNameException, VhdlImportFailedException, UnknownVhdlEntityException,
+        VhdlEntityInUseException) rather than ever popping a GUI dialog.
+
+      Global `circuitStatistics` (a com.cburch.logisim.dsl.CircuitStatistics): read-only component
+        counts for a named circuit, exactly what the GUI's "Circuit Statistics" menu item shows.
+        circuitStatistics:compute(name) -> {rows={...}, totalWithoutSubcircuits={...},
+          totalWithSubcircuits={...}}. Each row is {component, library, simpleCount, uniqueCount,
+          recursiveCount}: simpleCount counts direct instances of that component kind in this
+          circuit; uniqueCount counts instances of it anywhere in the whole project file; recursive
+          Count counts instances if this circuit were fully flattened, multiplying through nested
+          subcircuits. The two totals sum simpleCount/uniqueCount/recursiveCount across all rows,
+          the "without" variant excluding rows that are themselves one of this file's own circuits
+          used as a subcircuit. Throws UnknownCircuitException (with a "did you mean" suggestion)
+          for a circuit name this project does not have.
+
+      Global `history` (a com.cburch.logisim.dsl.History): undo/redo of already-committed actions,
+        independent of whichever circuit `space` is currently open on. One "unit" here is exactly
+        one undo-log entry -- one space:commit(...) call (which batches everything placed/connected
+        since the last commit into one entry) or one direct circuits:*/libraries:*/vhdlEntities:*/
+        space:tidyWires()/space:synthesize() call.
+        history:canUndo() / canRedo() -> boolean.
+        history:nextUndoDescription() / nextRedoDescription() -> string or nil: what the next
+          undo()/redo() would revert/reapply, without doing it.
+        history:undo() / redo() -> string: performs it, returning that same description. Throws
+          NothingToUndoException/NothingToRedoException if the respective log is empty -- check
+          canUndo()/canRedo() first, or catch and ignore, rather than assuming either always
+          succeeds.
+
+      Global `simulation` (a com.cburch.logisim.dsl.Simulation): runs the project's own simulator
+        against the circuit `space` is open on -- the same one the GUI's Simulate menu drives, so
+        state (running/stopped, tick frequency, pin values) persists across separate eval() calls
+        exactly like it would across separate clicks in the GUI. Every method here waits for the
+        requested step to actually finish before returning.
+        simulation:reset(): mirrors Simulate -> Reset Simulation.
+        simulation:step(): propagates one step by hand; mirrors Simulate -> Single Step.
+        simulation:tick(halfCycles): advances every clock by halfCycles half-periods (1 = Tick Half
+          Period, 2 = Tick Full Period). Throws NoClockException if this circuit (or any subcircuit
+          it contains) has no Clock component -- never pops the GUI's "choose a clock" dialog.
+        simulation:isAutoTicking() / setAutoTicking(bool): mirrors Simulate -> Ticks Enabled; turning
+          it on throws NoClockException under the same condition as tick().
+        simulation:isAutoPropagating() / setAutoPropagation(bool): mirrors Simulate -> Run/Stop
+          Simulation.
+        simulation:getTickFrequency() / setTickFrequency(hz): the clock rate used while auto-ticking.
+        simulation:isOscillating() / isExceptionEncountered(): diagnostic state the GUI's status bar
+          also shows.
+        simulation:readPin(label) -> {value, known, error}: the current value of the wiring/pin
+          component labeled `label`, input or output. `known` is false (value meaningless, always -1)
+          for a pin with any floating bit; `error` is true for a width/conflict error state.
+        simulation:writePin(label, value): drives an input pin to `value` and propagates the change;
+          mirrors clicking the GUI's poke tool. Throws PinNotWritableException if `label` names an
+          output pin instead.
+        Both pin methods throw UnknownPinException (with a "did you mean" suggestion when no label
+          matches at all) if `label` does not name a wiring/pin component in this circuit.
 
       Placement (returned by space:place): anchorAt(col,row) / at(col,row), rightOf(comp,gap) /
         below(comp,gap), with(attrTable) (e.g. {type="input"} or {inputs="3"}), facing(dir)

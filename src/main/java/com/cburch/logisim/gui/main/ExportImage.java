@@ -29,6 +29,7 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.IOException;
 import java.util.List;
 import javax.imageio.ImageIO;
 import javax.swing.Box;
@@ -84,6 +85,70 @@ public class ExportImage {
         logger.error("Unexpected image format; aborted!");
         return null;
     }
+  }
+
+  /**
+   * The headless core of a single-circuit export -- everything {@link ExportThread#export} does,
+   * minus the progress monitor, the directory-vs-file destination juggling (a programmatic caller
+   * already knows exactly which file it wants), and every {@link OptionPane} dialog (failures
+   * become an {@link IOException} instead, for a caller with no window to put a dialog on).
+   *
+   * <p>Deliberately takes a {@link Project} rather than a {@link Frame}/{@link Canvas}: the only
+   * thing the original code needed a {@code Canvas} for was a {@link java.awt.Component} to hand
+   * {@link ComponentDrawContext} (which itself never reads more than a generic AWT {@code
+   * Component} from that field, per its own javadoc) and a {@link Graphics} to probe font metrics
+   * for {@link Circuit#getBounds(Graphics)} -- both obtainable without any actual GUI window ever
+   * having been created, so this works identically whether or not this project has one open.
+   */
+  public static void exportSingle(
+      Project proj, Circuit circuit, File dest, int format, double scale, boolean printerView)
+      throws IOException {
+    final var filter = getFilter(format);
+    if (filter == null) throw new IOException("unsupported image format " + format);
+
+    final var probe = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+    final var bds = circuit.getBounds(probe.getGraphics()).expand(BORDER_SIZE);
+    final var width = (int) Math.round(bds.getWidth() * scale);
+    final var height = (int) Math.round(bds.getHeight() * scale);
+    Graphics g;
+    Graphics base;
+    final var img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+    if (filter.type == FORMAT_TIKZ || filter.type == FORMAT_SVG) {
+      base = new TikZWriter();
+      g = base.create();
+    } else {
+      base = img.getGraphics();
+      g = base.create();
+      g.setColor(Color.white);
+      g.fillRect(0, 0, width, height);
+      g.setColor(Color.black);
+    }
+    if (g instanceof Graphics2D g2d) {
+      g2d.scale(scale, scale);
+      g.translate(-bds.getX(), -bds.getY());
+    } else {
+      throw new IOException("could not create a Graphics2D context for export");
+    }
+
+    final var circuitState = proj.getCircuitState(circuit);
+    final var context =
+        new ComponentDrawContext(new java.awt.Panel(), circuit, circuitState, base, g, printerView);
+    circuit.draw(context, null);
+
+    try {
+      switch (filter.type) {
+        case FORMAT_GIF -> GifEncoder.toFile(img, dest, null);
+        case FORMAT_PNG -> ImageIO.write(img, "PNG", dest);
+        case FORMAT_JPG -> ImageIO.write(img, "JPEG", dest);
+        case FORMAT_TIKZ -> ((TikZWriter) g).writeFile(dest);
+        case FORMAT_SVG -> ((TikZWriter) g).writeSvg(width, height, dest);
+      }
+    } catch (IOException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new IOException(e);
+    }
+    g.dispose();
   }
 
   public static void doExport(Project proj) {
@@ -201,35 +266,6 @@ public class ExportImage {
     }
 
     private void export(Circuit circuit) {
-      final var bds = circuit.getBounds(canvas.getGraphics()).expand(BORDER_SIZE);
-      final var width = (int) Math.round(bds.getWidth() * scale);
-      final var height = (int) Math.round(bds.getHeight() * scale);
-      Graphics g;
-      Graphics base;
-      final var img = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-      if (filter.type == FORMAT_TIKZ || filter.type == FORMAT_SVG) {
-        base = new TikZWriter();
-        g = base.create();
-      } else {
-        base = img.getGraphics();
-        g = base.create();
-        g.setColor(Color.white);
-        g.fillRect(0, 0, width, height);
-        g.setColor(Color.black);
-      }
-      if (g instanceof Graphics2D g2d) {
-        g2d.scale(scale, scale);
-        g.translate(-bds.getX(), -bds.getY());
-      } else {
-        OptionPane.showMessageDialog(frame, S.get("couldNotCreateImage"));
-        monitor.close();
-      }
-
-      final var circuitState = canvas.getProject().getCircuitState(circuit);
-      final var context =
-          new ComponentDrawContext(canvas, circuit, circuitState, base, g, printerView);
-      circuit.draw(context, null);
-
       final File where;
       if (dest.isDirectory()) {
         where = new File(dest, circuit.getName() + filter.extensions[0]);
@@ -240,21 +276,13 @@ public class ExportImage {
         where = new File(dest.getParentFile(), newName);
       }
       try {
-        switch (filter.type) {
-          case FORMAT_GIF -> GifEncoder.toFile(img, where, monitor);
-          case FORMAT_PNG -> ImageIO.write(img, "PNG", where);
-          case FORMAT_JPG -> ImageIO.write(img, "JPEG", where);
-          case FORMAT_TIKZ -> ((TikZWriter) g).writeFile(where);
-          case FORMAT_SVG -> ((TikZWriter) g).writeSvg(width, height, where);
-        }
-      } catch (Exception e) {
+        exportSingle(canvas.getProject(), circuit, where, filter.type, scale, printerView);
+      } catch (IOException e) {
         OptionPane.showMessageDialog(frame, S.get("couldNotCreateFile"));
         e.printStackTrace();
+      } finally {
         monitor.close();
-        return;
       }
-      g.dispose();
-      monitor.close();
     }
 
     @Override

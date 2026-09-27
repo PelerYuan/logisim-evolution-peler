@@ -25,16 +25,24 @@ import com.cburch.logisim.dsl.internal.KindRegistry;
 import com.cburch.logisim.dsl.internal.NetHandle;
 import com.cburch.logisim.dsl.internal.PendingNetlist;
 import com.cburch.logisim.dsl.internal.Router;
+import com.cburch.logisim.gui.htmlexport.ExportHtml;
+import com.cburch.logisim.gui.htmlexport.HtmlExporter;
+import com.cburch.logisim.gui.main.ExportImage;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.std.gates.CircuitBuilder;
 import com.cburch.logisim.util.StringUtil;
+import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -328,6 +336,56 @@ public final class Space {
 
     discoverExisting();
     return new SynthesisResult(action, List.copyOf(existingComponents));
+  }
+
+  /** Renders this circuit to an image or vector file -- {@code format} is one of {@code "png"},
+   * {@code "gif"}, {@code "jpg"}, {@code "svg"}, {@code "tikz"} (case-insensitive), {@code scale}
+   * a linear multiplier applied to the circuit's own drawn size (1.0 = actual size), and {@code
+   * printerView} whether to draw in the black-on-white style used for printing rather than the
+   * on-screen colors. Delegates to {@link ExportImage#exportSingle}, which needs no {@code Frame}
+   * or open window -- this method works identically whether or not this project has a GUI. */
+  public void exportImage(String path, String format, double scale, boolean printerView) {
+    final var fmt = resolveImageFormat(format);
+    try {
+      ExportImage.exportSingle(proj, circuit, new File(path), fmt, scale, printerView);
+    } catch (IOException e) {
+      throw new ExportFailedException(path, e.getMessage());
+    }
+  }
+
+  public void exportImage(String path, String format) {
+    exportImage(path, format, 1.0, false);
+  }
+
+  private static int resolveImageFormat(String format) {
+    return switch (format.toLowerCase(Locale.ROOT)) {
+      case "png" -> ExportImage.FORMAT_PNG;
+      case "gif" -> ExportImage.FORMAT_GIF;
+      case "jpg", "jpeg" -> ExportImage.FORMAT_JPG;
+      case "svg" -> ExportImage.FORMAT_SVG;
+      case "tikz" -> ExportImage.FORMAT_TIKZ;
+      default -> throw new InvalidExportFormatException(format);
+    };
+  }
+
+  /** Writes this circuit out as a self-contained, interactively-simulatable HTML page (Peler
+   * Edition's experimental feature -- see {@link HtmlExporter}). Refuses up front, with a
+   * structured {@link UnsupportedForHtmlExportException}, if the circuit (or any subcircuit it
+   * contains) uses a component kind {@link HtmlExporter#supportedKinds()} cannot simulate, exactly
+   * like {@link ExportHtml#doExport}'s own dialog-based refusal -- this is the headless
+   * equivalent, so a script sees the same list of offending kinds instead of a dialog it can never
+   * click through. */
+  public void exportHtml(String path) {
+    final var unsupported = new TreeSet<String>();
+    ExportHtml.collectUnsupported(circuit, unsupported, new HashSet<>());
+    if (!unsupported.isEmpty()) {
+      throw new UnsupportedForHtmlExportException(List.copyOf(unsupported));
+    }
+    try {
+      new HtmlExporter(proj, circuit).writeTo(new File(path));
+    } catch (IOException e) {
+      throw new ExportFailedException(path, e.getMessage());
+    }
   }
 
   Project project() {

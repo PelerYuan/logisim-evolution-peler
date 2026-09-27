@@ -33,9 +33,12 @@ public final class ExportHtml {
 
   /**
    * Names every component the page could not simulate, looking inside subcircuits too, since a
-   * subcircuit is flattened on export and its contents end up in the page just the same.
+   * subcircuit is flattened on export and its contents end up in the page just the same. Public so
+   * a headless caller (see {@code com.cburch.logisim.dsl.Space#exportHtml}) can run the same check
+   * before writing anything, without a {@link Project}/{@link com.cburch.logisim.gui.main.Frame} to
+   * put a dialog on.
    */
-  private static void collectUnsupported(Circuit circuit, Set<String> into, Set<Circuit> seen) {
+  public static void collectUnsupported(Circuit circuit, Set<String> into, Set<Circuit> seen) {
     if (!seen.add(circuit)) return;
     final var supported = HtmlExporter.supportedKinds();
     for (final var component : circuit.getNonWires()) {
