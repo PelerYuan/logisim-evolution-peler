@@ -36,11 +36,16 @@ jobs:
   check:
     runs-on: ubuntu-latest
     # This repository's default GITHUB_TOKEN permissions are read-only; the action below needs
-    # to read and write PR/issue labels and comments to do its job.
+    # to read and write PR/issue labels and comments to do its job, and -- per the "always add
+    # status check for PRs" trigger above -- to write a commit status on the PR head. That last
+    # one is statuses:write, and leaving it out failed every PR at the final step with
+    # "Resource not accessible by integration", right after "No dependencies found. Running
+    # clean-up": the check had already done its real work and only the status write was denied.
     permissions:
       contents: read
       issues: write
       pull-requests: write
+      statuses: write
     steps:
       # https://github.com/marketplace/actions/dependent-issues
       - uses: z0al/dependent-issues@v1
