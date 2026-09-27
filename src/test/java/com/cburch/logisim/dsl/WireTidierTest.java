@@ -238,4 +238,29 @@ class WireTidierTest {
           "BOUT should be B1 AND B2, unaffected by the nearby detour (row " + row + ")");
     }
   }
+
+  /** A circuit already in tidied form must report nothing left to do -- otherwise an automatic
+   * caller that re-tidies defensively on every change (see {@code McpScriptTools#autoTidyAndFit})
+   * would push a real, if geometrically no-op, undo-log entry every single time it runs. Wire's
+   * equals/hashCode compare by endpoints (not identity), so this exercises the actual fix: a fresh
+   * {@link java.util.HashSet} of the old wires must come out equal to the recomputed set. */
+  @Test
+  void alreadyTidyCircuitHasNothingLeftToTidy() {
+    final var project = blankProject();
+    final var space = Space.of(project);
+    final var pin = Kind.of(space, "wiring/pin");
+
+    final var driver = space.place(pin).anchorAt(0, 0).with(Attrs.of("type", "input")).place();
+    final var sink1 = space.place(pin).anchorAt(30, 0).with(Attrs.of("type", "output")).place();
+    final var sink2 = space.place(pin).anchorAt(30, 10).with(Attrs.of("type", "output")).place();
+    space.connect(driver.outputs().get(0), sink1.inputs().get(0));
+    space.connect(driver.outputs().get(0), sink2.inputs().get(0));
+    space.commit("build fan-out");
+
+    final var circuit = project.getCurrentCircuit();
+    apply(project, circuit);
+
+    assertNull(WireTidier.buildTidyMutation(circuit),
+        "a circuit tidied once should already match what tidying it again would produce");
+  }
 }

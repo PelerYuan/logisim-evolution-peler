@@ -88,10 +88,35 @@ final class McpScriptTools implements AutoCloseable {
             e.suggestion().ifPresent(s -> data.addProperty("suggestion", s));
             throw new McpRpcException(-32010, e.getMessage(), data);
           }
+          autoTidyAndFit(session);
           final var out = new JsonObject();
           out.addProperty("result", result);
           return out;
         });
+  }
+
+  /**
+   * Runs after every successful {@code eval}, so a session never has to end with correct-but-
+   * cluttered wiring or a view scrolled off whatever the script just placed: re-tidies the
+   * circuit's wiring (space.tidyWires()'s own no-op case already keeps this a no-op when there was
+   * nothing to fix -- see WireTidier's old-wires-equal-new-wires check) and, when a GUI window is
+   * actually attached to this project (it may not be, e.g. under test), zooms/centers its Layout
+   * canvas to fit the circuit's current bounds -- the same computation as the toolbar's "Auto" zoom
+   * button. Skipped entirely, silently, when the script left something staged but uncommitted
+   * ({@code space.isDirty()}): {@code tidyWires()} would throw for that, and it is a completely
+   * ordinary mid-build state a later {@code eval} call in the same session is expected to finish.
+   * Best-effort by design -- a problem in this convenience step must never turn an otherwise-
+   * successful eval into a failed one, so any exception here is swallowed rather than surfaced.
+   */
+  private void autoTidyAndFit(Session session) {
+    if (session.space.isDirty()) return;
+    try {
+      session.space.tidyWires();
+      final var frame = session.project.getFrame();
+      if (frame != null) frame.getCanvas().autoZoom(frame.getZoomModel());
+    } catch (RuntimeException ignored) {
+      // Best-effort convenience only -- see method Javadoc.
+    }
   }
 
   private JsonObject describe(JsonObject args) throws Exception {
@@ -201,10 +226,14 @@ final class McpScriptTools implements AutoCloseable {
   }
 
   private static final class Session {
+    private final Space space;
+    private final Project project;
     private final LuaSandbox sandbox;
     private boolean streaming;
 
     Session(Space space, Project project) {
+      this.space = space;
+      this.project = project;
       this.sandbox = new LuaSandbox(space, () -> {
         if (streaming) repaintIfPossible(project);
       });
@@ -299,6 +328,11 @@ final class McpScriptTools implements AutoCloseable {
           afterward -- just call it right after commit, e.g.:
             space:commit("build full adder")
             space:tidyWires()
+          Calling this explicitly is no longer required for its own sake: every eval() that ends
+          with nothing staged (space:isDirty() false) automatically tidies wiring and, if a GUI
+          window is open for this project, zooms/centers its Layout canvas to fit the circuit --
+          same as clicking the toolbar's "Auto" zoom button. Call it yourself only if a script needs
+          the tidied result mid-eval, e.g. to inspect wire geometry before returning.
 
       Placement (returned by space:place): anchorAt(col,row) / at(col,row), rightOf(comp,gap) /
         below(comp,gap), with(attrTable) (e.g. {type="input"} or {inputs="3"}), facing(dir)

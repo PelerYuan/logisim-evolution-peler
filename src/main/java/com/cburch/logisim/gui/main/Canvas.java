@@ -36,6 +36,7 @@ import com.cburch.logisim.file.Options;
 import com.cburch.logisim.gui.generic.CanvasPane;
 import com.cburch.logisim.gui.generic.CanvasPaneContents;
 import com.cburch.logisim.gui.generic.GridPainter;
+import com.cburch.logisim.gui.generic.ZoomModel;
 import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.proj.ProjectEvent;
@@ -262,6 +263,44 @@ public class Canvas extends JPanel implements LocaleListener, CanvasPaneContents
                             - bounds.getHeight() * getZoomFactor())
                         / 2));
     setScrollBar(xpos, ypos);
+  }
+
+  /** Zooms and centers the viewport so the circuit's current bounds are fully visible -- the same
+   * computation the toolbar's "Auto" zoom button (see
+   * {@link com.cburch.logisim.gui.generic.ZoomControl.AutoZoomButton}) runs on a click, extracted
+   * here so a non-GUI caller (the MCP script surface, {@link
+   * com.cburch.logisim.mcp.McpScriptTools}'s automatic post-eval hook) can trigger the same
+   * behavior without synthesizing an ActionEvent. Takes the {@link ZoomModel}
+   * explicitly rather than reading {@code proj.getFrame().getZoomModel()} itself, matching what the
+   * button already did: the button's model can be the Appearance view's rather than this Layout
+   * canvas's, when the toolbar's zoom control has been switched to follow that tab.
+   *
+   * <p>Returns {@code false} (nothing changed) if there is no pane attached yet, no current
+   * circuit, an empty circuit, or the computed zoom is close enough to the current one (within
+   * 0.01) that changing it isn't worth a view jump. */
+  public boolean autoZoom(ZoomModel zoomModel) {
+    if (canvasPane == null || zoomModel == null || proj.getCurrentCircuit() == null) return false;
+    final var g = getGraphics();
+    final var bounds = (g != null)
+        ? proj.getCurrentCircuit().getBounds(g)
+        : proj.getCurrentCircuit().getBounds();
+    if (bounds.getHeight() == 0 || bounds.getWidth() == 0) return false;
+
+    final var padding = 50;
+    final var zoomFactor = zoomModel.getZoomFactor();
+    final var height = (bounds.getHeight() + 2 * padding) * zoomFactor;
+    final var width = (bounds.getWidth() + 2 * padding) * zoomFactor;
+    var autozoom = zoomFactor
+        * Math.min(
+            canvasPane.getViewport().getSize().getWidth() / width,
+            canvasPane.getViewport().getSize().getHeight() / height);
+    final var options = zoomModel.getZoomOptions();
+    final var max = options.get(options.size() - 1) / 100.0;
+    final var min = options.get(0) / 100.0;
+    autozoom = Math.max(min, Math.min(max, autozoom));
+    if (Math.abs(autozoom - zoomFactor) < 0.01) return false;
+    zoomModel.setZoomFactorCenter(autozoom);
+    return true;
   }
 
   public void closeCanvas() {

@@ -133,6 +133,22 @@ public final class WireTidier {
       }
     }
 
+    // A circuit that is already tidy (e.g. re-tidied by an automatic post-eval hook that doesn't
+    // know whether anything changed) would otherwise still get a real remove-all/add-all mutation
+    // here, identical in the end but a spurious entry in the undo log every time it runs. Wire's
+    // equals/hashCode compare by endpoints, so this is a real geometry comparison, not identity --
+    // but it has to be normalized first: two of this net's own edges routed independently can each
+    // reach the same T-junction from a different side, one producing e.g. (300,0)-(300,10) and
+    // (300,10)-(300,100) as already-separate wires and the other producing the single overlapping
+    // (300,0)-(300,100), which is electrically and visually identical (Location coincidence taps
+    // a wire's interior same as a real split) but would compare unequal to oldWires -- which is
+    // always already in this split form, having previously gone through real insertion -- as raw
+    // Sets. splitAtInteriorJunctions makes both sides agree on where those splits are before
+    // comparing, so this only reports a real difference, not an artifact of edge-routing order.
+    if (new HashSet<>(oldWires).equals(splitAtInteriorJunctions(newWires))) {
+      return null;
+    }
+
     final var xn = new CircuitMutation(circuit);
     if (!oldWires.isEmpty()) {
       xn.removeAll(oldWires);
@@ -141,6 +157,54 @@ public final class WireTidier {
       xn.addAll(newWires);
     }
     return xn.isEmpty() ? null : xn;
+  }
+
+  /**
+   * Splits every wire in {@code wires} at any point where it is crossed, in its strict interior,
+   * by an endpoint of another wire in the same set -- turning e.g. a lone {@code (300,0)-(300,100)}
+   * into {@code (300,0)-(300,10)} + {@code (300,10)-(300,100)} when some other wire in the set ends
+   * at {@code (300,10)}. That coincidence already makes a real electrical tap in Logisim (a wire's
+   * interior connects to anything landing exactly on it, not just its own endpoints), so this is a
+   * pure re-description of the same geometry, not a routing change -- it exists only so {@link
+   * #buildTidyMutation} can compare its own freshly-computed wires against a circuit's actual
+   * (always pre-split, having already gone through real insertion) wires without one net's edges
+   * happening to reach a shared junction from a different side registering as a spurious diff.
+   */
+  private static Set<Wire> splitAtInteriorJunctions(Set<Wire> wires) {
+    final var joints = new HashSet<Location>();
+    for (final var w : wires) {
+      joints.add(w.getEnd0());
+      joints.add(w.getEnd1());
+    }
+    final var result = new HashSet<Wire>();
+    for (final var w : wires) {
+      final var e0 = w.getEnd0();
+      final var e1 = w.getEnd1();
+      final var horizontal = e0.getY() == e1.getY();
+      final var lo = horizontal ? Math.min(e0.getX(), e1.getX()) : Math.min(e0.getY(), e1.getY());
+      final var hi = horizontal ? Math.max(e0.getX(), e1.getX()) : Math.max(e0.getY(), e1.getY());
+
+      final var cuts = new ArrayList<Integer>();
+      cuts.add(lo);
+      for (final var p : joints) {
+        final var onLine = horizontal ? p.getY() == e0.getY() : p.getX() == e0.getX();
+        if (!onLine) continue;
+        final var pos = horizontal ? p.getX() : p.getY();
+        if (pos > lo && pos < hi) cuts.add(pos);
+      }
+      cuts.add(hi);
+      cuts.sort(Comparator.naturalOrder());
+
+      for (var i = 0; i + 1 < cuts.size(); i++) {
+        final var from = cuts.get(i);
+        final var to = cuts.get(i + 1);
+        if (from.equals(to)) continue;
+        result.add(horizontal
+            ? Wire.create(Location.create(from, e0.getY(), false), Location.create(to, e0.getY(), false))
+            : Wire.create(Location.create(e0.getX(), from, false), Location.create(e0.getX(), to, false)));
+      }
+    }
+    return result;
   }
 
   // ---------------------------------------------------------------------------------------
