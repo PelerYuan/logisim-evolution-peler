@@ -275,9 +275,14 @@ public class Canvas extends JPanel implements LocaleListener, CanvasPaneContents
    * button already did: the button's model can be the Appearance view's rather than this Layout
    * canvas's, when the toolbar's zoom control has been switched to follow that tab.
    *
-   * <p>Returns {@code false} (nothing changed) if there is no pane attached yet, no current
-   * circuit, an empty circuit, or the computed zoom is close enough to the current one (within
-   * 0.01) that changing it isn't worth a view jump. */
+   * <p>Always recenters the viewport on the circuit's bounds, even when the computed zoom is close
+   * enough to the current one (within 0.01) that changing the zoom factor itself isn't worth a
+   * visible scale jump -- {@code tidyWires()} never moves components, so the auto-tidy-and-fit hook
+   * above routinely lands in exactly that case, and skipping the recenter there left the circuit
+   * zoomed correctly but scrolled to whatever position was on screen before the eval, which can be
+   * anywhere relative to newly placed components. Returns {@code false} (the zoom factor itself did
+   * not change) if there is no pane attached yet, no current circuit, or an empty circuit -- none of
+   * which have any bounds to center on either. */
   public boolean autoZoom(ZoomModel zoomModel) {
     if (canvasPane == null || zoomModel == null || proj.getCurrentCircuit() == null) return false;
     final var g = getGraphics();
@@ -298,7 +303,10 @@ public class Canvas extends JPanel implements LocaleListener, CanvasPaneContents
     final var max = options.get(options.size() - 1) / 100.0;
     final var min = options.get(0) / 100.0;
     autozoom = Math.max(min, Math.min(max, autozoom));
-    if (Math.abs(autozoom - zoomFactor) < 0.01) return false;
+    if (Math.abs(autozoom - zoomFactor) < 0.01) {
+      center();
+      return false;
+    }
     zoomModel.setZoomFactorCenter(autozoom);
     return true;
   }
