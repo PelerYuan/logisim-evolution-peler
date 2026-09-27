@@ -147,6 +147,16 @@ public final class Comp {
     return component;
   }
 
+  /** Rebinds this {@link Comp} onto a fresh {@link Component} the circuit now actually holds --
+   * used by {@link Space#ensureAwayFromOrigin} after a bulk translate replaces every component in
+   * the circuit, so the same {@code Comp} object (same id, same identity a caller may already be
+   * holding) keeps working rather than going stale. */
+  void rebind(Component newComponent) {
+    this.component = newComponent;
+    generation++;
+    portCache = null;
+  }
+
   Optional<String> toolTipFor(int index) {
     final var instance = Instance.getInstanceFor(component);
     if (instance == null) return Optional.empty();
