@@ -159,15 +159,21 @@ class McpScriptToolsTest {
     buildDirectWire.addProperty(
         "script",
         "local a = space:place(\"wiring/pin\"):anchorAt(0,0):with({type=\"input\"}):place()\n"
+            + "a:setLabel(\"A\")\n"
             + "local c = space:place(\"wiring/pin\"):anchorAt(40,0):with({type=\"output\"}):place()\n"
+            + "c:setLabel(\"C\")\n"
             + "space:connect(a:outputs()[1], c:inputs()[1])\n"
             + "space:commit(\"build A-C direct wire\")\n"
             + "return \"ok\"");
     assertEquals("ok", call("eval", buildDirectWire, 8).get("result").getAsString());
 
-    final var aLoc = Location.create(0, 0, false);
-    final var cLoc = Location.create(400, 0, false);
+    // A is placed at (0,0), which the automatic hook's ensureAwayFromOrigin() step (see
+    // McpScriptTools#autoTidyAndFit) is expected to nudge away from the axes -- so A and C's actual
+    // post-eval locations are looked up by label rather than assumed, exactly the scenario this
+    // fixture exists to exercise.
     final var circuit = project.getCurrentCircuit();
+    final var aLoc = locationOfLabeled("A");
+    final var cLoc = locationOfLabeled("C");
     final var wireAtABefore = circuit.getWires().stream()
         .filter(w -> w.getEnd0().equals(aLoc) || w.getEnd1().equals(aLoc))
         .findFirst()
@@ -180,26 +186,43 @@ class McpScriptToolsTest {
         .filter(bundleBefore::containsWire)
         .collect(java.util.stream.Collectors.toSet());
 
+    // ensureAwayFromOrigin() rounds its shift to the grid, so A's post-shift location is always an
+    // exact multiple of 10 -- safe to convert back to the col/row units anchorAt() takes. The
+    // obstacle fixture below is placed relative to that, at the same offsets the original,
+    // origin-flush fixture used, so it still lands squarely in the path of the A-C wire regardless
+    // of whatever the first eval()'s automatic hook shifted A and C by.
+    final var aCol = aLoc.getX() / 10;
+    final var aRow = aLoc.getY() / 10;
     final var placeObstacle = args();
     placeObstacle.addProperty(
         "script",
-        "local obstacle = space:place(\"gates/and_gate\"):anchorAt(20,1):place()\n"
-            + "local bin1 = space:place(\"wiring/pin\"):anchorAt(10,-16):with({type=\"input\"}):place()\n"
-            + "local bin2 = space:place(\"wiring/pin\"):anchorAt(10,-8):with({type=\"input\"}):place()\n"
-            + "local bout = space:place(\"wiring/pin\"):anchorAt(30,-12):with({type=\"output\"}):place()\n"
-            + "space:connect(bin1:outputs()[1], obstacle:inputs()[1])\n"
-            + "space:connect(bin2:outputs()[1], obstacle:inputs()[2])\n"
-            + "space:connect(obstacle:outputs()[1], bout:inputs()[1])\n"
-            + "space:commit(\"build obstacle fixture\")\n"
-            + "return \"ok\"");
+        String.format(
+            "local obstacle = space:place(\"gates/and_gate\"):anchorAt(%d,%d):place()\n"
+                + "local bin1 = space:place(\"wiring/pin\"):anchorAt(%d,%d):with({type=\"input\"}):place()\n"
+                + "local bin2 = space:place(\"wiring/pin\"):anchorAt(%d,%d):with({type=\"input\"}):place()\n"
+                + "local bout = space:place(\"wiring/pin\"):anchorAt(%d,%d):with({type=\"output\"}):place()\n"
+                + "space:connect(bin1:outputs()[1], obstacle:inputs()[1])\n"
+                + "space:connect(bin2:outputs()[1], obstacle:inputs()[2])\n"
+                + "space:connect(obstacle:outputs()[1], bout:inputs()[1])\n"
+                + "space:commit(\"build obstacle fixture\")\n"
+                + "return \"ok\"",
+            aCol + 20, aRow + 1,
+            aCol + 10, aRow - 16,
+            aCol + 10, aRow - 8,
+            aCol + 30, aRow - 12));
     assertEquals("ok", call("eval", placeObstacle, 9).get("result").getAsString());
 
+    // The second eval's own auto-tidy-and-fit pass can nudge the whole circuit again (the new
+    // obstacle fixture reaches to negative rows of its own), so A and C's locations are re-read
+    // rather than reusing the values captured after the first eval.
+    final var aLocAfter = locationOfLabeled("A");
+    final var cLocAfter = locationOfLabeled("C");
     final var wireAtA = circuit.getWires().stream()
-        .filter(w -> w.getEnd0().equals(aLoc) || w.getEnd1().equals(aLoc))
+        .filter(w -> w.getEnd0().equals(aLocAfter) || w.getEnd1().equals(aLocAfter))
         .findFirst()
         .orElseThrow(() -> new AssertionError("A should still have a wire after tidying"));
     final var bundleAfter = circuit.getWireSet(wireAtA);
-    assertTrue(bundleAfter.containsLocation(cLoc),
+    assertTrue(bundleAfter.containsLocation(cLocAfter),
         "A and C should still be electrically connected after the automatic tidy pass");
     final var acWiresAfter = circuit.getWires().stream()
         .filter(bundleAfter::containsWire)
@@ -212,6 +235,23 @@ class McpScriptToolsTest {
     assertNull(WireTidier.buildTidyMutation(circuit),
         "circuit should already be in fully-tidied form immediately after eval() returns, with no "
             + "explicit space:tidyWires() call in either script");
+  }
+
+  /** Finds the current {@link Location} of the component labeled {@code label} in {@link
+   * #project}'s current circuit -- used instead of a hardcoded {@link Location} wherever the
+   * automatic post-eval hook's {@code ensureAwayFromOrigin} step might have moved a component since
+   * it was placed. */
+  private Location locationOfLabeled(String label) {
+    for (final var comp : project.getCurrentCircuit().getComponents()) {
+      final var attr = comp.getAttributeSet().getAttribute("label");
+      if (attr == null) continue;
+      @SuppressWarnings("unchecked")
+      final var typed = (com.cburch.logisim.data.Attribute<Object>) attr;
+      if (label.equals(comp.getAttributeSet().getValue(typed))) {
+        return comp.getLocation();
+      }
+    }
+    throw new AssertionError("no component labeled " + label + " in the current circuit");
   }
 
   private JsonObject args() {

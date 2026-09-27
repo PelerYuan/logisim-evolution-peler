@@ -95,23 +95,34 @@ final class McpScriptTools implements AutoCloseable {
         });
   }
 
+  /** How far {@link #autoTidyAndFit} insists every component and wire stay from both axes --
+   * see {@link com.cburch.logisim.dsl.Space#ensureAwayFromOrigin} for why a circuit built flush
+   * against {@code (0, 0)} can end up with content no amount of zooming or centering can reach. Two
+   * grid cells: enough that nothing touches the edge, small enough to never visibly matter. */
+  private static final int SAFE_MARGIN = 20;
+
   /**
    * Runs after every successful {@code eval}, so a session never has to end with correct-but-
    * cluttered wiring or a view scrolled off whatever the script just placed: re-tidies the
    * circuit's wiring (space.tidyWires()'s own no-op case already keeps this a no-op when there was
-   * nothing to fix -- see WireTidier's old-wires-equal-new-wires check) and, when a GUI window is
-   * actually attached to this project (it may not be, e.g. under test), zooms/centers its Layout
-   * canvas to fit the circuit's current bounds -- the same computation as the toolbar's "Auto" zoom
-   * button. Skipped entirely, silently, when the script left something staged but uncommitted
-   * ({@code space.isDirty()}): {@code tidyWires()} would throw for that, and it is a completely
-   * ordinary mid-build state a later {@code eval} call in the same session is expected to finish.
-   * Best-effort by design -- a problem in this convenience step must never turn an otherwise-
-   * successful eval into a failed one, so any exception here is swallowed rather than surfaced.
+   * nothing to fix -- see WireTidier's old-wires-equal-new-wires check), nudges the whole circuit
+   * away from the canvas's coordinate axes if a component ended up flush against one (see
+   * {@link com.cburch.logisim.dsl.Space#ensureAwayFromOrigin} -- otherwise part of it can be
+   * permanently unreachable regardless of zoom/center), and, when a GUI window is actually attached
+   * to this project (it may not be, e.g. under test), zooms/centers its Layout canvas to fit the
+   * circuit's current bounds -- the same computation as the toolbar's "Auto" zoom button. Skipped
+   * entirely, silently, when the script left something staged but uncommitted
+   * ({@code space.isDirty()}): both {@code tidyWires()} and {@code ensureAwayFromOrigin()} would
+   * throw for that, and it is a completely ordinary mid-build state a later {@code eval} call in the
+   * same session is expected to finish. Best-effort by design -- a problem in this convenience step
+   * must never turn an otherwise-successful eval into a failed one, so any exception here is
+   * swallowed rather than surfaced.
    */
   private void autoTidyAndFit(Session session) {
     if (session.space.isDirty()) return;
     try {
       session.space.tidyWires();
+      session.space.ensureAwayFromOrigin(SAFE_MARGIN);
       final var frame = session.project.getFrame();
       if (frame != null) frame.getCanvas().autoZoom(frame.getZoomModel());
     } catch (RuntimeException ignored) {
@@ -256,22 +267,25 @@ final class McpScriptTools implements AutoCloseable {
   static final String FULL_ADDER_EXAMPLE =
       """
       -- Example: a full adder, built and wired in one eval() call.
-      local a = space:place("wiring/pin"):anchorAt(0, 0):with({type = "input"}):place()
+      -- Note: keep placements clear of (0, 0) -- an east-facing pin's own body is drawn to the
+      -- left of its anchor, so anchoring right at the axes can push part of the circuit into
+      -- coordinate space the canvas can never scroll to.
+      local a = space:place("wiring/pin"):anchorAt(20, 20):with({type = "input"}):place()
       a:setLabel("A")
-      local b = space:place("wiring/pin"):anchorAt(0, 8):with({type = "input"}):place()
+      local b = space:place("wiring/pin"):anchorAt(20, 28):with({type = "input"}):place()
       b:setLabel("B")
-      local cin = space:place("wiring/pin"):anchorAt(0, 16):with({type = "input"}):place()
+      local cin = space:place("wiring/pin"):anchorAt(20, 36):with({type = "input"}):place()
       cin:setLabel("Cin")
 
-      local xor1 = space:place("gates/xor_gate"):anchorAt(8, 4):place()
-      local and1 = space:place("gates/and_gate"):anchorAt(8, 12):place()
-      local xor2 = space:place("gates/xor_gate"):anchorAt(16, 4):place()
-      local and2 = space:place("gates/and_gate"):anchorAt(16, 20):place()
-      local or1 = space:place("gates/or_gate"):anchorAt(24, 16):place()
+      local xor1 = space:place("gates/xor_gate"):anchorAt(28, 24):place()
+      local and1 = space:place("gates/and_gate"):anchorAt(28, 32):place()
+      local xor2 = space:place("gates/xor_gate"):anchorAt(36, 24):place()
+      local and2 = space:place("gates/and_gate"):anchorAt(36, 40):place()
+      local or1 = space:place("gates/or_gate"):anchorAt(44, 36):place()
 
-      local sum = space:place("wiring/pin"):anchorAt(32, 4):with({type = "output"}):place()
+      local sum = space:place("wiring/pin"):anchorAt(52, 24):with({type = "output"}):place()
       sum:setLabel("Sum")
-      local cout = space:place("wiring/pin"):anchorAt(32, 16):with({type = "output"}):place()
+      local cout = space:place("wiring/pin"):anchorAt(52, 36):with({type = "output"}):place()
       cout:setLabel("Cout")
 
       space:connect(a:outputs()[1], xor1:inputs()[1])

@@ -298,6 +298,73 @@ public final class Space {
     return true;
   }
 
+  /** Safety net for the MCP script surface's auto-tidy-and-fit hook (run after every {@code eval},
+   * outside this package): a component facing north or east draws part of its own body to the left
+   * of or above its anchor point (see {@link com.cburch.logisim.std.wiring.Probe#getOffsetBounds}
+   * -- an EAST-facing pin's whole body sits at x in {@code [-width, 0]} relative to its anchor), so
+   * a circuit built with a component anchored at or near {@code (0, 0)} -- exactly what that tool's
+   * own documented example script used to do -- ends up with a real, negative-inclusive
+   * {@link Circuit#getBounds()}. The Layout canvas's scrollable area is hard-anchored at content
+   * {@code x=0}/{@code y=0}, and a plain scrollbar's minimum is 0, so that negative region can never
+   * be scrolled into view -- no amount of correct zooming or centering can show it once a circuit's
+   * bounds actually cross an axis. This shifts every component and wire in the circuit by the same
+   * offset so the whole bounding box clears {@code margin} on both axes, exactly like a human
+   * selecting everything and dragging it away from the corner.
+   *
+   * <p>Returns {@code false} with nothing changed if the circuit is already clear of both axes by at
+   * least {@code margin} -- including an empty circuit, which has no bounds to be too close to
+   * anything. Requires nothing pending, for the same reason as {@link #tidyWires()}: a placement not
+   * yet committed lives only in {@code pending}, invisible to the {@link Circuit} this reads bounds
+   * from and issues the mutation against. */
+  public boolean ensureAwayFromOrigin(int margin) {
+    if (isDirty()) {
+      throw new UncommittedChangesException(pending.size());
+    }
+    final var bounds = circuit.getBounds();
+    if (bounds.getWidth() == 0 || bounds.getHeight() == 0) return false;
+    final var dx = bounds.getX() < margin ? roundUpToGrid(margin - bounds.getX()) : 0;
+    final var dy = bounds.getY() < margin ? roundUpToGrid(margin - bounds.getY()) : 0;
+    if (dx == 0 && dy == 0) return false;
+
+    final var mutation = new CircuitMutation(circuit);
+    final var replaced = new HashMap<Component, Component>();
+    for (final var comp : circuit.getNonWires()) {
+      final var newLoc = comp.getLocation().translate(dx, dy);
+      final var copy = comp.getFactory().createComponent(newLoc, comp.getAttributeSet());
+      mutation.replace(comp, copy);
+      replaced.put(comp, copy);
+    }
+    for (final var wire : circuit.getWires()) {
+      final var copy =
+          Wire.create(wire.getEnd0().translate(dx, dy), wire.getEnd1().translate(dx, dy));
+      mutation.replace(wire, copy);
+      replaced.put(wire, copy);
+    }
+    proj.doAction(mutation.toAction(StringUtil.constantGetter("move circuit into view")));
+
+    // Same concern as tidyWires(): existingComponents must keep the same Comp objects and ids,
+    // just rebound to the fresh Component the mutation actually put in the circuit.
+    for (final var c : existingComponents) {
+      final var newComponent = replaced.get(c.rawComponent());
+      if (newComponent != null) c.rebind(newComponent);
+    }
+
+    // Every Port netlist already holds (from any connect() call in this or an earlier commit this
+    // session) still points at End objects on the discarded pre-shift Component instances -- using
+    // one now would either report a stale location or trip Port's own generation check (rebind()
+    // just bumped it). Re-derived from scratch exactly like tidyWires() does after its own mutation:
+    // seedConnectivity() only reads Comp.ports(), which lazily rebuilds from each Comp's now-current
+    // (rebound) Component, so nothing stale survives into the fresh netlist.
+    netlist.clear();
+    existingNetCounter = 0;
+    seedConnectivity(existingComponents);
+    return true;
+  }
+
+  private static int roundUpToGrid(int value) {
+    return ((value + 9) / 10) * 10;
+  }
+
   /** Declarative generation (design doc, section 十一): builds this circuit's entire gate-level
    * content from a truth-table-style spec via {@link CircuitBuilder}, in exactly one undo-log
    * entry, then immediately re-derives this {@link Space}'s own view of the result the same way
