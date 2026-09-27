@@ -215,6 +215,51 @@ class McpProjectLifecycleToolsTest {
     assertNull(registry.resolve(projectId));
   }
 
+  /** Regression test for the reported bug: a new MCP-created project used the bare
+   * {@link com.cburch.logisim.file.LogisimFile#createNew} instead of loading the default
+   * template, so {@code file.getLibraries()} was empty even though a component like an XOR gate
+   * could still be placed (placement resolves against the always-present builtin loader tree, not
+   * the project's own library list). The gap only surfaced later, when
+   * {@link com.cburch.logisim.file.XmlWriter} tried to save: it could not find which of the
+   * project's own libraries owned the XOR gate's factory, dropped the component, and reported
+   * "XOR Gate component not found". {@link McpProjectLifecycleTools#openTemplate} is the fix, and
+   * is exercised directly here because the surrounding {@code new_project} tool also constructs a
+   * real {@code Frame}, which this headless test task cannot do. */
+  @Test
+  void newProjectTemplateKeepsBuiltInLibrariesSoASavedNonBaseComponentSurvives() throws Exception {
+    final var loader = new Loader(null);
+    final var file = McpProjectLifecycleTools.openTemplate(loader);
+    assertFalse(
+        file.getLibraries().isEmpty(),
+        "a template-loaded project should already have its libraries, unlike the bare"
+            + " LogisimFile.createNew that used to leave new MCP projects library-less");
+
+    final var templateProject = new Project(file);
+    for (final var circuit : file.getCircuits()) circuit.setProject(templateProject);
+
+    final var space = com.cburch.logisim.dsl.Space.of(templateProject);
+    final var xorGate = com.cburch.logisim.dsl.Kind.of(space, "gates/xor_gate");
+    space.place(xorGate).anchorAt(0, 0).place();
+    space.commit("place an xor gate");
+
+    final var dest = tempDir.resolve("template-project.circ").toFile();
+    final var wasHeadless = com.cburch.logisim.Main.headless;
+    com.cburch.logisim.Main.headless = true;
+    final boolean saved;
+    try {
+      saved = loader.save(file, dest);
+    } finally {
+      com.cburch.logisim.Main.headless = wasHeadless;
+    }
+    assertTrue(saved, "save should succeed without a \"component not found\" file error");
+
+    final var reopened = new Loader(null).openLogisimFile(dest);
+    final var hasXorGate =
+        reopened.getMainCircuit().getNonWires().stream()
+            .anyMatch(c -> c.getFactory().getName().equals("XOR Gate"));
+    assertTrue(hasXorGate, "the XOR gate should have survived the save/reload round trip");
+  }
+
   private JsonObject call(String method, JsonObject arguments, int id) {
     final var response = callRaw(method, arguments, id);
     assertFalse(response.has("error"), response.toString());

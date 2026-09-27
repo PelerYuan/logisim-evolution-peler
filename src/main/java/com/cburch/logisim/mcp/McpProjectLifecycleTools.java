@@ -318,7 +318,7 @@ final class McpProjectLifecycleTools implements AutoCloseable {
 
   private static Project createBlankProject() {
     final var loader = new Loader(null);
-    final var file = LogisimFile.createNew(loader, null);
+    final var file = openTemplate(loader);
     final var project = new Project(file);
     assignProject(file, project);
     final var frame = new Frame(project);
@@ -327,6 +327,29 @@ final class McpProjectLifecycleTools implements AutoCloseable {
     frame.getCanvas().requestFocus();
     loader.setParent(frame);
     return project;
+  }
+
+  /**
+   * Loads the same default template the real "File > New" menu action uses (see
+   * ProjectActions#createNewFile), so an MCP-created project starts with its libraries (Gates,
+   * Wiring, ...) already loaded into the file. The bare LogisimFile#createNew has none of them,
+   * which left every built-in component with no library for XmlWriter to attribute it to once the
+   * project was serialized back to XML -- surfacing later as a "component not found" file error
+   * and a circuit silently missing whatever component couldn't be written.
+   */
+  static LogisimFile openTemplate(Loader loader) {
+    final var templateStream = AppPreferences.getTemplate().createStream();
+    try {
+      return loader.openLogisimFile(templateStream);
+    } catch (IOException e) {
+      return LogisimFile.createNew(loader, null);
+    } finally {
+      try {
+        templateStream.close();
+      } catch (IOException ignored) {
+        // Do nothing.
+      }
+    }
   }
 
   private static String safeMessage(Exception exception) {
