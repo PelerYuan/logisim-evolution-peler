@@ -264,6 +264,52 @@ as originally planned above — that class only renders whatever `default.templ`
 section lists, so adding `Tidy Wires Tool` there was sufficient on its own (same data-driven
 mechanism the existing Poke/Edit/Wiring/Text tool buttons already use).
 
+**Automatic tidy + auto-fit after every MCP `eval` (2026-09-27)**: user request — a script-driven
+session should never have to end with correct-but-cluttered wiring or a view scrolled off whatever
+was just placed. `McpScriptTools.eval()` (`src/main/java/com/cburch/logisim/mcp/McpScriptTools.java`)
+now calls a new `autoTidyAndFit(Session)` after every successful `eval`, but only when the script left
+nothing staged (`space:isDirty()` false — the same precondition `tidyWires()` itself enforces, so a
+legitimate multi-turn build in progress is never force-committed). It re-tidies the circuit's wiring
+(a no-op when already tidy) and, when a GUI window is actually attached to the project, zooms/centers
+the Layout canvas to fit the circuit's current bounds. Best-effort by design: any exception in this
+step is swallowed rather than surfacing as an eval failure.
+
+The fit/zoom half reuses the toolbar's existing "Auto" zoom button computation rather than
+reinventing it — that logic was extracted out of `ZoomControl.AutoZoomButton` into a new
+`Canvas.autoZoom(ZoomModel)` (`src/main/java/com/cburch/logisim/gui/main/Canvas.java`), with the
+button now just delegating to it. Zoom/scroll state was confirmed to be purely runtime (`ZoomModel`/
+`CanvasPane`, reset to `AppPreferences.LAYOUT_ZOOM` on every new window) — nothing in `file/` persists
+it, so no file-format change was needed. The orchestration deliberately lives in `mcp/`, not `dsl/`:
+`com.cburch.logisim.dsl` has zero dependency on `gui` today, and adding a `Space.fitView()` would have
+been the first crack in that separation for no real benefit, since `mcp` already depends on
+`gui.main.Frame` elsewhere (project lifecycle tools).
+
+Writing the regression test for this ("stale wiring from an earlier `eval` call gets rerouted around
+an obstacle a later call places, with neither script calling `tidyWires()` itself") surfaced a real,
+previously-latent bug: `WireTidier.buildTidyMutation` was not idempotent. A circuit already in exactly
+the form a fresh tidy pass would produce could still get a real (non-null) remove-all/add-all mutation
+back, because the raw freshly-computed wire set could differ in exact segment decomposition from the
+circuit's actual (already-split, having gone through real insertion) wires at a shared T-junction —
+one MST edge computed as a single overlapping segment where another edge of the same net already
+requires a split partway along it. Harmless before this feature (nobody re-tidied an already-tidy
+circuit), but fatal to the "runs after every eval" model: every read-only script would have pushed a
+spurious "tidy wires" undo-log entry. Root-caused with a throwaway debug harness dumping both wire
+sets side by side. Fixed with a new `splitAtInteriorJunctions` helper in `WireTidier.java` that
+normalizes the freshly-computed set at shared endpoints before comparing — a pure re-description of
+identical geometry (a wire's interior already makes a real electrical tap at any point another wire's
+endpoint lands on it), not a routing change. Covered by
+`WireTidierTest.alreadyTidyCircuitHasNothingLeftToTidy`.
+
+One pre-existing WireTidier characteristic, unrelated to this feature and deliberately left alone: a
+trivial, completely unobstructed two-terminal net running along a single row is not necessarily routed
+as one direct straight wire — the grid-based pathfinder can produce a short detour via an offset row
+even with zero obstacles. `space:commit()`'s own router does draw the direct line for the same case;
+`tidyWires()`'s A* search just doesn't always agree. Not a correctness issue (the net is still
+correctly connected) and not something this task's scope covers fixing, but it did mean the new MCP
+regression test (`McpScriptToolsTest.evalAutomaticallyTidiesStaleWiringLeftByAnEarlierEvalCallWithNoExplicitTidyWiresCall`)
+had to assert on "the A-C wire bundle's membership changed" rather than on exact coordinates, since the
+automatic hook already reshapes even the first, obstacle-free `eval` call's wiring.
+
 ## Feature 5 — Schematic annotations (Phase 5, design 2026-08-07)
 
 New user request, prompted by schematic-capture tutorials that recommend annotating parts as you draw.

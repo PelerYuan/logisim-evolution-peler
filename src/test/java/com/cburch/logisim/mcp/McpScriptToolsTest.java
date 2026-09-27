@@ -11,8 +11,11 @@ package com.cburch.logisim.mcp;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.cburch.logisim.circuit.WireTidier;
+import com.cburch.logisim.data.Location;
 import com.cburch.logisim.file.LogisimFile;
 import com.cburch.logisim.file.Loader;
 import com.cburch.logisim.proj.Project;
@@ -128,6 +131,87 @@ class McpScriptToolsTest {
     call("reset", args(), 6);
     assertEquals("0", call("eval", countArgs, 7).get("result").getAsString(),
         "reset() must force a fresh session, discarding uncommitted state");
+  }
+
+  /**
+   * The motivating scenario for the automatic post-eval hook (see {@code
+   * McpScriptTools#autoTidyAndFit}): one {@code eval} call wires A directly to C, a later,
+   * separate {@code eval} call then places a component that lands squarely in the path of that
+   * already-committed wiring -- {@code commit()}'s own router only ever routes the nets *it* was
+   * asked to draw, so it has no reason to touch a wire from an earlier call, exactly the
+   * across-session staleness {@link WireTidier} exists to fix. Neither script calls
+   * {@code space:tidyWires()} itself; if the automatic hook did not fire after the second
+   * {@code eval}, the A-C wiring would still be sitting exactly where the first eval() left it,
+   * cutting through the new component's bounding box.
+   *
+   * <p>This does not assert on the exact wire shape the first eval() leaves behind: the automatic
+   * hook already runs after that first call too, and {@link WireTidier}'s own routing of even a
+   * trivial, obstacle-free two-pin net does not necessarily keep it as a single straight segment
+   * along the pins' own row (a pre-existing WireTidier characteristic, unrelated to this feature).
+   * Instead this captures the actual member wires of the A-C bundle right after the first eval(),
+   * then asserts that set is different after the second eval() -- proving the automatic hook
+   * reacted to the newly-placed obstacle rather than leaving stale wiring untouched -- while still
+   * confirming A and C remain connected and the circuit ends up fully converged.
+   */
+  @Test
+  void evalAutomaticallyTidiesStaleWiringLeftByAnEarlierEvalCallWithNoExplicitTidyWiresCall() {
+    final var buildDirectWire = args();
+    buildDirectWire.addProperty(
+        "script",
+        "local a = space:place(\"wiring/pin\"):anchorAt(0,0):with({type=\"input\"}):place()\n"
+            + "local c = space:place(\"wiring/pin\"):anchorAt(40,0):with({type=\"output\"}):place()\n"
+            + "space:connect(a:outputs()[1], c:inputs()[1])\n"
+            + "space:commit(\"build A-C direct wire\")\n"
+            + "return \"ok\"");
+    assertEquals("ok", call("eval", buildDirectWire, 8).get("result").getAsString());
+
+    final var aLoc = Location.create(0, 0, false);
+    final var cLoc = Location.create(400, 0, false);
+    final var circuit = project.getCurrentCircuit();
+    final var wireAtABefore = circuit.getWires().stream()
+        .filter(w -> w.getEnd0().equals(aLoc) || w.getEnd1().equals(aLoc))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError(
+            "test fixture is wrong: A should have a wire after the first eval()"));
+    final var bundleBefore = circuit.getWireSet(wireAtABefore);
+    assertTrue(bundleBefore.containsLocation(cLoc),
+        "test fixture is wrong: A and C should already be connected after the first eval()");
+    final var acWiresBefore = circuit.getWires().stream()
+        .filter(bundleBefore::containsWire)
+        .collect(java.util.stream.Collectors.toSet());
+
+    final var placeObstacle = args();
+    placeObstacle.addProperty(
+        "script",
+        "local obstacle = space:place(\"gates/and_gate\"):anchorAt(20,1):place()\n"
+            + "local bin1 = space:place(\"wiring/pin\"):anchorAt(10,-16):with({type=\"input\"}):place()\n"
+            + "local bin2 = space:place(\"wiring/pin\"):anchorAt(10,-8):with({type=\"input\"}):place()\n"
+            + "local bout = space:place(\"wiring/pin\"):anchorAt(30,-12):with({type=\"output\"}):place()\n"
+            + "space:connect(bin1:outputs()[1], obstacle:inputs()[1])\n"
+            + "space:connect(bin2:outputs()[1], obstacle:inputs()[2])\n"
+            + "space:connect(obstacle:outputs()[1], bout:inputs()[1])\n"
+            + "space:commit(\"build obstacle fixture\")\n"
+            + "return \"ok\"");
+    assertEquals("ok", call("eval", placeObstacle, 9).get("result").getAsString());
+
+    final var wireAtA = circuit.getWires().stream()
+        .filter(w -> w.getEnd0().equals(aLoc) || w.getEnd1().equals(aLoc))
+        .findFirst()
+        .orElseThrow(() -> new AssertionError("A should still have a wire after tidying"));
+    final var bundleAfter = circuit.getWireSet(wireAtA);
+    assertTrue(bundleAfter.containsLocation(cLoc),
+        "A and C should still be electrically connected after the automatic tidy pass");
+    final var acWiresAfter = circuit.getWires().stream()
+        .filter(bundleAfter::containsWire)
+        .collect(java.util.stream.Collectors.toSet());
+    assertFalse(acWiresBefore.equals(acWiresAfter),
+        "placing a component directly in the path of the A-C net's existing wiring should have "
+            + "triggered a real reroute -- if the automatic post-eval tidy pass hadn't fired, this "
+            + "wiring would be untouched by the second eval(), which only routes its own new nets");
+
+    assertNull(WireTidier.buildTidyMutation(circuit),
+        "circuit should already be in fully-tidied form immediately after eval() returns, with no "
+            + "explicit space:tidyWires() call in either script");
   }
 
   private JsonObject args() {
