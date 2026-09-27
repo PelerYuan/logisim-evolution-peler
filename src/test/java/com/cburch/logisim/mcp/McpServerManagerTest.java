@@ -137,4 +137,30 @@ class McpServerManagerTest {
     assertFalse(manager.isRunning());
     assertEquals(null, manager.endpoint());
   }
+
+  /**
+   * Codex CLI's own config is TOML ({@code [mcp_servers.logisim]} + a literal {@code
+   * http_headers} table), not the {@code mcpServers} JSON block {@link
+   * McpServerManager#clientConfigJson()} returns for Claude Code/Desktop/VS Code -- pasting that
+   * JSON into Codex's {@code config.toml} would not parse. This exercises the dedicated
+   * {@code codexConfigToml()} the MCP menu's "Copy Codex Configuration" item calls instead.
+   */
+  @Test
+  void codexConfigTomlIsTomlNotTheClaudeJsonShape() throws Exception {
+    final var manager = McpServerManager.getInstance();
+    assertEquals(null, manager.codexConfigToml(), "server isn't running yet");
+
+    manager.start(
+        new McpServerConfig(
+            true, "127.0.0.1", 0, "sekret", McpServerConfig.DEFAULT_MAX_REQUEST_BYTES, false));
+
+    final var toml = manager.codexConfigToml();
+    assertTrue(toml.contains("[mcp_servers.logisim]"), toml);
+    assertTrue(toml.contains("url = \"" + manager.endpoint() + "\""), toml);
+    assertTrue(
+        toml.contains("http_headers = { \"Authorization\" = \"Bearer sekret\" }"),
+        "should carry the running server's token as a literal header, same as the running "
+            + "server's token appears in clientConfigJson(): " + toml);
+    assertFalse(toml.contains("mcpServers"), "must not be the Claude/VS Code JSON shape: " + toml);
+  }
 }

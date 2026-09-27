@@ -232,11 +232,12 @@ name other locations with `-Dlogisim.mcp.allowedPaths`.
 
 ![An AI client building a circuit over MCP](docs/img/peler-edition/Mcp.png)
 
-The **MCP** menu holds the two ways to connect a client: **Copy MCP Configuration** for a client that
-takes an HTTP endpoint (Claude Code, Codex, VS Code), and **Export MCP Bundle** for Claude Desktop,
-which installs a `.mcpb` by double-click and needs Node.js available to relay its standard input to
-this window. A bundle is written for the port and token in force when you export it — export a fresh
-one if either changes.
+The **MCP** menu holds three ways to connect a client: **Copy MCP Configuration** for a client that
+reads the `mcpServers` JSON shape (Claude Code, Claude Desktop, VS Code), **Copy Codex Configuration**
+for Codex CLI's own `~/.codex/config.toml` — a different format, so the JSON entry does not paste in
+there — and **Export MCP Bundle** for Claude Desktop, which installs a `.mcpb` by double-click and
+needs Node.js available to relay its standard input to this window. A bundle or configuration is
+written for the port and token in force at that moment — export/copy a fresh one if either changes.
 
 Treat this as experimental: it works and it is tested, but the set of operations it offers is still
 being redesigned.

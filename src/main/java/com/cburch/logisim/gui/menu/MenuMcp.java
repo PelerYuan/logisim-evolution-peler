@@ -38,7 +38,7 @@ import javax.swing.filechooser.FileNameExtensionFilter;
  * <p>Stays enabled while the server is switched off, which is most of the time -- it is off until
  * asked for. A greyed-out menu is the one thing that cannot say why it is greyed out, and this one
  * would be greyed out on a first run, which is exactly when someone is looking for the feature.
- * Both entries instead explain what MCP is and offer to open the settings page that turns it on.
+ * All entries instead explain what MCP is and offer to open the settings page that turns it on.
  */
 class MenuMcp extends JMenu implements ActionListener {
 
@@ -46,14 +46,17 @@ class MenuMcp extends JMenu implements ActionListener {
 
   private final LogisimMenuBar menubar;
   private final JMenuItem copyConfig = new JMenuItem();
+  private final JMenuItem copyCodexConfig = new JMenuItem();
   private final JMenuItem exportBundle = new JMenuItem();
 
   MenuMcp(LogisimMenuBar menubar) {
     this.menubar = menubar;
 
     copyConfig.addActionListener(this);
+    copyCodexConfig.addActionListener(this);
     exportBundle.addActionListener(this);
     add(copyConfig);
+    add(copyCodexConfig);
     add(exportBundle);
   }
 
@@ -61,22 +64,30 @@ class MenuMcp extends JMenu implements ActionListener {
   public void actionPerformed(ActionEvent e) {
     final var src = e.getSource();
     if (copyConfig.equals(src)) {
-      showConfigDialog();
+      showConfigDialog(McpServerManager.getInstance().clientConfigJson(), S.get("mcpConfigTitle"));
+    } else if (copyCodexConfig.equals(src)) {
+      showConfigDialog(
+          McpServerManager.getInstance().codexConfigToml(), S.get("mcpCodexConfigTitle"));
     } else if (exportBundle.equals(src)) {
       exportBundle();
     }
   }
 
-  private void showConfigDialog() {
-    final var json = McpServerManager.getInstance().clientConfigJson();
-    if (json == null) {
+  /**
+   * Shared by both "copy configuration" entries: they differ only in which format {@code config}
+   * is in (JSON for Claude Code/Desktop/VS Code, TOML for Codex -- see {@link
+   * McpServerManager#clientConfigJson()} and {@link McpServerManager#codexConfigToml()}) and what
+   * to title the dialog, not in how it's shown.
+   */
+  private void showConfigDialog(String config, String title) {
+    if (config == null) {
       notRunning();
       return;
     }
-    var displayText = json;
+    var displayText = config;
     try {
-      Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(json), null);
-      displayText = json + "\n\n" + S.get("mcpConfigCopied");
+      Toolkit.getDefaultToolkit().getSystemClipboard().setContents(new StringSelection(config), null);
+      displayText = config + "\n\n" + S.get("mcpConfigCopied");
     } catch (Exception ignored) {
       // clipboard may be unavailable in headless/test environments
     }
@@ -90,7 +101,7 @@ class MenuMcp extends JMenu implements ActionListener {
     OptionPane.showMessageDialog(
         menubar.getParentFrame(),
         new JScrollPane(textArea),
-        S.get("mcpConfigTitle"),
+        title,
         OptionPane.INFORMATION_MESSAGE);
   }
 
@@ -190,6 +201,7 @@ class MenuMcp extends JMenu implements ActionListener {
   public void localeChanged() {
     setText(S.get("mcpMenu"));
     copyConfig.setText(S.get("mcpCopyConfigItem"));
+    copyCodexConfig.setText(S.get("mcpCopyCodexConfigItem"));
     exportBundle.setText(S.get("mcpExportBundleItem"));
   }
 }
