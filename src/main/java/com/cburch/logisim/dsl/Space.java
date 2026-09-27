@@ -20,16 +20,21 @@ import com.cburch.logisim.circuit.Wire;
 import com.cburch.logisim.circuit.WireSet;
 import com.cburch.logisim.circuit.WireTidier;
 import com.cburch.logisim.comp.Component;
+import com.cburch.logisim.comp.ComponentFactory;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.dsl.internal.KindRegistry;
 import com.cburch.logisim.dsl.internal.NetHandle;
 import com.cburch.logisim.dsl.internal.PendingNetlist;
 import com.cburch.logisim.dsl.internal.Router;
+import com.cburch.logisim.file.LogisimFileActions;
 import com.cburch.logisim.gui.htmlexport.ExportHtml;
 import com.cburch.logisim.gui.htmlexport.HtmlExporter;
 import com.cburch.logisim.gui.main.ExportImage;
+import com.cburch.logisim.proj.Action;
+import com.cburch.logisim.proj.JoinedAction;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.std.gates.CircuitBuilder;
+import com.cburch.logisim.tools.Library;
 import com.cburch.logisim.util.StringUtil;
 import java.io.File;
 import java.io.IOException;
@@ -38,6 +43,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -235,7 +241,7 @@ public final class Space {
     }
     mutation.addAll(wires);
 
-    final var action = mutation.toAction(StringUtil.constantGetter(actionName));
+    final var action = withMissingLibrariesLoaded(mutation.toAction(StringUtil.constantGetter(actionName)));
     proj.doAction(action);
 
     for (final var entry : routed.entrySet()) entry.getKey().markCommitted(entry.getValue());
@@ -248,6 +254,56 @@ public final class Space {
     pending.clear();
     pendingWires.clear();
     return new CommitResult(action, placed, resultNets);
+  }
+
+  /**
+   * {@link KindRegistry} resolves a built-in kind straight through the loader's shared builtin
+   * tree, never checking whether this project's own file has that component's library loaded --
+   * deliberate, so a plain test fixture with no libraries of its own can still place anything (see
+   * {@link KindRegistry}'s own javadoc). That gap is invisible until the circuit is saved: the file
+   * writer attributes a component to whichever of the project's own loaded libraries contains it,
+   * and a component whose library was never loaded is silently dropped with a "component not
+   * found" error -- exactly what this closes, by loading whatever this commit's newly placed
+   * components actually need, as part of the same undo-log entry.
+   */
+  private Action withMissingLibrariesLoaded(Action mutationAction) {
+    final var missing = missingLibrariesFor(pending);
+    if (missing.isEmpty()) return mutationAction;
+    final var file = proj.getLogisimFile();
+    final var actions = new ArrayList<Action>();
+    for (final var lib : missing) actions.add(LogisimFileActions.loadLibraryQuiet(lib, file));
+    actions.add(mutationAction);
+    return new JoinedAction(actions.toArray(new Action[0]));
+  }
+
+  private List<Library> missingLibrariesFor(List<Comp> comps) {
+    final var missing = new LinkedHashSet<Library>();
+    for (final var comp : comps) {
+      final var factory = comp.rawComponent().getFactory();
+      if (isReachableFromFile(factory)) continue;
+      final var owner = builtinLibraryOwning(factory);
+      if (owner != null) missing.add(owner);
+    }
+    return List.copyOf(missing);
+  }
+
+  /** Mirrors the check the file writer itself makes when attributing a component to a library
+   * (only the project's own file and the libraries it has directly loaded, never a level deeper) --
+   * matching that exactly is the point, not a generalization of it. */
+  private boolean isReachableFromFile(ComponentFactory factory) {
+    final var file = proj.getLogisimFile();
+    if (file.contains(factory)) return true;
+    for (final var lib : file.getLibraries()) {
+      if (lib.contains(factory)) return true;
+    }
+    return false;
+  }
+
+  private Library builtinLibraryOwning(ComponentFactory factory) {
+    for (final var lib : proj.getLogisimFile().getLoader().getBuiltin().getLibraries()) {
+      if (lib.contains(factory)) return lib;
+    }
+    return null;
   }
 
   /** Re-routes every wire already in this circuit for readability -- see {@link WireTidier} -- as
