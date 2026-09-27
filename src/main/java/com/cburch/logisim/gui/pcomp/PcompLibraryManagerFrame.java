@@ -12,19 +12,26 @@ import static com.cburch.logisim.gui.Strings.S;
 
 import com.cburch.logisim.file.LibraryEvent;
 import com.cburch.logisim.file.LibraryListener;
+import com.cburch.logisim.gui.generic.OptionPane;
 import com.cburch.logisim.gui.menu.ProjectLibraryActions;
+import com.cburch.logisim.pcomp.PcompLibraryExport;
 import com.cburch.logisim.proj.Project;
+import com.cburch.logisim.util.JFileChoosers;
 import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.File;
+import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
+import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JList;
@@ -32,6 +39,7 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.ListSelectionModel;
+import javax.swing.filechooser.FileNameExtensionFilter;
 
 /**
  * Peler Edition. The window that replaces {@code PcompManagerDialog}: manages every component
@@ -60,6 +68,7 @@ public class PcompLibraryManagerFrame extends JFrame {
   private final JButton newLibrary = new JButton();
   private final JButton loadLibrary = new JButton();
   private final JButton unload = new JButton();
+  private final JButton export = new JButton();
   private final JButton saveHere = new JButton();
   private final LibraryListener listener = event -> onLibraryEvent(event);
 
@@ -80,18 +89,22 @@ public class PcompLibraryManagerFrame extends JFrame {
     newLibrary.setText(S.get("projectNewPcompLibraryItem"));
     loadLibrary.setText(S.get("projectLoadPcompLibraryItem"));
     unload.setText(S.get("pcompLibraryUnloadButton"));
+    export.setText(S.get("pcompLibraryExportButton"));
     newLibrary.addActionListener(event -> ProjectLibraryActions.doNewPcompLibrary(project));
     loadLibrary.addActionListener(event -> ProjectLibraryActions.doLoadPcompLibrary(project));
     unload.addActionListener(event -> onUnload());
+    export.addActionListener(event -> onExport());
 
     final var listButtons = new JPanel();
     listButtons.setLayout(new BoxLayout(listButtons, BoxLayout.Y_AXIS));
     newLibrary.setAlignmentX(CENTER_ALIGNMENT);
     loadLibrary.setAlignmentX(CENTER_ALIGNMENT);
     unload.setAlignmentX(CENTER_ALIGNMENT);
+    export.setAlignmentX(CENTER_ALIGNMENT);
     listButtons.add(newLibrary);
     listButtons.add(loadLibrary);
     listButtons.add(unload);
+    listButtons.add(export);
 
     final var left = new JPanel(new BorderLayout());
     left.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 6));
@@ -168,10 +181,12 @@ public class PcompLibraryManagerFrame extends JFrame {
       selectedLabel.setText(" ");
       saveHere.setEnabled(false);
       unload.setEnabled(false);
+      export.setEnabled(false);
     } else {
       selectedLabel.setText(target.displayName());
       saveHere.setEnabled(true);
       unload.setEnabled(project.getLogisimFile().getUnloadLibraryMessage(target.asLibrary()) == null);
+      export.setEnabled(true);
       tableHost.add(new PcompComponentTable(this, project, target), BorderLayout.CENTER);
     }
     tableHost.revalidate();
@@ -191,5 +206,41 @@ public class PcompLibraryManagerFrame extends JFrame {
     } else {
       PcompSaveDialog.open(project);
     }
+  }
+
+  private void onExport() {
+    final var target = libraryList.getSelectedValue();
+    if (target == null) return;
+
+    final var chooser = JFileChoosers.create();
+    chooser.setDialogTitle(S.get("pcompLibraryExportTitle"));
+    chooser.setFileFilter(new FileNameExtensionFilter("ZIP", "zip"));
+    chooser.setSelectedFile(new File(suggestedZipName(target.displayName())));
+    if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+
+    var destination = chooser.getSelectedFile();
+    if (!destination.getName().toLowerCase(Locale.ROOT).endsWith(".zip")) {
+      destination = new File(destination.getParentFile(), destination.getName() + ".zip");
+    }
+
+    try {
+      PcompLibraryExport.export(target.directory(), destination);
+      OptionPane.showMessageDialog(
+          this,
+          S.get("pcompLibraryExportDone", destination.getAbsolutePath()),
+          S.get("pcompLibraryManagerTitle"),
+          OptionPane.INFORMATION_MESSAGE);
+    } catch (IOException e) {
+      OptionPane.showMessageDialog(
+          this,
+          S.get("pcompLibraryExportFailed", String.valueOf(e.getMessage())),
+          S.get("pcompLibraryManagerTitle"),
+          OptionPane.ERROR_MESSAGE);
+    }
+  }
+
+  private static String suggestedZipName(String displayName) {
+    final var sanitized = displayName.replaceAll("[^A-Za-z0-9._-]+", "_");
+    return sanitized.isEmpty() ? "library.zip" : sanitized + ".zip";
   }
 }
