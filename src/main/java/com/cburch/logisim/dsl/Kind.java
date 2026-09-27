@@ -11,6 +11,9 @@ package com.cburch.logisim.dsl;
 
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentFactory;
+import com.cburch.logisim.data.Attribute;
+import com.cburch.logisim.data.AttributeOptionInterface;
+import com.cburch.logisim.data.BitWidth;
 import com.cburch.logisim.data.Direction;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.dsl.internal.KindRegistry;
@@ -60,7 +63,7 @@ public final class Kind {
   }
 
   public List<AttrSpec> attributes() {
-    return AttrTable.forKey(key);
+    return AttrTable.forKey(key, factory);
   }
 
   /** What placing this {@code Kind} with these attribute overrides would expose as ports --
@@ -98,9 +101,16 @@ public final class Kind {
 
   public record PortSpec(int index, Port.Dir dir, int width, boolean exclusive) {}
 
-  /** Curated, hand-written per {@link Kind#attributes()} -- see the caveat in the P1 research
-   * notes: option-attributes don't expose their legal values reflectively, so this has to name the
-   * public constants directly rather than introspect. */
+  /** Curated, hand-written for the small set of kinds worth spelling out precisely -- see the
+   * caveat in the P1 research notes: option-attributes don't expose their legal values
+   * reflectively (the candidate array is a private field on a package-private class in {@code
+   * com.cburch.logisim.data.Attributes}), so a fully accurate spec for one of these has to name
+   * the public constants directly rather than introspect. Everything else falls through to
+   * {@link #reflect(ComponentFactory)}, a best-effort walk of the factory's own {@code
+   * AttributeSet} -- real attribute names and a type guessed from the default value's runtime
+   * type, which is honest (an empty {@code options} list where the legal values genuinely cannot
+   * be enumerated this way) rather than the previous behavior of silently reporting only {@code
+   * facing} for any kind this table did not happen to name. */
   private static final class AttrTable {
     private static final List<AttrSpec> FACING = List.of(new AttrSpec("facing", "direction",
         List.of(Direction.EAST.toString(), Direction.NORTH.toString(), Direction.WEST.toString(),
@@ -125,8 +135,9 @@ public final class Kind {
         Map.entry("gates/buffer", FACING),
         Map.entry("wiring/pin", PIN));
 
-    static List<AttrSpec> forKey(String key) {
-      return BY_KEY.getOrDefault(key, FACING);
+    static List<AttrSpec> forKey(String key, ComponentFactory factory) {
+      final var curated = BY_KEY.get(key);
+      return curated != null ? curated : reflect(factory);
     }
 
     private static List<AttrSpec> concat(List<AttrSpec> base, AttrSpec... more) {
@@ -134,5 +145,34 @@ public final class Kind {
       list.addAll(List.of(more));
       return List.copyOf(list);
     }
+
+    private static List<AttrSpec> reflect(ComponentFactory factory) {
+      final var attrs = factory.createAttributeSet();
+      final var declared = attrs.getAttributes();
+      if (declared == null) return List.of();
+      final var specs = new ArrayList<AttrSpec>();
+      for (final var attr : declared) specs.add(specFor(attr, attrs));
+      return List.copyOf(specs);
+    }
+
+    /** Guesses a spec from the default value's runtime type -- the only thing reachable without
+     * reflecting into {@code Attributes}' private fields (see the class javadoc). {@code
+     * AttributeOptionInterface} covers every component-specific enum-like option (gate size,
+     * appearance, ...media/std-lib factories declare dozens of these), correctly identified as an
+     * "option" attribute but without its candidate list, which is exactly the honest gap this
+     * class accepts rather than papering over. */
+    private static AttrSpec specFor(Attribute<?> attr, com.cburch.logisim.data.AttributeSet attrs) {
+      final var name = attr.getName();
+      final var value = attrs.getValue(attr);
+      if (value instanceof Direction) return new AttrSpec(name, "direction", DIRECTIONS);
+      if (value instanceof Boolean) return new AttrSpec(name, "boolean", List.of("true", "false"));
+      if (value instanceof BitWidth) return new AttrSpec(name, "bitWidth", List.of());
+      if (value instanceof Integer) return new AttrSpec(name, "int", List.of());
+      if (value instanceof AttributeOptionInterface) return new AttrSpec(name, "option", List.of());
+      return new AttrSpec(name, "string", List.of());
+    }
+
+    private static final List<String> DIRECTIONS = List.of(Direction.EAST.toString(),
+        Direction.NORTH.toString(), Direction.WEST.toString(), Direction.SOUTH.toString());
   }
 }
