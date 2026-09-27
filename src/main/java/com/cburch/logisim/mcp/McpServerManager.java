@@ -196,8 +196,9 @@ public final class McpServerManager implements AutoCloseable {
   }
 
   /**
-   * Returns a Claude/Codex MCP configuration JSON string, or null if the server is not running.
-   * The caller can paste this directly into a Claude Desktop or VS Code MCP config.
+   * Returns a Claude Code / Claude Desktop / VS Code MCP configuration JSON string, or null if the
+   * server is not running. The caller can paste this directly into any of those clients' own
+   * {@code mcpServers}-shaped config. Not Codex's format -- see {@link #codexConfigToml()}.
    */
   public String clientConfigJson() {
     synchronized (lock) {
@@ -211,6 +212,28 @@ public final class McpServerManager implements AutoCloseable {
         sb.append(",\n      \"headers\": { \"Authorization\": \"Bearer ").append(token).append("\" }");
       }
       sb.append("\n    }\n  }\n}");
+      return sb.toString();
+    }
+  }
+
+  /**
+   * Returns a Codex CLI MCP configuration snippet for {@code ~/.codex/config.toml}, or null if the
+   * server is not running. Codex's own config is TOML, with a {@code url} + literal
+   * {@code http_headers} table for a remote server's auth header -- not the {@code mcpServers} JSON
+   * block {@link #clientConfigJson()} returns for Claude Code/Desktop/VS Code, which does not parse
+   * as TOML and was, before this method existed, the only thing this menu offered Codex users.
+   */
+  public String codexConfigToml() {
+    synchronized (lock) {
+      if (boundPort < 0 || config == null) return null;
+      final var url = endpoint();
+      final var token = config.token();
+      final var sb = new StringBuilder();
+      sb.append("[mcp_servers.logisim]\n");
+      sb.append("url = \"").append(url).append("\"\n");
+      if (token != null && !token.isBlank()) {
+        sb.append("http_headers = { \"Authorization\" = \"Bearer ").append(token).append("\" }\n");
+      }
       return sb.toString();
     }
   }
