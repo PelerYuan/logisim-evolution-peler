@@ -320,7 +320,12 @@ final class McpScriptTools implements AutoCloseable {
           "<library>/<component>" pair Logisim itself uses internally (e.g. "Plexers/Multiplexer",
           "Memory/RAM"), or "circuit/<name>" for a subcircuit. Kind.of on a wrong or misspelled key
           throws with the nearest real keys attached, so a typo is self-correcting without a
-          separate lookup call.
+          separate lookup call. A custom component installed in any loaded component library (see
+          global `pcomp` below) is internally just a subcircuit too, so it places the same
+          "circuit/<name>" way -- but <name> there is the component's mainCircuit field from
+          pcomp:list(...), not its display name (e.g. "circuit/Half_Adder_v1" to place what
+          pcomp:list(...) shows as name "Half Adder" version 1) -- no separate placement API of its
+          own.
         space:byId(id) / space:byLabel(label) -> Comp or nil. Use these, not a saved Lua local, to
           address a component from a later eval() call: a script's locals never survive past the
           single call they were declared in.
@@ -383,15 +388,68 @@ final class McpScriptTools implements AutoCloseable {
         libraries:loadJar(path, className) -> name: loads a Library/ComponentFactory class out of
           an external JAR; className is the fully-qualified class the JAR exposes.
         libraries:loadPcomp(path) -> name: loads a Peler Edition component-library directory (one
-          created via the GUI's "New Library..."), the multi-library successor to the single
-          built-in "My Components" catalog.
+          created via the GUI's "New Library..." or libraries:createPcomp below), the multi-library
+          successor to the single built-in "My Components" catalog.
+        libraries:createPcomp(path, name) -> name: creates a brand-new, empty component-library
+          directory at path (display name `name`) and loads it in one step. Throws
+          PcompLibraryCreateFailedException on failure. Once loaded, publish components into it with
+          global `pcomp` below.
+        libraries:exportPcomp(name, destinationZip): exports a loaded component library's whole
+          directory as a .zip that someone else can hand back to loadPcomp -- name is the library's
+          own name (from list(), or "My Components" for the default one), not its display name.
+          Throws PcompLibraryExportFailedException on failure.
         libraries:unload(name): removes a top-level library, refusing with a structured reason if
           anything in the project still places a component from it.
-        All four loads/unload are their own immediate, undo-logged action, like `circuits`'
-        methods, not staged like space:place()/commit(). A name collision, an unreadable/malformed
-        file, or an unload while still in use each throw a structured exception (Duplicate
-        LibraryNameException, LibraryLoadFailedException, LibraryInUseException,
-        UnknownLibraryException) rather than ever popping a GUI dialog.
+        loadCircuit/loadJar/loadPcomp/createPcomp/unload are each their own immediate, undo-logged
+        action, like `circuits`' methods, not staged like space:place()/commit()
+        (exportPcomp changes nothing in the project, so it is not undo-logged at all). A name
+        collision, an unreadable/malformed file, or an unload while still in use each throw a
+        structured exception (DuplicateLibraryNameException, LibraryLoadFailedException,
+        LibraryInUseException, UnknownLibraryException, NotAPcompLibraryException) rather than ever
+        popping a GUI dialog.
+
+      Global `pcomp` (a com.cburch.logisim.dsl.Pcomp): manages what is installed inside a component
+        library -- publishing a circuit as a new reusable component, importing/deleting one, or
+        replacing every placed instance of one version with another -- the counterpart to
+        `libraries` for a library's own contents rather than for the library as a whole. In every
+        method, libraryName is one of `libraries:list()`'s entries (the always-present default
+        library is named "My Components"); the library must actually be a component library, not an
+        external .circ/JAR one, or this throws NotAPcompLibraryException.
+        pcomp:list(libraryName) -> {{id, version, name, mainCircuit, locked}, ...}: every installed
+          version of every component in that library.
+        pcomp:saveAsComponent(circuitName, componentName, libraryName) -> {id, version, name,
+          mainCircuit, path, libraryName}: publishes an existing circuit as a new, first-version
+          component. The port layout is always derived automatically from the circuit's own pins --
+          each port's name comes from whatever label its pin already carries (set the ordinary way,
+          e.g. pin:setLabel("A")), and side/position are assigned the same way the GUI's own
+          "Arrange for Me" button does; there is no interactive layout step to drive from a script.
+          Throws UnknownCircuitException for an unknown circuitName; InvalidComponentNameException
+          if componentName is empty or cannot become a valid circuit name;
+          InvalidComponentLayoutException if the circuit has no pins or two pins share a label;
+          DuplicatePcompNameException if the library already has a different component answering to
+          the same underlying name; PcompSaveFailedException if writing/installing the file fails.
+        pcomp:importFile(libraryName, path) -> {id, version, name, mainCircuit, path, libraryName}:
+          copies an existing .pcomp file into the library and installs it. Throws
+          PcompImportFailedException (not a valid component file, a same-named file already present,
+          or the copy/install itself failing) or DuplicatePcompNameException (same underlying-name
+          collision as saveAsComponent).
+        pcomp:delete(libraryName, id, version): removes one installed version and deletes its file.
+          Throws UnknownPcompComponentException if no such id/version is installed, or
+          PcompComponentInUseException if this project still places an instance of it -- replace it
+          with another version first, or remove every placed instance.
+        pcomp:replace(libraryName, id, fromVersion, toVersion) -> {uses, replaced}: replaces every
+          instance of one installed version, throughout this project, with another installed version
+          of the same id -- wires are untouched. uses is how many instances were found; replaced is
+          false (nothing changed, no undo entry created) when uses is 0. Throws
+          UnknownPcompComponentException if either version is not installed. This mutates the
+          project directly, not through `space`'s own place/commit bookkeeping, so `space`'s
+          component queries (components/componentsOf/byId/...) still reflect the pre-replace state
+          for the rest of this eval call -- call pcomp:replace() near the end of a script, or query
+          the result on the next eval, where `space` is rebuilt fresh.
+        saveAsComponent/importFile/delete/replace are each their own immediate, undo-logged action,
+        like `circuits`'/`libraries`'/`vhdlEntities`' methods, not staged like space:place()/commit().
+        To create a brand-new component library to publish into, or to export one as a shareable
+        zip, use `libraries:createPcomp(path, name)` / `libraries:exportPcomp(name, destinationZip)`.
 
       Global `vhdlEntities` (a com.cburch.logisim.dsl.VhdlEntities): project-level VHDL entity
         management -- a VHDL entity is a named "black box" component backed by hand-written VHDL

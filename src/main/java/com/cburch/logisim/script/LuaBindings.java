@@ -20,6 +20,7 @@ import com.cburch.logisim.dsl.History;
 import com.cburch.logisim.dsl.Kind;
 import com.cburch.logisim.dsl.Libraries;
 import com.cburch.logisim.dsl.Net;
+import com.cburch.logisim.dsl.Pcomp;
 import com.cburch.logisim.dsl.Placement;
 import com.cburch.logisim.dsl.Port;
 import com.cburch.logisim.dsl.Simulation;
@@ -483,6 +484,15 @@ final class LuaBindings {
       return LuaValue.valueOf(libraries.loadJar(rest.checkjstring(1), rest.checkjstring(2)));
     }));
     methods.set("loadPcomp", bind(a -> LuaValue.valueOf(libraries.loadPcomp(a.subargs(2).checkjstring(1)))));
+    methods.set("createPcomp", bind(a -> {
+      final var rest = a.subargs(2);
+      return LuaValue.valueOf(libraries.createPcomp(rest.checkjstring(1), rest.checkjstring(2)));
+    }));
+    methods.set("exportPcomp", bind(a -> {
+      final var rest = a.subargs(2);
+      libraries.exportPcomp(rest.checkjstring(1), rest.checkjstring(2));
+      return LuaValue.NONE;
+    }));
     methods.set("unload", bind(a -> {
       libraries.unload(a.subargs(2).checkjstring(1));
       return LuaValue.NONE;
@@ -490,6 +500,66 @@ final class LuaBindings {
     final var meta = new LuaTable();
     meta.set("__index", methods);
     return new LuaUserdata(libraries, meta);
+  }
+
+  // ---- Pcomp ----------------------------------------------------------------
+
+  static LuaValue wrap(Pcomp pcomp) {
+    final var methods = new LuaTable();
+    methods.set("list", bind(a -> {
+      final var t = new LuaTable();
+      final var installed = pcomp.list(a.subargs(2).checkjstring(1));
+      for (var i = 0; i < installed.size(); i++) t.set(i + 1, wrap(installed.get(i)));
+      return t;
+    }));
+    methods.set("saveAsComponent", bind(a -> {
+      final var rest = a.subargs(2);
+      return wrap(pcomp.saveAsComponent(rest.checkjstring(1), rest.checkjstring(2), rest.checkjstring(3)));
+    }));
+    methods.set("importFile", bind(a -> {
+      final var rest = a.subargs(2);
+      return wrap(pcomp.importFile(rest.checkjstring(1), rest.checkjstring(2)));
+    }));
+    methods.set("delete", bind(a -> {
+      final var rest = a.subargs(2);
+      pcomp.delete(rest.checkjstring(1), rest.checkjstring(2), rest.checkint(3));
+      return LuaValue.NONE;
+    }));
+    methods.set("replace", bind(a -> {
+      final var rest = a.subargs(2);
+      return wrap(pcomp.replace(rest.checkjstring(1), rest.checkjstring(2), rest.checkint(3), rest.checkint(4)));
+    }));
+    final var meta = new LuaTable();
+    meta.set("__index", methods);
+    return new LuaUserdata(pcomp, meta);
+  }
+
+  private static LuaValue wrap(Pcomp.Installed installed) {
+    final var t = new LuaTable();
+    t.set("id", LuaValue.valueOf(installed.id()));
+    t.set("version", LuaValue.valueOf(installed.version()));
+    t.set("name", LuaValue.valueOf(installed.name()));
+    t.set("mainCircuit", LuaValue.valueOf(installed.mainCircuit()));
+    t.set("locked", LuaValue.valueOf(installed.locked()));
+    return t;
+  }
+
+  private static LuaValue wrap(Pcomp.Saved saved) {
+    final var t = new LuaTable();
+    t.set("id", LuaValue.valueOf(saved.id()));
+    t.set("version", LuaValue.valueOf(saved.version()));
+    t.set("name", LuaValue.valueOf(saved.name()));
+    t.set("mainCircuit", LuaValue.valueOf(saved.mainCircuit()));
+    t.set("path", LuaValue.valueOf(saved.path()));
+    t.set("libraryName", LuaValue.valueOf(saved.libraryName()));
+    return t;
+  }
+
+  private static LuaValue wrap(Pcomp.Replaced replaced) {
+    final var t = new LuaTable();
+    t.set("uses", LuaValue.valueOf(replaced.uses()));
+    t.set("replaced", LuaValue.valueOf(replaced.replaced()));
+    return t;
   }
 
   static LuaValue wrap(VhdlEntities vhdlEntities) {

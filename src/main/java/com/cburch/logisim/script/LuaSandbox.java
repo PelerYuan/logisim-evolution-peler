@@ -13,6 +13,7 @@ import com.cburch.logisim.dsl.Circuits;
 import com.cburch.logisim.dsl.CircuitStatistics;
 import com.cburch.logisim.dsl.History;
 import com.cburch.logisim.dsl.Libraries;
+import com.cburch.logisim.dsl.Pcomp;
 import com.cburch.logisim.dsl.Simulation;
 import com.cburch.logisim.dsl.Space;
 import com.cburch.logisim.dsl.VhdlEntities;
@@ -115,6 +116,7 @@ public final class LuaSandbox {
     globals.set("circuitStatistics", LuaBindings.wrap(CircuitStatistics.of(space)));
     globals.set("history", LuaBindings.wrap(History.of(space)));
     globals.set("simulation", LuaBindings.wrap(Simulation.of(space)));
+    globals.set("pcomp", LuaBindings.wrap(Pcomp.of(space)));
   }
 
   /** Runs {@code script} to completion and returns whatever it returns, coerced to a
