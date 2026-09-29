@@ -186,7 +186,7 @@ written into every saved file and `displayName` into file headers and generated 
 | Interactive HTML export (experimental) | `gui/htmlexport/`, `gui/generic/TikZInfo.java`, `resources/logisim/html/` |
 | This edition's settings page | `gui/prefs/PelerOptions.java`, `tools/ContinuousPlacement.java` |
 | Custom components | `pcomp/`, `file/Pcomp*.java`, `gui/pcomp/`, `docs/peler-edition/design/custom-components.md` |
-| Custom component libraries | `pcomp/PcompLibrary*.java`, `file/LibraryManager.java`, `gui/pcomp/PcompLibraryManagerFrame.java`, `docs/peler-edition/design/pcomp-libraries.md` |
+| Custom component libraries | `pcomp/PcompLibrary*.java`, `file/LibraryManager.java`, `gui/pcomp/PcompLibraryManagerFrame.java`, `design/pcomp-libraries.md` |
 | Embedded MCP server (contributed) | `mcp/`, `docs/peler-edition/mcp/` |
 | MCP menu and `.mcpb` bundle | `gui/menu/MenuMcp.java`, `mcp/McpBundleWriter.java`, `resources/logisim/mcp/bridge.js` |
 
