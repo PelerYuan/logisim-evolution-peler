@@ -16,11 +16,13 @@ import com.cburch.logisim.analyze.model.ParserException;
 import com.cburch.logisim.analyze.model.Var;
 import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.CircuitMutation;
+import com.cburch.logisim.circuit.SubcircuitFactory;
 import com.cburch.logisim.circuit.Wire;
 import com.cburch.logisim.circuit.WireSet;
 import com.cburch.logisim.circuit.WireTidier;
 import com.cburch.logisim.comp.Component;
 import com.cburch.logisim.comp.ComponentFactory;
+import com.cburch.logisim.data.Bounds;
 import com.cburch.logisim.data.Location;
 import com.cburch.logisim.dsl.internal.KindRegistry;
 import com.cburch.logisim.dsl.internal.NetHandle;
@@ -213,6 +215,131 @@ public final class Space {
     netlist.clear();
     existingNetCounter = 0;
     seedConnectivity(existingComponents);
+  }
+
+  /** What {@link #copyRegion} did. */
+  public record Copied(int components, int wires) {}
+
+  /**
+   * Copies everything lying fully inside a rectangle of this circuit -- every component (splitters,
+   * tunnels and probes included, not only the kinds the DSL can name) and every wire -- shifted by
+   * ({@code dCol}, {@code dRow}) cells into {@code targetCircuit} (this circuit when null), as one
+   * immediate, undo-logged action. This is the script counterpart of select, Ctrl+C, Ctrl+V, and
+   * like it copies attributes (a ROM's contents included) rather than sharing them.
+   *
+   * <p>The rectangle starts at grid cell ({@code col}, {@code row}) and spans {@code cols} by
+   * {@code rows} cells; a component belongs to it only if its whole bounding box does, the rule the
+   * canvas's rubber-band applies. Unlike the GUI, which slides a paste until it finds free space,
+   * the offset is the caller's: a copy that would land a component on a pin or on top of another
+   * component, run outside the canvas, or place a circuit inside itself is refused, changing
+   * nothing. Copies into this circuit add {@link Comp}s to this session; any {@link Net} obtained
+   * earlier is stale afterwards. Needs nothing pending in this session.
+   */
+  public Copied copyRegion(
+      int col, int row, int cols, int rows, int dCol, int dRow, String targetCircuit) {
+    if (isDirty()) throw new UncommittedChangesException(pending.size());
+    final var target = targetCircuit == null ? circuit : proj.getLogisimFile().getCircuit(targetCircuit);
+    if (target == null) {
+      throw new UnknownCircuitException(targetCircuit, Circuits.of(this).list());
+    }
+    final var region = Bounds.create(col * 10, row * 10, cols * 10, rows * 10);
+    final var dx = dCol * 10;
+    final var dy = dRow * 10;
+    final var picked = new ArrayList<Component>();
+    for (final var component : circuit.getAllWithin(region)) picked.add(component);
+    if (picked.isEmpty()) {
+      throw new CopyRegionException(
+          "empty", "nothing lies fully inside the region", "widen the region to cover whole components");
+    }
+
+    final var mutation = new CircuitMutation(target);
+    final var copies = new ArrayList<Component>();
+    var components = 0;
+    var wires = 0;
+    for (final var original : picked) {
+      if (original instanceof Wire wire) {
+        final var a = wire.getEnd0().translate(dx, dy);
+        final var b = wire.getEnd1().translate(dx, dy);
+        checkOnCanvas(a);
+        checkOnCanvas(b);
+        mutation.add(Wire.create(a, b));
+        wires++;
+        continue;
+      }
+      final var bounds = original.getBounds().translate(dx, dy);
+      if (bounds.getX() < 0 || bounds.getY() < 0) {
+        throw new CopyRegionException(
+            "off-canvas", "a copy would land at a negative coordinate", "choose a larger offset");
+      }
+      if (original.getFactory() instanceof SubcircuitFactory sub
+          && !proj.getDependencies().canAdd(target, sub.getSubcircuit())) {
+        throw new CopyRegionException(
+            "circular",
+            "circuit \"" + sub.getSubcircuit().getName() + "\" cannot be placed inside \""
+                + target.getName() + "\"",
+            "copy into a circuit that is not used by the copied subcircuit");
+      }
+      final var copy =
+          original
+              .getFactory()
+              .createComponent(
+                  original.getLocation().translate(dx, dy),
+                  (com.cburch.logisim.data.AttributeSet) original.getAttributeSet().clone());
+      checkNoConflict(target, copy, original);
+      mutation.add(copy);
+      copies.add(copy);
+      components++;
+    }
+    proj.doAction(mutation.toAction(StringUtil.constantGetter("copy region")));
+    if (target == circuit) {
+      final var known = new ArrayList<Comp>(existingComponents);
+      for (final var copy : copies) {
+        KindRegistry.resolveExisting(proj, copy)
+            .ifPresent(
+                r ->
+                    known.add(
+                        new Comp(
+                            this,
+                            new Kind(r.key(), r.factory(), r.subcircuit()),
+                            nextId(r.key()),
+                            copy)));
+      }
+      existingComponents.clear();
+      existingComponents.addAll(known);
+      netlist.clear();
+      existingNetCounter = 0;
+      seedConnectivity(existingComponents);
+    }
+    return new Copied(components, wires);
+  }
+
+  private static void checkOnCanvas(Location at) {
+    if (at.getX() < 0 || at.getY() < 0) {
+      throw new CopyRegionException(
+          "off-canvas", "a wire would land at a negative coordinate", "choose a larger offset");
+    }
+  }
+
+  /** The two conflicts the canvas's paste avoids: a pin that another component already owns, and
+   * a component sitting exactly on another of the same bounds. */
+  private static void checkNoConflict(Circuit target, Component copy, Component original) {
+    for (final var end : copy.getEnds()) {
+      if (end != null && end.isExclusive() && target.getExclusive(end.getLocation()) != null) {
+        throw new CopyRegionException(
+            "conflict",
+            "a copied pin would land on a pin that is already used at " + end.getLocation(),
+            "choose an offset that leaves the copy in free space");
+      }
+    }
+    for (final var other : target.getAllContaining(copy.getLocation())) {
+      if (other.getBounds().equals(copy.getBounds())) {
+        throw new CopyRegionException(
+            "conflict",
+            "a copy of " + original.getFactory().getName() + " would sit exactly on another component at "
+                + copy.getLocation(),
+            "choose an offset that leaves the copy in free space");
+      }
+    }
   }
 
   /** What {@link #move} did: how many of the moved component's ports were left with no wire to

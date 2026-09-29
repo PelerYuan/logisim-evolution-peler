@@ -342,6 +342,17 @@ final class McpScriptTools implements AutoCloseable {
           to follow it, exactly like dragging it on the canvas; unconnectedPorts counts ports left
           with no wire to where they connected. Needs nothing staged, and a committed component
           (ComponentNotCommittedException otherwise). Comp objects and ids survive; Nets do not.
+        space:copyRegion(col, row, cols, rows, dCol, dRow[, targetCircuit]) -> {components, wires}:
+          select-copy-paste as one immediate, undo-logged action. Copies everything lying fully
+          inside the cols x rows cell rectangle at (col,row) -- every component, splitters/tunnels
+          included, and every wire -- shifted by (dCol,dRow) cells into targetCircuit (default: this
+          circuit). Attributes are copied, not shared; labels are kept, so copying pins into the
+          same circuit duplicates their labels. The offset is yours, not found for you: a copy that
+          would land on a used pin or exactly on another component, go off the canvas, or place a
+          circuit inside itself throws CopyRegionException (details.reason = conflict, off-canvas,
+          circular; empty when the region holds nothing) and changes nothing. Needs nothing staged.
+          Into another circuit, open that circuit with the tool's "circuit" argument on the next
+          call to see the result.
         space:wires() -> WireOps (dotAt(col,row), add(dot,dot), isOccupied(dot)) for manual wiring.
         space:check() -> {ok, unconnected, undriven, multiplyDriven}.
         space:commit(actionName) -> {placed, nets}: stages since the last commit/rollback become one
@@ -386,7 +397,15 @@ final class McpScriptTools implements AutoCloseable {
         circuits:list() -> {name,...} (file order); circuits:mainName() -> string or nil.
         circuits:create(name); circuits:remove(name); circuits:rename(oldName, newName);
         circuits:setMain(name) -- each is its own immediate, undo-logged action, not staged like
-        space:place()/commit(). To then work inside a circuit this call just created or renamed,
+        space:place()/commit().
+        circuits:setEverywhere(attrName, value [, kind]) -> count: sets one attribute, by the name
+          comp:attrs() shows, on every component in every circuit of the project that carries it,
+          as ONE undo entry (the Project menu's bulk commands, e.g. TTL chip drawing =
+          "ShowInternalStructure" with "true"/"false"). value is read like comp:set reads it; kind,
+          when given, is a kinds key that restricts the sweep to that one kind. Returns how many
+          components changed; already-equal ones are skipped and no undo entry is made when none
+          change. An unreadable value throws InvalidAttributeValueException before anything changes.
+        To then work inside a circuit this call just created or renamed,
         pass its name as this tool's own top-level "circuit" argument on the next call (eval,
         describe and reset all accept it) -- `space` is always bound to one specific circuit for
         the lifetime of a single eval() call and cannot be redirected mid-script.
@@ -410,6 +429,10 @@ final class McpScriptTools implements AutoCloseable {
           Throws PcompLibraryExportFailedException on failure.
         libraries:unload(name): removes a top-level library, refusing with a structured reason if
           anything in the project still places a component from it.
+        libraries:reload(name): reads a loaded library's file/JAR/directory again after it changed
+          on disk (not undo-logged, as in the GUI). Throws LibraryNotReloadableException for a
+          built-in library or the default "My Components" catalog, LibraryLoadFailedException if
+          the source can no longer be read.
         loadCircuit/loadJar/loadPcomp/createPcomp/unload are each their own immediate, undo-logged
         action, like `circuits`' methods, not staged like space:place()/commit()
         (exportPcomp changes nothing in the project, so it is not undo-logged at all). A name

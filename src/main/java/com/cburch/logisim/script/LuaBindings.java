@@ -410,6 +410,19 @@ final class LuaBindings {
       t.set("unconnectedPorts", moved.unconnectedPorts());
       return t;
     }));
+    methods.set("copyRegion", bind(a -> {
+      final var r = a.subargs(2);
+      final var target = r.arg(7);
+      final var copied =
+          space.copyRegion(
+              r.checkint(1), r.checkint(2), r.checkint(3), r.checkint(4), r.checkint(5), r.checkint(6),
+              target.isnil() ? null : target.checkjstring());
+      onCommit.run();
+      final var t = new LuaTable();
+      t.set("components", copied.components());
+      t.set("wires", copied.wires());
+      return t;
+    }));
     methods.set("disconnect", bind(a -> {
       space.disconnect(unwrapNet(a.subargs(2), 1));
       return LuaValue.NONE;
@@ -484,6 +497,12 @@ final class LuaBindings {
     methods.set("setMain", bind(a -> {
       circuits.setMain(a.subargs(2).checkjstring(1));
       return LuaValue.NONE;
+    }));
+    methods.set("setEverywhere", bind(a -> {
+      final var rest = a.subargs(2);
+      final var kind = rest.arg(3);
+      return LuaValue.valueOf(circuits.setEverywhere(
+          rest.checkjstring(1), rest.arg(2).tojstring(), kind.isnil() ? null : kind.checkjstring()));
     }));
     final var meta = new LuaTable();
     meta.set("__index", methods);
@@ -783,6 +802,10 @@ final class LuaBindings {
     }));
     methods.set("unload", bind(a -> {
       libraries.unload(a.subargs(2).checkjstring(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("reload", bind(a -> {
+      libraries.reload(a.subargs(2).checkjstring(1));
       return LuaValue.NONE;
     }));
     final var meta = new LuaTable();

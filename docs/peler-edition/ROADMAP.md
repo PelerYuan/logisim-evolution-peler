@@ -2080,6 +2080,43 @@ test at both the Java and Lua level.
   signals and real-time modes. A PLA-ROM's and a programmable generator's contents are already plain
   string attributes reachable with `comp:set("Contents", ...)`.
 
+## Feature 19 — GUI/MCP parity, tier B (2026-09-29)
+
+Tier A closed the gaps a script could not work around at all. Tier B is the set a script could
+already reach, clumsily; only three were worth an interface, chosen by asking whether the workaround
+is merely long or actually loses something. Cut/copy/paste between circuits is the only one where the
+workaround (re-placing every component and every wire by hand) is error-prone; reload has no
+workaround; a project-wide attribute sweep loses the single undo entry.
+
+| Gap | DSL | Lua |
+| --- | --- | --- |
+| Reload Library | `Libraries#reload` | `libraries:reload(name)` |
+| Project-wide attribute sweep (the TTL chip drawing commands, generalised) | `Circuits#setEverywhere` | `circuits:setEverywhere(attr, value [, kind])` |
+| Select, copy, paste (within or between circuits) | `Space#copyRegion` | `space:copyRegion(col,row,cols,rows,dCol,dRow [, target])` |
+
+### Design decisions
+
+- **`setEverywhere` matches by attribute name, not by attribute object.** `ProjectWideAttribute`
+  (the menu's implementation) needs the `Attribute` instance; a script only has the name that
+  `comp:attrs()` prints. Each component's own attribute parses the text, so two unrelated attributes
+  that happen to share a name are each read in their own type. An unreadable value throws before
+  anything is applied; a sweep that changes nothing leaves no undo entry.
+- **`copyRegion` works on the raw circuit, not on the DSL's view of it.** The DSL cannot name
+  splitters, tunnels or probes, but a copy that dropped them would silently rewire the result, so the
+  copy takes every component and wire whose bounding box lies inside the rectangle (the rubber-band
+  rule).
+- **The offset is the caller's.** The canvas slides a paste outward until it finds free space; a
+  script asked for a specific place, so a copy that would land on a used pin, exactly on another
+  component, off the canvas, or a subcircuit inside itself is refused with a `CopyRegionException`
+  and nothing changes. The clipboard the GUI shares process-wide is not touched.
+- **Reload is not undoable**, as in the GUI, and is refused for the built-in libraries and the
+  default catalog. It goes through the same dialog-free loader as the other `libraries:` calls.
+
+### Left out, on purpose
+
+Matrix placement (two nested loops), fuzzy component search and circuit/library ordering (interface
+conveniences for a human), and jump-to-history undo (`History` already steps one entry at a time).
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the
