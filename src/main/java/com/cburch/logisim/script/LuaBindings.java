@@ -485,6 +485,12 @@ final class LuaBindings {
       circuits.setMain(a.subargs(2).checkjstring(1));
       return LuaValue.NONE;
     }));
+    methods.set("setEverywhere", bind(a -> {
+      final var rest = a.subargs(2);
+      final var kind = rest.arg(3);
+      return LuaValue.valueOf(circuits.setEverywhere(
+          rest.checkjstring(1), rest.arg(2).tojstring(), kind.isnil() ? null : kind.checkjstring()));
+    }));
     final var meta = new LuaTable();
     meta.set("__index", methods);
     return new LuaUserdata(circuits, meta);
@@ -783,6 +789,10 @@ final class LuaBindings {
     }));
     methods.set("unload", bind(a -> {
       libraries.unload(a.subargs(2).checkjstring(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("reload", bind(a -> {
+      libraries.reload(a.subargs(2).checkjstring(1));
       return LuaValue.NONE;
     }));
     final var meta = new LuaTable();

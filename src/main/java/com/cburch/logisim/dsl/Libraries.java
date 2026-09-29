@@ -176,6 +176,25 @@ public final class Libraries {
     return e.getMessage() == null ? e.toString() : e.getMessage();
   }
 
+  /** Reads a loaded library's source again and swaps the new content in, mirroring the project
+   * explorer's "Reload Library" item -- for a {@code .circ} file, a JAR or a component-library
+   * directory that changed on disk since it was loaded. Not undoable, as in the GUI. Refused for
+   * the built-in libraries and the default "My Components" catalog, which have no file to read. */
+  public void reload(String name) {
+    final var lib = find(proj.getLogisimFile(), name);
+    if (!(lib instanceof LoadedLibrary loaded)) {
+      throw new LibraryNotReloadableException(name, "it is a built-in library");
+    }
+    if (loaded.getBase() instanceof PcompCatalogLibrary) {
+      throw new LibraryNotReloadableException(name, "it is the default component catalog");
+    }
+    try {
+      LibraryManager.instance.reload(new QuietLoader(), loaded);
+    } catch (QuietLoadException e) {
+      throw new LibraryLoadFailedException(name, quietMessage(e));
+    }
+  }
+
   /** Removes a top-level library by name, refusing (with a structured reason) if anything in the
    * project still uses it. */
   public void unload(String name) {
