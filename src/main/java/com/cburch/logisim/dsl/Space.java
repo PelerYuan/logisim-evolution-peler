@@ -273,6 +273,10 @@ public final class Space {
     return !pending.isEmpty();
   }
 
+  int pendingCount() {
+    return pending.size();
+  }
+
   public void rollback() {
     pending.clear();
     idCounters.clear();

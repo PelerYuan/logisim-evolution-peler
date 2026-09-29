@@ -418,6 +418,21 @@ final class McpScriptTools implements AutoCloseable {
         LibraryInUseException, UnknownLibraryException, NotAPcompLibraryException) rather than ever
         popping a GUI dialog.
 
+      Global `analysis` (a com.cburch.logisim.dsl.Analysis): the Combinational Analysis window run
+      backwards from the circuit `space` is bound to. Inputs/outputs are its pins by label
+      (unlabeled pins get default names; a multi-bit pin gives name[i] per bit). The circuit must be
+      committed, and have at least one input and one output pin; at most 16 input bits.
+        analysis:truthTable() -> {inputs={names}, outputs={names}, rows={{inputs="010",
+          outputs="1"},...}}: rows in binary order of the inputs (first input most significant);
+          output characters are "0","1","x" (undefined) or "E" (error/oscillation).
+        analysis:expressions([notation]) -> {outputName = expression}: read structurally off the
+          gates (AnalysisFailedException with feedback loops or components it cannot express; use
+          truthTable()/minimized() then). analysis:minimized([format][, notation]) -> the same map
+          from the truth table, minimized; format "sop" (default) or "pos". notation is one of
+          "progbits" (default: ~ & | ^, ASCII, and accepted by space:synthesize), "progbools",
+          "mathematical", "logic", "altlogic", "latex".
+        analysis:exportTable(path) writes the truth table (.txt or .csv by extension);
+        analysis:exportLatex(path) writes the LaTeX document the window's Export button writes.
       Global `memory` (a com.cburch.logisim.dsl.Memory): the hex editor and the RAM/ROM popup's
       Clear / Load / Save, for a memory/rom or memory/ram component `c` (kinds "Memory/ROM",
       "Memory/RAM"; the dual-port RAM also works).

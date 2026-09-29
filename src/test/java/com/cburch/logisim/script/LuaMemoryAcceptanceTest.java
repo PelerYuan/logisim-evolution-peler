@@ -59,4 +59,18 @@ class LuaMemoryAcceptanceTest {
                         """));
     assertEquals("InvalidMemoryAccessException", ex.type());
   }
+
+  @Test
+  void analysisFromLua() {
+    final var out =
+        sandbox()
+            .eval(
+                """
+                space:synthesize({inputs = {"A", "B"}, outputs = {Y = "A & B"}})
+                local t = analysis:truthTable()
+                local e = analysis:minimized("sop")
+                return #t.rows .. ":" .. t.rows[4].outputs .. ":" .. (e.Y ~= nil and "ok" or "none")
+                """);
+    assertEquals("4:1:ok", out);
+  }
 }

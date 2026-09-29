@@ -9,6 +9,7 @@
 
 package com.cburch.logisim.script;
 
+import com.cburch.logisim.dsl.Analysis;
 import com.cburch.logisim.dsl.Appearance;
 import com.cburch.logisim.dsl.Attrs;
 import com.cburch.logisim.dsl.CheckReport;
@@ -678,6 +679,52 @@ final class LuaBindings {
     final var meta = new LuaTable();
     meta.set("__index", methods);
     return new LuaUserdata(pla, meta);
+  }
+
+  static LuaValue wrap(Analysis analysis) {
+    final var methods = new LuaTable();
+    methods.set("truthTable", bind(a -> {
+      final var table = analysis.truthTable();
+      final var t = new LuaTable();
+      t.set("inputs", toLua(table.inputs()));
+      t.set("outputs", toLua(table.outputs()));
+      final var rows = new LuaTable();
+      var i = 1;
+      for (final var r : table.rows()) {
+        final var row = new LuaTable();
+        row.set("inputs", r.inputs());
+        row.set("outputs", r.outputs());
+        rows.set(i++, row);
+      }
+      t.set("rows", rows);
+      return t;
+    }));
+    methods.set("expressions", bind(a -> {
+      final var r = a.subargs(2);
+      return mapToLua(analysis.expressions(r.arg(1).isnil() ? null : r.checkjstring(1)));
+    }));
+    methods.set("minimized", bind(a -> {
+      final var r = a.subargs(2);
+      return mapToLua(analysis.minimized(
+          r.arg(1).isnil() ? "sop" : r.checkjstring(1), r.arg(2).isnil() ? null : r.checkjstring(2)));
+    }));
+    methods.set("exportTable", bind(a -> {
+      analysis.exportTable(a.subargs(2).checkjstring(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("exportLatex", bind(a -> {
+      analysis.exportLatex(a.subargs(2).checkjstring(1));
+      return LuaValue.NONE;
+    }));
+    final var meta = new LuaTable();
+    meta.set("__index", methods);
+    return new LuaUserdata(analysis, meta);
+  }
+
+  private static LuaValue mapToLua(java.util.Map<String, String> map) {
+    final var t = new LuaTable();
+    for (final var e : map.entrySet()) t.set(e.getKey(), e.getValue());
+    return t;
   }
 
   static LuaValue wrap(Libraries libraries) {
