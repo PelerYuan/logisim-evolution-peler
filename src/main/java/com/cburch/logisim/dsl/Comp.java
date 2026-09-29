@@ -112,10 +112,16 @@ public final class Comp {
   public Comp set(String attrName, Object value) {
     final var attr = component.getAttributeSet().getAttribute(attrName);
     if (attr == null) {
-      throw new IllegalArgumentException(attrName + " is not an attribute of " + kind.key());
+      throw new UnknownAttributeException(
+          attrName, kind.key(), Placement.attributeNames(component.getAttributeSet()));
     }
     final var typed = (Attribute<Object>) attr;
-    final Object parsed = value instanceof String s ? typed.parse(s) : value;
+    final Object parsed;
+    try {
+      parsed = value instanceof String s ? typed.parse(s) : value;
+    } catch (RuntimeException e) {
+      throw Placement.invalidValue(attrName, String.valueOf(value), typed, e);
+    }
     component.getAttributeSet().setValue(typed, parsed);
     generation++;
     portCache = null;

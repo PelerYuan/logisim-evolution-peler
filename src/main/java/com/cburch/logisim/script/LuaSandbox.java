@@ -92,6 +92,7 @@ public final class LuaSandbox {
     globals.load(new TableLib());
     globals.load(new StringLib());
     globals.load(new MathLib());
+    globals.load(new org.luaj.vm2.lib.Bit32Lib());
     globals.set("package", LuaValue.NIL);
 
     LuaC.install(globals);
@@ -138,7 +139,7 @@ public final class LuaSandbox {
     try {
       final var chunk = globals.load(script, "eval");
       final var result = chunk.call();
-      return result.isnil() ? "" : result.tojstring();
+      return LuaResultFormat.format(result);
     } catch (LuaError e) {
       throw toScriptException(e);
     }
@@ -158,7 +159,7 @@ public final class LuaSandbox {
           final var next = dt.next(key);
           if (next.arg1().isnil()) break;
           key = next.arg1();
-          details.put(key.tojstring(), next.arg(2).tojstring());
+          details.put(key.tojstring(), LuaResultFormat.format(next.arg(2)));
         }
       }
       return new ScriptException(

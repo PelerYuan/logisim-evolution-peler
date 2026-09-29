@@ -54,6 +54,12 @@ public abstract class Attribute<V> {
 
   public abstract V parse(String value);
 
+  /** The accepted texts of an attribute that only takes one of a fixed set of values; empty for
+   * every other kind. */
+  public java.util.List<String> getChoices() {
+    return java.util.List.of();
+  }
+
   public String toDisplayString(V value) {
     return value == null ? "" : value.toString();
   }

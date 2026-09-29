@@ -19,6 +19,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Not part of the DSL's public surface -- see {@link com.cburch.logisim.dsl.Space#connect} and
@@ -43,9 +44,11 @@ public final class PendingNetlist {
     // into a net that already has a driver several hops away is exactly as much a conflict as
     // connecting two outputs directly, and a pairwise-only check would miss it.
     final var resultingDrivers = new LinkedHashSet<Port>();
-    if (netA != null) resultingDrivers.addAll(netA.drivers());
+    // A splitter's ends are bidirectional and carry a signal either way, so they never conflict
+    // with a real output -- only two genuine outputs on one net are a short.
+    if (netA != null) addOutputs(resultingDrivers, netA.members());
     else if (isDriver(a)) resultingDrivers.add(a);
-    if (netB != null) resultingDrivers.addAll(netB.drivers());
+    if (netB != null) addOutputs(resultingDrivers, netB.members());
     else if (isDriver(b)) resultingDrivers.add(b);
     if (resultingDrivers.size() > 1) {
       final var it = resultingDrivers.iterator();
@@ -124,6 +127,10 @@ public final class PendingNetlist {
   }
 
   private static boolean isDriver(Port p) {
-    return p.dir() == Port.Dir.OUT || p.dir() == Port.Dir.INOUT;
+    return p.dir() == Port.Dir.OUT;
+  }
+
+  private static void addOutputs(Set<Port> into, Iterable<Port> members) {
+    for (final var p : members) if (isDriver(p)) into.add(p);
   }
 }

@@ -106,6 +106,7 @@ public final class Simulation {
    * any subcircuit it contains) has no {@link Clock} component to advance. */
   public void tick(int halfCycles) {
     ensureClock();
+    settle();
     runAndAwaitPropagation(sim -> sim.tick(halfCycles));
   }
 
@@ -228,6 +229,7 @@ public final class Simulation {
    * for both input and output pins. Throws {@link UnknownPinException} if no such labeled pin
    * exists in this circuit. */
   public PinValue readPin(String label) {
+    settle();
     final var state = circuitState();
     final var comp = requirePin(label);
     final var instanceState = state.getInstanceState(comp.rawComponent());
@@ -265,9 +267,31 @@ public final class Simulation {
    * that constructed it, and a {@link CircuitState} reached this way binds that to the project's
    * real {@code SimThread} -- the only thread {@code Simulator}'s own async API ever calls it from. */
   private CircuitState circuitState() {
+    warmConnectivity(space.circuit(), new HashSet<>());
     final var state = proj.getCircuitState(space.circuit());
     proj.getSimulator().setCircuitState(state);
     return state;
+  }
+
+  /** Lets whatever the last edit changed finish propagating. A register clocked before its data
+   * input has settled (constants and adders behind it) would latch garbage on that first edge. */
+  private void settle() {
+    if (proj.getSimulator().isAutoPropagating()) runAndAwaitPropagation(Simulator::nudge);
+  }
+
+  /** A circuit edited since its wires were last analysed has its connectivity recomputed by the
+   * next reader, and the simulation thread does that by asking the event dispatch thread -- which
+   * is the thread a script runs on, and is blocked waiting for that very simulation thread. The
+   * two would wait on each other until the timeout, so the analysis is done here first, on the
+   * calling thread, where it is then cached. */
+  private static void warmConnectivity(Circuit circuit, Set<Circuit> visited) {
+    if (!visited.add(circuit)) return;
+    circuit.getWidthIncompatibilityData();
+    for (final var comp : circuit.getNonWires()) {
+      if (comp.getFactory() instanceof SubcircuitFactory sub) {
+        warmConnectivity(sub.getSubcircuit(), visited);
+      }
+    }
   }
 
   /** Replicates {@code Simulator.ensureClocks()}'s own clock-presence check (recursing into

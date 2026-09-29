@@ -66,7 +66,9 @@ public final class NetHandle {
 
   public List<Port> drivers() {
     final var out = new ArrayList<Port>();
-    for (final var p : members) if (p.dir() == Port.Dir.OUT || p.dir() == Port.Dir.INOUT) out.add(p);
+    for (final var p : members) if (p.dir() == Port.Dir.OUT) out.add(p);
+    if (!out.isEmpty()) return out;
+    for (final var p : members) if (p.dir() == Port.Dir.INOUT) out.add(p);
     return out;
   }
 

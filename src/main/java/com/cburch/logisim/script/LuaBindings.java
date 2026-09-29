@@ -245,7 +245,7 @@ final class LuaBindings {
     methods.set("ports", bind(a -> toLua(comp.ports())));
     methods.set("port", bind(a -> {
       final var rest = a.subargs(2);
-      return rest.isstring(1) ? wrap(comp.port(rest.checkjstring(1))) : wrap(comp.port(rest.checkint(1)));
+      return rest.type(1) == LuaValue.TSTRING ? wrap(comp.port(rest.checkjstring(1))) : wrap(comp.port(rest.checkint(1)));
     }));
     methods.set("inputs", bind(a -> toLua(comp.inputs())));
     methods.set("outputs", bind(a -> toLua(comp.outputs())));
@@ -304,12 +304,12 @@ final class LuaBindings {
     }));
     methods.set("rightOf", bind(a -> {
       final var rest = a.subargs(2);
-      placement.rightOf(unwrapComp(rest, 1), rest.checkint(2));
+      placement.rightOf(unwrapComp(rest, 1), rest.optint(2, 2));
       return self[0];
     }));
     methods.set("below", bind(a -> {
       final var rest = a.subargs(2);
-      placement.below(unwrapComp(rest, 1), rest.checkint(2));
+      placement.below(unwrapComp(rest, 1), rest.optint(2, 2));
       return self[0];
     }));
     methods.set("with", bind(a -> {
@@ -370,6 +370,54 @@ final class LuaBindings {
       final var key = a.subargs(2).checkjstring(1);
       return toLua(space.componentsOf(Kind.of(space, key)));
     }));
+    methods.set("kinds", bind(a -> {
+      final var rest = a.subargs(2);
+      final var filter = rest.isnil(1) ? "" : rest.checkjstring(1).toLowerCase(java.util.Locale.ROOT);
+      final var t = new LuaTable();
+      var i = 1;
+      for (final var kind : Kind.available(space)) {
+        final var text = (kind.key() + " " + kind.displayName()).toLowerCase(java.util.Locale.ROOT);
+        if (text.contains(filter)) t.set(i++, LuaValue.valueOf(kind.key()));
+      }
+      return t;
+    }));
+    methods.set("describeKind", bind(a -> {
+      final var rest = a.subargs(2);
+      final var kind = Kind.of(space, rest.checkjstring(1));
+      final var t = new LuaTable();
+      t.set("key", kind.key());
+      t.set("name", kind.displayName());
+      final var attributes = new LuaTable();
+      var i = 1;
+      for (final var info : kind.attributeInfo()) {
+        final var row = new LuaTable();
+        row.set("name", info.name());
+        row.set("type", info.type());
+        row.set("default", info.defaultValue());
+        if (!info.options().isEmpty()) row.set("options", toLua(new ArrayList<Object>(info.options())));
+        attributes.set(i++, row);
+      }
+      t.set("attributes", attributes);
+      final var ports = new LuaTable();
+      i = 1;
+      final var overrides = rest.istable(2) ? attrsFromTable((LuaTable) rest.arg(2)) : Attrs.of();
+      var ins = 0;
+      var outs = 0;
+      for (final var info : kind.portInfo(overrides)) {
+        final var row = new LuaTable();
+        row.set("index", info.index());
+        final var isIn = info.dir() != com.cburch.logisim.dsl.Port.Dir.OUT;
+        if (isIn) ins++;
+        if (info.dir() != com.cburch.logisim.dsl.Port.Dir.IN) outs++;
+        row.set("use", isIn ? "inputs()[" + ins + "]" : "outputs()[" + outs + "]");
+        row.set("dir", info.dir().toString());
+        row.set("width", info.width());
+        if (info.desc() != null) row.set("desc", info.desc());
+        ports.set(i++, row);
+      }
+      t.set("ports", ports);
+      return t;
+    }));
     methods.set("byLabel", bind(a -> {
       final var label = a.subargs(2).checkjstring(1);
       return space.byLabel(label).<LuaValue>map(LuaBindings::wrap).orElse(LuaValue.NIL);
@@ -383,6 +431,7 @@ final class LuaBindings {
       return toLua(space.near(unwrapComp(rest, 1), rest.checkint(2)));
     }));
     methods.set("nets", bind(a -> toLua(space.nets())));
+    methods.set("describe", bind(a -> LuaValue.valueOf(space.describe())));
     methods.set("check", bind(a -> wrap(space.check())));
     methods.set("place", bind(a -> {
       final var key = a.subargs(2).checkjstring(1);

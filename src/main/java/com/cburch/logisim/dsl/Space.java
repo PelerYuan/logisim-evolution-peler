@@ -102,7 +102,9 @@ public final class Space {
   public static Space of(Project proj, String circuitName) {
     final var circuit = proj.getLogisimFile().getCircuit(circuitName);
     if (circuit == null) {
-      throw new IllegalArgumentException("no circuit named \"" + circuitName + "\" in this project");
+      final var names = new ArrayList<String>();
+      for (final var c : proj.getLogisimFile().getCircuits()) names.add(c.getName());
+      throw new UnknownCircuitException(circuitName, names);
     }
     return new Space(proj, circuit);
   }
@@ -157,19 +159,60 @@ public final class Space {
     return netlist.allNets().stream().map(Net::new).collect(Collectors.toList());
   }
 
+  /** The circuit as text a reader can check at a glance: one line per component, then one per
+   * net with every port on it. Ports are written {@code id.name} when Logisim names them and
+   * {@code id.in[k]} / {@code id.out[k]} (the position in {@code inputs()} / {@code outputs()})
+   * otherwise. */
+  public String describe() {
+    final var out = new StringBuilder();
+    final var comps = allComponents().sorted(Comparator.comparing(Comp::id)).collect(Collectors.toList());
+    out.append("components (").append(comps.size()).append("):\n");
+    for (final var c : comps) {
+      out.append("  ").append(c.id()).append(' ').append(c.kind().key());
+      c.label().ifPresent(l -> out.append(" \"").append(l).append('"'));
+      out.append(" at ").append(c.origin()).append('\n');
+    }
+    final var handles = netlist.allNets();
+    out.append("nets (").append(handles.size()).append("):\n");
+    for (final var handle : handles) {
+      out.append("  ").append(handle.id()).append(" [").append(handle.width()).append("b]:");
+      for (final var p : handle.members()) out.append(' ').append(portName(p));
+      out.append('\n');
+    }
+    final var loose = new ArrayList<String>();
+    for (final var c : comps) {
+      for (final var p : c.ports()) {
+        if (p.dir() != Port.Dir.OUT && p.net().isEmpty()) loose.add(portName(p));
+      }
+    }
+    if (!loose.isEmpty()) out.append("unconnected inputs: ").append(String.join(" ", loose)).append('\n');
+    return out.toString();
+  }
+
+  private static String portName(Port p) {
+    final var owner = p.owner();
+    final var name = p.name();
+    if (name.isPresent() && !name.get().isEmpty()) return owner.id() + "." + name.get();
+    final var ins = owner.inputs().indexOf(p);
+    if (p.dir() != Port.Dir.OUT && ins >= 0) return owner.id() + ".in[" + (ins + 1) + "]";
+    return owner.id() + ".out[" + (owner.outputs().indexOf(p) + 1) + "]";
+  }
+
   public CheckReport check() {
     final var unconnected = new ArrayList<Port>();
     for (final var c : allComponents().collect(Collectors.toList())) {
       for (final var p : c.ports()) {
-        if (p.net().isEmpty()) unconnected.add(p);
+        if (p.dir() != Port.Dir.OUT && p.net().isEmpty()) unconnected.add(p);
       }
     }
     final var undriven = new ArrayList<Net>();
     final var multiplyDriven = new ArrayList<Net>();
     for (final var handle : netlist.allNets()) {
-      final var drivers = handle.drivers().size();
-      if (drivers == 0) undriven.add(new Net(handle));
-      if (drivers > 1) multiplyDriven.add(new Net(handle));
+      final var drivers = handle.drivers();
+      if (drivers.isEmpty()) undriven.add(new Net(handle));
+      if (drivers.stream().filter(p -> p.dir() == Port.Dir.OUT).count() > 1) {
+        multiplyDriven.add(new Net(handle));
+      }
     }
     return new CheckReport(unconnected, undriven, multiplyDriven, List.of());
   }

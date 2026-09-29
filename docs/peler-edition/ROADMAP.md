@@ -2136,6 +2136,32 @@ the agent could trust neither the routing nor the simulator, so it re-checked in
 - Fixture change: `McpScriptToolsTest` used to place a gate pin on an existing wire (a real short the
   old router allowed); the gate now sits one row lower.
 
+## Feature 21 — Agent-facing friction (2026-09-30)
+
+Found by driving the eval tool the way an agent does (adder, flip-flop, counter, bus splitter,
+hierarchy) and writing down every place it hesitated or misled.
+
+- **Simulation stalled for 5 s after a build in the same eval.** The script runs on the event
+  thread; the simulator thread asked that same thread for the freshly edited wires' connectivity, so
+  each waited on the other until the timeout. Connectivity is now computed on the calling thread
+  before the simulator is woken.
+- **A register latched garbage on its first edge**, because the constant and adder behind it had not
+  settled. `tick` and `readPin` now settle the circuit first.
+- **Results were unreadable** (`table: 0x1f3a`). Non-string results are JSON now.
+- **No way to discover kinds or attributes.** New `space:kinds([filter])`, `space:describeKind`,
+  and `space:describe()` (text netlist). Attribute and port names come with legal values and the
+  expression that reaches each port.
+- **Attribute errors were Java exceptions**; now `UnknownAttributeException` (lists the valid
+  names) and `InvalidAttributeValueException` (lists the valid values). Attribute order no longer
+  matters (a constant's value was reset by a later width change).
+- **A circuit named "Counter"** was accepted, then broke the first flip-flop placed; refused up
+  front when the name matches any built-in component.
+- **`comp:port(0)` never worked** (a number counted as a label). **A bus pin could not feed a
+  splitter** (its bidirectional ends counted as a second driver). **`rightOf` without a gap**
+  errored, and placed subcircuits a pixel off the grid. **`check()`** flagged unused outputs.
+  Placement collisions now say which cells collide and how to move; a missing circuit lists the
+  existing ones; `bit32` exists.
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the
