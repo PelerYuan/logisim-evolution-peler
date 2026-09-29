@@ -14,7 +14,9 @@ import com.cburch.logisim.dsl.Circuits;
 import com.cburch.logisim.dsl.CircuitStatistics;
 import com.cburch.logisim.dsl.History;
 import com.cburch.logisim.dsl.Libraries;
+import com.cburch.logisim.dsl.Memory;
 import com.cburch.logisim.dsl.Pcomp;
+import com.cburch.logisim.dsl.PlaTables;
 import com.cburch.logisim.dsl.Simulation;
 import com.cburch.logisim.dsl.Space;
 import com.cburch.logisim.dsl.VhdlEntities;
@@ -119,6 +121,8 @@ public final class LuaSandbox {
     globals.set("simulation", LuaBindings.wrap(Simulation.of(space)));
     globals.set("pcomp", LuaBindings.wrap(Pcomp.of(space)));
     globals.set("appearance", LuaBindings.wrap(Appearance.of(space)));
+    globals.set("memory", LuaBindings.wrap(Memory.of(space)));
+    globals.set("pla", LuaBindings.wrap(PlaTables.of(space)));
   }
 
   /** Runs {@code script} to completion and returns whatever it returns, coerced to a

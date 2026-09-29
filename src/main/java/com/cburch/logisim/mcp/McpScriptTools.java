@@ -418,6 +418,27 @@ final class McpScriptTools implements AutoCloseable {
         LibraryInUseException, UnknownLibraryException, NotAPcompLibraryException) rather than ever
         popping a GUI dialog.
 
+      Global `memory` (a com.cburch.logisim.dsl.Memory): the hex editor and the RAM/ROM popup's
+      Clear / Load / Save, for a memory/rom or memory/ram component `c` (kinds "Memory/ROM",
+      "Memory/RAM"; the dual-port RAM also works).
+        memory:info(c) -> {kind,addressBits,dataBits,words,live}; memory:read(c,addr);
+        memory:readRange(c,start,count) -> {values}; memory:write(c,addr,value);
+        memory:writeRange(c,start,{values}); memory:fill(c,start,count,value); memory:clear(c).
+        memory:dump(c) -> the whole memory as a "v2.0 raw" image (hex words, N*word repeats);
+        memory:load(c,image) replaces the whole memory from such text; memory:loadFile(c,path) /
+        memory:saveFile(c,path) do the same with a file (the GUI's other file formats are chosen
+        in a dialog and are not supported). A ROM's contents belong to the component, are saved
+        with the circuit, and each edit is one undo entry. A RAM's contents are simulation state:
+        not saved, not undoable, and a RAM must be committed before its contents can be edited.
+        Errors: InvalidMemoryAccessException (bad address, value too wide, bad image),
+        NotAMemoryException.
+      Global `pla` (a com.cburch.logisim.dsl.PlaTables): the PLA program editor for a "Gates/PLA".
+        pla:getTable(c) -> text, one row per line: input bits over 0/1/x, a space, output bits over
+        0/1 (MSB first), optional "# comment"; pla:setTable(c,text) replaces it, resizing the
+        component's input/output widths to match, one undo entry. InvalidPlaTableException on a bad
+        row, unequal widths or no rows (the GUI would pop a dialog instead).
+      Other content editors: a PLA-ROM's and a programmable generator's contents are plain string
+        attributes, set with c:set("Contents", text). SoC components' own windows are not scripted.
       Global `appearance` (a com.cburch.logisim.dsl.Appearance): the GUI's appearance editor, for
       the circuit `space` is bound to -- how the circuit is drawn when placed inside another.
         appearance:style() -> "classic"|"evolution"|"fpga"|"custom"; appearance:setStyle(name).

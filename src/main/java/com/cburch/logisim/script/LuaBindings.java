@@ -20,8 +20,10 @@ import com.cburch.logisim.dsl.DslException;
 import com.cburch.logisim.dsl.History;
 import com.cburch.logisim.dsl.Kind;
 import com.cburch.logisim.dsl.Libraries;
+import com.cburch.logisim.dsl.Memory;
 import com.cburch.logisim.dsl.Net;
 import com.cburch.logisim.dsl.Pcomp;
+import com.cburch.logisim.dsl.PlaTables;
 import com.cburch.logisim.dsl.Placement;
 import com.cburch.logisim.dsl.Port;
 import com.cburch.logisim.dsl.Simulation;
@@ -597,6 +599,85 @@ final class LuaBindings {
       out.put(key.tojstring(), v.isnumber() ? (Object) v.toint() : v.tojstring());
     }
     return out;
+  }
+
+  static LuaValue wrap(Memory memory) {
+    final var methods = new LuaTable();
+    methods.set("info", bind(a -> {
+      final var i = memory.info(unwrapComp(a.subargs(2), 1));
+      final var row = new LuaTable();
+      row.set("kind", i.kind());
+      row.set("addressBits", i.addressBits());
+      row.set("dataBits", i.dataBits());
+      row.set("words", LuaValue.valueOf((double) i.words()));
+      row.set("live", LuaValue.valueOf(i.live()));
+      return row;
+    }));
+    methods.set("read", bind(a -> {
+      final var r = a.subargs(2);
+      return LuaValue.valueOf((double) memory.read(unwrapComp(r, 1), r.checklong(2)));
+    }));
+    methods.set("readRange", bind(a -> {
+      final var r = a.subargs(2);
+      final var values = memory.readRange(unwrapComp(r, 1), r.checklong(2), r.checkint(3));
+      final var t = new LuaTable();
+      for (var i = 0; i < values.length; i++) t.set(i + 1, LuaValue.valueOf((double) values[i]));
+      return t;
+    }));
+    methods.set("write", bind(a -> {
+      final var r = a.subargs(2);
+      memory.write(unwrapComp(r, 1), r.checklong(2), r.checklong(3));
+      return LuaValue.NONE;
+    }));
+    methods.set("writeRange", bind(a -> {
+      final var r = a.subargs(2);
+      final var table = r.checktable(3);
+      final var values = new long[table.length()];
+      for (var i = 0; i < values.length; i++) values[i] = table.get(i + 1).checklong();
+      memory.writeRange(unwrapComp(r, 1), r.checklong(2), values);
+      return LuaValue.NONE;
+    }));
+    methods.set("fill", bind(a -> {
+      final var r = a.subargs(2);
+      memory.fill(unwrapComp(r, 1), r.checklong(2), r.checkint(3), r.checklong(4));
+      return LuaValue.NONE;
+    }));
+    methods.set("clear", bind(a -> {
+      memory.clear(unwrapComp(a.subargs(2), 1));
+      return LuaValue.NONE;
+    }));
+    methods.set("dump", bind(a -> LuaValue.valueOf(memory.dump(unwrapComp(a.subargs(2), 1)))));
+    methods.set("load", bind(a -> {
+      final var r = a.subargs(2);
+      memory.load(unwrapComp(r, 1), r.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    methods.set("loadFile", bind(a -> {
+      final var r = a.subargs(2);
+      memory.loadFile(unwrapComp(r, 1), r.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    methods.set("saveFile", bind(a -> {
+      final var r = a.subargs(2);
+      memory.saveFile(unwrapComp(r, 1), r.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    final var meta = new LuaTable();
+    meta.set("__index", methods);
+    return new LuaUserdata(memory, meta);
+  }
+
+  static LuaValue wrap(PlaTables pla) {
+    final var methods = new LuaTable();
+    methods.set("getTable", bind(a -> LuaValue.valueOf(pla.getTable(unwrapComp(a.subargs(2), 1)))));
+    methods.set("setTable", bind(a -> {
+      final var r = a.subargs(2);
+      pla.setTable(unwrapComp(r, 1), r.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    final var meta = new LuaTable();
+    meta.set("__index", methods);
+    return new LuaUserdata(pla, meta);
   }
 
   static LuaValue wrap(Libraries libraries) {
