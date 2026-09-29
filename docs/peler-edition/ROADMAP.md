@@ -2016,6 +2016,107 @@ instance after a replace to notice the collapse.
   `eval` call) -- exactly the same "possibly-fresh script session" situation `Space.byId`'s own
   javadoc already describes for ids.
 
+## Feature 18 — GUI/MCP parity, tier A (2026-09-29)
+
+The maintainer's standing aim is that anything a GUI user can do, a script can do through the
+embedded MCP server ("用户能做的通过mcp应该都可以做"). An audit of GUI versus `eval` found seven
+gaps a script could not close at all; this feature closes them. Each is a new DSL class in
+`com.cburch.logisim.dsl` (Swing-free in signature, no dialogs), a hand-written Lua binding in
+`script/LuaBindings.java`, a global in `script/LuaSandbox.java`, documentation in
+`McpScriptTools.EVAL_DESCRIPTION` (the only API reference an AI client sees), and an acceptance
+test at both the Java and Lua level.
+
+| Gap | DSL | Lua global / method |
+| --- | --- | --- |
+| Move / delete an already-placed component | `Space#move`, `Space#remove` (committed branch) | `space:move`, `space:remove` |
+| VHDL entity source and co-simulation | `VhdlEntities#getSource/setSource/ports/exportFile`, `Simulation#*VhdlSimulation*` | `vhdlEntities:*`, `simulation:*` |
+| Appearance editor | `Appearance` | `appearance:*` |
+| ROM/RAM contents, PLA table | `Memory`, `PlaTables` | `memory:*`, `pla:*` |
+| Combinational Analysis, run from a circuit | `Analysis` | `analysis:*` |
+| Test window, Log window | `TestVectors`, `Simulation#trace` | `tests:*`, `simulation:trace` |
+
+### Design decisions
+
+- **Every edit is an undo entry, made through the same action the GUI dispatches.** Appearance edits
+  go through `CanvasActionAdapter` and the `draw.actions.Model*Action` classes; a shape edit also
+  switches the circuit to the `custom` style in the same entry, because an edit that cannot be seen
+  is a trap. `resetDefault`/`loadLogisimDefault` are undoable here although the GUI's toolbar
+  buttons are not.
+- **Refuse rather than pop a dialog.** Anything the GUI answers with a modal dialog is either
+  validated first or refused with a structured `DslException`: VHDL source that does not parse,
+  enabling the co-simulator without QuestaSim, a PLA row that does not parse (the GUI's own
+  `PlaTable.parse` shows a dialog), a hex image that does not parse. An unattended dialog in the
+  GUI JVM blocks the whole MCP call.
+- **A custom component's circuit refuses appearance edits** (`AppearanceLockedException`), mirroring
+  `PcompLock.blocksAppearanceEditOf`, which the appearance editor itself consults.
+- **Memory edits are in place.** ROM contents are an attribute, but replacing the `MemContents` object
+  leaves the component's `MemListener` and its cached `MemState` looking at the old one. The undo
+  action copies a snapshot back into the same object. RAM contents are simulation state, reached
+  through the project's `CircuitState`, so they are not saved and not undoable; a RAM must be
+  committed first.
+- **Analysis uses a private model and never opens the window.** The circuit must be committed, and a
+  script may analyze at most 16 input bits (the GUI allows 20) because it means 2^n circuit
+  evaluations on the calling thread. Expression output defaults to `progbits` notation (ASCII,
+  `& | ^ ~`), which `space:synthesize` accepts back.
+- **Test vectors run on a private `CircuitState`**, as the Test window and the command-line runner
+  do, so the project's own simulation is untouched.
+- **`simulation:trace` is the headless Log window**, restricted to pins. The Log window's model is a
+  listener/thread system built around real-time and clock modes; sampling after N clock half-periods
+  and writing the same tab-separated file covers what a script needs.
+
+### Things that will bite whoever touches this next
+
+- **The hex decoder is lenient.** `HexFile.parseFromCircFile` reports a bad token as a warning and
+  carries on, so a script would see a silently wrong ROM. `Memory#validateImage` checks every token,
+  its width and the total length before the decoder runs. Only the native `v2.0 raw` format is
+  supported; the others are chosen through a dialog.
+- **`AppearanceLockedException` and `ComponentNotCommittedException` are checked at the DSL entry
+  points, not in the action.** A new appearance method must call `guard()` first.
+- **A `Comp` handed to `memory:`/`pla:` must still be current.** `Comp#rawComponent` is the live
+  component; after `space:move` the same `Comp` is rebound to the replacement, but a `Comp` from
+  before a `pcomp:replace` is stale (see Feature 17).
+- **Not covered**, deliberately: SoC components' own windows (VGA, PIO, bus, RISC-V, Nios II),
+  which are per-component simulators rather than content editors, and the Log window's non-pin
+  signals and real-time modes. A PLA-ROM's and a programmable generator's contents are already plain
+  string attributes reachable with `comp:set("Contents", ...)`.
+
+## Feature 19 — GUI/MCP parity, tier B (2026-09-29)
+
+Tier A closed the gaps a script could not work around at all. Tier B is the set a script could
+already reach, clumsily; only three were worth an interface, chosen by asking whether the workaround
+is merely long or actually loses something. Cut/copy/paste between circuits is the only one where the
+workaround (re-placing every component and every wire by hand) is error-prone; reload has no
+workaround; a project-wide attribute sweep loses the single undo entry.
+
+| Gap | DSL | Lua |
+| --- | --- | --- |
+| Reload Library | `Libraries#reload` | `libraries:reload(name)` |
+| Project-wide attribute sweep (the TTL chip drawing commands, generalised) | `Circuits#setEverywhere` | `circuits:setEverywhere(attr, value [, kind])` |
+| Select, copy, paste (within or between circuits) | `Space#copyRegion` | `space:copyRegion(col,row,cols,rows,dCol,dRow [, target])` |
+
+### Design decisions
+
+- **`setEverywhere` matches by attribute name, not by attribute object.** `ProjectWideAttribute`
+  (the menu's implementation) needs the `Attribute` instance; a script only has the name that
+  `comp:attrs()` prints. Each component's own attribute parses the text, so two unrelated attributes
+  that happen to share a name are each read in their own type. An unreadable value throws before
+  anything is applied; a sweep that changes nothing leaves no undo entry.
+- **`copyRegion` works on the raw circuit, not on the DSL's view of it.** The DSL cannot name
+  splitters, tunnels or probes, but a copy that dropped them would silently rewire the result, so the
+  copy takes every component and wire whose bounding box lies inside the rectangle (the rubber-band
+  rule).
+- **The offset is the caller's.** The canvas slides a paste outward until it finds free space; a
+  script asked for a specific place, so a copy that would land on a used pin, exactly on another
+  component, off the canvas, or a subcircuit inside itself is refused with a `CopyRegionException`
+  and nothing changes. The clipboard the GUI shares process-wide is not touched.
+- **Reload is not undoable**, as in the GUI, and is refused for the built-in libraries and the
+  default catalog. It goes through the same dialog-free loader as the other `libraries:` calls.
+
+### Left out, on purpose
+
+Matrix placement (two nested loops), fuzzy component search and circuit/library ordering (interface
+conveniences for a human), and jump-to-history undo (`History` already steps one entry at a time).
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the

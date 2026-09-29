@@ -12,14 +12,18 @@ package com.cburch.logisim.dsl;
 import com.cburch.logisim.circuit.Circuit;
 import com.cburch.logisim.circuit.CircuitAttributes;
 import com.cburch.logisim.circuit.CircuitMutation;
+import com.cburch.logisim.data.Attribute;
+import com.cburch.logisim.dsl.internal.KindRegistry;
 import com.cburch.logisim.file.LogisimFileActions;
 import com.cburch.logisim.fpga.designrulecheck.CorrectLabel;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.tools.Library;
+import com.cburch.logisim.tools.SetAttributeAction;
 import com.cburch.logisim.util.StringUtil;
 import com.cburch.logisim.util.SyntaxChecker;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Project-level circuit management -- create/remove/rename a circuit, set which one is main --
@@ -88,6 +92,44 @@ public final class Circuits {
 
   public void setMain(String name) {
     proj.doAction(LogisimFileActions.setMainCircuit(require(name)));
+  }
+
+  /** Sets one attribute on every component of the whole project that carries an attribute of that
+   * name -- every circuit, subcircuits included -- as a single undo entry, the scripting
+   * counterpart of the Project menu's "TTL chip drawing" commands (which are this with the
+   * attribute {@code ShowInternalStructure}). {@code value} is read the way {@link Comp#set} reads
+   * one. {@code kindKey}, when non-null, restricts the sweep to components of that one kind (a key
+   * from {@code kinds}). Components already holding the value are left alone; when none change,
+   * no undo entry is made. Returns how many components changed. */
+  public int setEverywhere(String attrName, String value, String kindKey) {
+    final var factory = kindKey == null ? null : KindRegistry.resolve(proj, kindKey).factory();
+    final var name = StringUtil.constantGetter("set " + attrName + " everywhere");
+    com.cburch.logisim.proj.Action joined = null;
+    var changed = 0;
+    for (final var circuit : proj.getLogisimFile().getCircuits()) {
+      final var perCircuit = new SetAttributeAction(circuit, name);
+      for (final var comp : circuit.getNonWires()) {
+        if (factory != null && comp.getFactory() != factory) continue;
+        final var attr = comp.getAttributeSet().getAttribute(attrName);
+        if (attr == null) continue;
+        @SuppressWarnings("unchecked")
+        final var typed = (Attribute<Object>) attr;
+        final Object parsed;
+        try {
+          parsed = typed.parse(value);
+        } catch (RuntimeException e) {
+          throw new InvalidAttributeValueException(
+              attrName, value, e.getMessage() == null ? e.toString() : e.getMessage());
+        }
+        if (Objects.equals(comp.getAttributeSet().getValue(typed), parsed)) continue;
+        perCircuit.set(comp, typed, parsed);
+        changed++;
+      }
+      if (perCircuit.isEmpty()) continue;
+      joined = joined == null ? perCircuit : joined.append(perCircuit);
+    }
+    if (joined != null) proj.doAction(joined);
+    return changed;
   }
 
   private Circuit require(String name) {
