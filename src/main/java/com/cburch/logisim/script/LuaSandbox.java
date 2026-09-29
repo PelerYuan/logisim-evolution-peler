@@ -9,6 +9,7 @@
 
 package com.cburch.logisim.script;
 
+import com.cburch.logisim.dsl.Appearance;
 import com.cburch.logisim.dsl.Circuits;
 import com.cburch.logisim.dsl.CircuitStatistics;
 import com.cburch.logisim.dsl.History;
@@ -117,6 +118,7 @@ public final class LuaSandbox {
     globals.set("history", LuaBindings.wrap(History.of(space)));
     globals.set("simulation", LuaBindings.wrap(Simulation.of(space)));
     globals.set("pcomp", LuaBindings.wrap(Pcomp.of(space)));
+    globals.set("appearance", LuaBindings.wrap(Appearance.of(space)));
   }
 
   /** Runs {@code script} to completion and returns whatever it returns, coerced to a

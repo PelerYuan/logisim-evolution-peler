@@ -9,6 +9,7 @@
 
 package com.cburch.logisim.script;
 
+import com.cburch.logisim.dsl.Appearance;
 import com.cburch.logisim.dsl.Attrs;
 import com.cburch.logisim.dsl.CheckReport;
 import com.cburch.logisim.dsl.Circuits;
@@ -483,6 +484,119 @@ final class LuaBindings {
     final var meta = new LuaTable();
     meta.set("__index", methods);
     return new LuaUserdata(circuits, meta);
+  }
+
+  static LuaValue wrap(Appearance appearance) {
+    final var methods = new LuaTable();
+    methods.set("style", bind(a -> LuaValue.valueOf(appearance.style())));
+    methods.set("setStyle", bind(a -> {
+      appearance.setStyle(a.subargs(2).checkjstring(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("list", bind(a -> {
+      final var t = new LuaTable();
+      var i = 1;
+      for (final var s : appearance.list()) {
+        final var row = new LuaTable();
+        row.set("index", s.index());
+        row.set("kind", s.kind());
+        row.set("x", s.x());
+        row.set("y", s.y());
+        row.set("width", s.width());
+        row.set("height", s.height());
+        if (s.text() != null) row.set("text", s.text());
+        if (s.pin() != null) row.set("pin", s.pin());
+        if (s.stroke() != null) {
+          row.set("stroke", s.stroke());
+          row.set("strokeWidth", s.strokeWidth());
+        }
+        if (s.fill() != null) row.set("fill", s.fill());
+        t.set(i++, row);
+      }
+      return t;
+    }));
+    methods.set("addRect", bind(a -> {
+      final var r = a.subargs(2);
+      return LuaValue.valueOf(appearance.addRect(
+          r.checkint(1), r.checkint(2), r.checkint(3), r.checkint(4), optionsFromTable(r.arg(5))));
+    }));
+    methods.set("addRoundRect", bind(a -> {
+      final var r = a.subargs(2);
+      return LuaValue.valueOf(appearance.addRoundRect(
+          r.checkint(1), r.checkint(2), r.checkint(3), r.checkint(4), r.checkint(5),
+          optionsFromTable(r.arg(6))));
+    }));
+    methods.set("addOval", bind(a -> {
+      final var r = a.subargs(2);
+      return LuaValue.valueOf(appearance.addOval(
+          r.checkint(1), r.checkint(2), r.checkint(3), r.checkint(4), optionsFromTable(r.arg(5))));
+    }));
+    methods.set("addLine", bind(a -> {
+      final var r = a.subargs(2);
+      return LuaValue.valueOf(appearance.addLine(
+          r.checkint(1), r.checkint(2), r.checkint(3), r.checkint(4), optionsFromTable(r.arg(5))));
+    }));
+    methods.set("addPoly", bind(a -> {
+      final var r = a.subargs(2);
+      final var points = new java.util.ArrayList<int[]>();
+      final var table = r.checktable(1);
+      for (var i = 1; i <= table.length(); i++) {
+        final var pt = table.get(i).checktable();
+        points.add(new int[] {pt.get(1).checkint(), pt.get(2).checkint()});
+      }
+      final var closed = r.arg(2).isnil() || r.arg(2).toboolean();
+      return LuaValue.valueOf(appearance.addPoly(points, closed, optionsFromTable(r.arg(3))));
+    }));
+    methods.set("addText", bind(a -> {
+      final var r = a.subargs(2);
+      return LuaValue.valueOf(appearance.addText(
+          r.checkint(1), r.checkint(2), r.checkjstring(3), optionsFromTable(r.arg(4))));
+    }));
+    methods.set("remove", bind(a -> {
+      appearance.remove(a.subargs(2).checkint(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("clear", bind(a -> LuaValue.valueOf(appearance.clear())));
+    methods.set("move", bind(a -> {
+      final var r = a.subargs(2);
+      appearance.move(r.checkint(1), r.checkint(2), r.checkint(3));
+      return LuaValue.NONE;
+    }));
+    methods.set("setAnchorFacing", bind(a -> {
+      appearance.setAnchorFacing(a.subargs(2).checkjstring(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("reorder", bind(a -> {
+      final var r = a.subargs(2);
+      appearance.reorder(r.checkint(1), r.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    methods.set("resetDefault", bind(a -> {
+      appearance.resetDefault();
+      return LuaValue.NONE;
+    }));
+    methods.set("loadLogisimDefault", bind(a -> {
+      appearance.loadLogisimDefault();
+      return LuaValue.NONE;
+    }));
+    final var meta = new LuaTable();
+    meta.set("__index", methods);
+    return new LuaUserdata(appearance, meta);
+  }
+
+  private static java.util.Map<String, Object> optionsFromTable(LuaValue value) {
+    final var out = new java.util.LinkedHashMap<String, Object>();
+    if (value == null || value.isnil()) return out;
+    final var table = value.checktable();
+    var key = LuaValue.NIL;
+    while (true) {
+      final var next = table.next(key);
+      key = next.arg1();
+      if (key.isnil()) break;
+      final var v = next.arg(2);
+      out.put(key.tojstring(), v.isnumber() ? (Object) v.toint() : v.tojstring());
+    }
+    return out;
   }
 
   static LuaValue wrap(Libraries libraries) {

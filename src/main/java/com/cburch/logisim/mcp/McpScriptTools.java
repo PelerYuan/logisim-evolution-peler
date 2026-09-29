@@ -418,6 +418,30 @@ final class McpScriptTools implements AutoCloseable {
         LibraryInUseException, UnknownLibraryException, NotAPcompLibraryException) rather than ever
         popping a GUI dialog.
 
+      Global `appearance` (a com.cburch.logisim.dsl.Appearance): the GUI's appearance editor, for
+      the circuit `space` is bound to -- how the circuit is drawn when placed inside another.
+        appearance:style() -> "classic"|"evolution"|"fpga"|"custom"; appearance:setStyle(name).
+        appearance:list() -> {{index,kind,x,y,width,height,text,pin,stroke,fill,strokeWidth},...}:
+          the custom shape list, bottom layer first. kind is rect/roundrect/oval/line/polygon/
+          polyline/text, or "port" (one per pin of the circuit; `pin` is the pin's label) or
+          "anchor" (the point that lands on the placed component's location). stroke/fill are
+          "#rrggbb"; fields that do not apply are absent.
+        appearance:addRect(x,y,w,h[,opts]) / addOval(x,y,w,h[,opts]) / addRoundRect(x,y,w,h,radius
+          [,opts]) / addLine(x1,y1,x2,y2[,opts]) / addPoly({{x,y},...}[,closed=true][,opts]) /
+          addText(x,y,text[,opts]) -> index of the new shape. opts is a table: stroke, fill
+          ("#rrggbb"), strokeWidth (int), size (text only). Fill applies to rect/roundrect/oval/
+          closed polygon; setting fill without stroke gives a filled shape with no outline.
+        appearance:remove(index); appearance:clear() -> count removed (keeps ports and anchor);
+          appearance:move(index,dx,dy) (also how a port or the anchor is positioned; ports and the
+          anchor cannot be removed); appearance:reorder(index,"up"|"down"|"top"|"bottom");
+          appearance:setAnchorFacing("east"|"north"|"west"|"south").
+        appearance:resetDefault(): the editor's "restore default custom appearance" (the plain box
+          with every port); appearance:loadLogisimDefault(): "clear appearance and load logisim
+          default" (the built-in symbol as editable shapes).
+        A shape edit switches the circuit to the "custom" style in the same undo entry, since an
+        edit under another style would be invisible. Each call is its own undoable action, like
+        `circuits`' methods. A custom component's circuit refuses edits (AppearanceLockedException),
+        as the editor does. Errors: UnknownAppearanceShapeException, InvalidAppearanceEditException.
       Global `pcomp` (a com.cburch.logisim.dsl.Pcomp): manages what is installed inside a component
         library -- publishing a circuit as a new reusable component, importing/deleting one, or
         replacing every placed instance of one version with another -- the counterpart to
