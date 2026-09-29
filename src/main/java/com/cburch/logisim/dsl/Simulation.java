@@ -185,6 +185,45 @@ public final class Simulation {
     proj.getVhdlSimulator().restart();
   }
 
+  /** A sampled history of labeled pins: {@code rows} has one entry per sample, each a list of one
+   * value per signal -- a decimal number, {@code "x"} when any bit is unknown, {@code "E"} on error. */
+  public record Trace(List<String> signals, List<List<String>> rows) {}
+
+  private static final int MAX_TRACE_SAMPLES = 100_000;
+
+  /** The headless counterpart of the Log window's recording: samples {@code labels} (input or
+   * output {@code wiring/pin}s) now, then after each of {@code samples - 1} further advances of
+   * {@code halfCyclesPerSample} clock half-periods. When {@code path} is not null the samples are
+   * also written there as the Log window's tab-separated file (a header of names, then one line per
+   * sample). Only pins can be traced; to record an internal signal, wire it to a labeled output
+   * pin. Throws {@link NoClockException} if more than one sample is asked for and there is no clock. */
+  public Trace trace(List<String> labels, int samples, int halfCyclesPerSample, String path) {
+    if (samples < 1 || samples > MAX_TRACE_SAMPLES || halfCyclesPerSample < 1) {
+      throw new InvalidTraceException(samples, halfCyclesPerSample, MAX_TRACE_SAMPLES);
+    }
+    for (final var label : labels) requirePin(label);
+    final var rows = new ArrayList<List<String>>();
+    for (var i = 0; i < samples; i++) {
+      if (i > 0) tick(halfCyclesPerSample);
+      final var row = new ArrayList<String>();
+      for (final var label : labels) {
+        final var v = readPin(label);
+        row.add(v.error() ? "E" : v.known() ? Long.toString(v.value()) : "x");
+      }
+      rows.add(row);
+    }
+    if (path != null) {
+      final var out = new StringBuilder(String.join("\t", labels)).append('\n');
+      for (final var row : rows) out.append(String.join("\t", row)).append('\n');
+      try {
+        java.nio.file.Files.writeString(java.nio.file.Path.of(path), out.toString());
+      } catch (java.io.IOException | RuntimeException e) {
+        throw new ExportFailedException(path, e.getMessage());
+      }
+    }
+    return new Trace(List.copyOf(labels), rows);
+  }
+
   /** Reads the current value of the {@code wiring/pin} component labeled {@code label} -- works
    * for both input and output pins. Throws {@link UnknownPinException} if no such labeled pin
    * exists in this circuit. */

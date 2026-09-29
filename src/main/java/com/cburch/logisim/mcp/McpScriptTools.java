@@ -418,6 +418,13 @@ final class McpScriptTools implements AutoCloseable {
         LibraryInUseException, UnknownLibraryException, NotAPcompLibraryException) rather than ever
         popping a GUI dialog.
 
+      Global `tests` (a com.cburch.logisim.dsl.TestVectors): the Test window. The circuit must be
+      committed. tests:run(text) / tests:runFile(path) evaluate a test vector -- the window's
+      format: a header line naming pins (a clock as <clk>), then one row of values per line, '#'
+      comments, optional <DC> / <FLOAT> entries -- on a private circuit state, leaving `simulation`
+      untouched, and return {passed, failed, failures={{row (1-based data row),
+      mismatches={{column,expected,computed,oscillating},...}},...}}. Values are binary strings.
+      InvalidTestVectorException for an unreadable vector or one that does not match the pins.
       Global `analysis` (a com.cburch.logisim.dsl.Analysis): the Combinational Analysis window run
       backwards from the circuit `space` is bound to. Inputs/outputs are its pins by label
       (unlabeled pins get default names; a multi-bit pin gives name[i] per bit). The circuit must be
@@ -601,6 +608,12 @@ final class McpScriptTools implements AutoCloseable {
           output pin instead.
         Both pin methods throw UnknownPinException (with a "did you mean" suggestion when no label
           matches at all) if `label` does not name a wiring/pin component in this circuit.
+        simulation:trace({labels}[, samples=1][, halfCyclesPerSample=2][, path]) -> {signals,
+          rows={{"0","5",...},...}}: the Log window's recording, headless. Samples the named pins now,
+          then after each further advance of halfCyclesPerSample clock half-periods (needs a clock
+          when samples > 1). Cells are decimal numbers, "x" (any bit unknown) or "E" (error). With
+          `path`, also writes the Log window's tab-separated file. Only pins can be traced: wire an
+          internal signal to a labeled output pin to record it. InvalidTraceException on bad counts.
         simulation:isVhdlSimulationAvailable(): true only if QuestaSim's path is configured in the
           application's Preferences -> Software (this cannot be set from a script).
         simulation:isVhdlSimulationEnabled() / setVhdlSimulationEnabled(bool): mirrors Simulate ->

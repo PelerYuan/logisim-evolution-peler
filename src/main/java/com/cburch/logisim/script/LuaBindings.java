@@ -30,6 +30,7 @@ import com.cburch.logisim.dsl.Port;
 import com.cburch.logisim.dsl.Simulation;
 import com.cburch.logisim.dsl.Space;
 import com.cburch.logisim.dsl.Synthesis;
+import com.cburch.logisim.dsl.TestVectors;
 import com.cburch.logisim.dsl.VhdlEntities;
 import com.cburch.logisim.dsl.WireOps;
 import java.util.ArrayList;
@@ -727,6 +728,41 @@ final class LuaBindings {
     return t;
   }
 
+  static LuaValue wrap(TestVectors tests) {
+    final var methods = new LuaTable();
+    methods.set("run", bind(a -> resultToLua(tests.run(a.subargs(2).checkjstring(1)))));
+    methods.set("runFile", bind(a -> resultToLua(tests.runFile(a.subargs(2).checkjstring(1)))));
+    final var meta = new LuaTable();
+    meta.set("__index", methods);
+    return new LuaUserdata(tests, meta);
+  }
+
+  private static LuaValue resultToLua(TestVectors.Result result) {
+    final var t = new LuaTable();
+    t.set("passed", result.passed());
+    t.set("failed", result.failed());
+    final var failures = new LuaTable();
+    var i = 1;
+    for (final var f : result.failures()) {
+      final var row = new LuaTable();
+      row.set("row", f.row());
+      final var mismatches = new LuaTable();
+      var j = 1;
+      for (final var m : f.mismatches()) {
+        final var mm = new LuaTable();
+        mm.set("column", m.column());
+        mm.set("expected", m.expected());
+        mm.set("computed", m.computed());
+        mm.set("oscillating", LuaValue.valueOf(m.oscillating()));
+        mismatches.set(j++, mm);
+      }
+      row.set("mismatches", mismatches);
+      failures.set(i++, row);
+    }
+    t.set("failures", failures);
+    return t;
+  }
+
   static LuaValue wrap(Libraries libraries) {
     final var methods = new LuaTable();
     methods.set("list", bind(a -> toLua(libraries.list())));
@@ -953,6 +989,24 @@ final class LuaBindings {
       return LuaValue.NONE;
     }));
     methods.set("readPin", bind(a -> wrap(simulation.readPin(a.subargs(2).checkjstring(1)))));
+    methods.set("trace", bind(a -> {
+      final var r = a.subargs(2);
+      final var labels = new java.util.ArrayList<String>();
+      final var table = r.checktable(1);
+      for (var k = 1; k <= table.length(); k++) labels.add(table.get(k).checkjstring());
+      final var trace = simulation.trace(
+          labels,
+          r.arg(2).isnil() ? 1 : r.checkint(2),
+          r.arg(3).isnil() ? 2 : r.checkint(3),
+          r.arg(4).isnil() ? null : r.checkjstring(4));
+      final var out = new LuaTable();
+      out.set("signals", toLua(trace.signals()));
+      final var rows = new LuaTable();
+      var n = 1;
+      for (final var row : trace.rows()) rows.set(n++, toLua(row));
+      out.set("rows", rows);
+      return out;
+    }));
     methods.set("writePin", bind(a -> {
       final var rest = a.subargs(2);
       simulation.writePin(rest.checkjstring(1), rest.checklong(2));

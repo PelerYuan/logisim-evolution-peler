@@ -73,4 +73,17 @@ class LuaMemoryAcceptanceTest {
                 """);
     assertEquals("4:1:ok", out);
   }
+
+  @Test
+  void testVectorsFromLua() {
+    final var out =
+        sandbox()
+            .eval(
+                """
+                space:synthesize({inputs = {"A", "B"}, outputs = {Y = "A & B"}})
+                local r = tests:run("A B Y\\n0 0 0\\n1 1 0\\n")
+                return r.passed .. ":" .. r.failed .. ":" .. r.failures[1].row .. ":" .. r.failures[1].mismatches[1].computed
+                """);
+    assertEquals("1:1:2:1", out);
+  }
 }
