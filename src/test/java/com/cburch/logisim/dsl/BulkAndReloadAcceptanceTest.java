@@ -147,4 +147,60 @@ class BulkAndReloadAcceptanceTest {
     assertThrows(LibraryNotReloadableException.class, () -> libraries.reload("Gates"));
     assertThrows(UnknownLibraryException.class, () -> libraries.reload("Nope"));
   }
+
+  @Test
+  void copyRegionCopiesComponentsAndWiresIntoAnotherCircuitAsOneUndoEntry() {
+    final var project = blankProject();
+    final var space = Space.of(project);
+    Circuits.of(space).create("Other");
+    final var pinKind = Kind.of(space, "wiring/pin");
+    final var andKind = Kind.of(space, "gates/and_gate");
+    final var a = space.place(pinKind).anchorAt(6, 6).place();
+    final var gate = space.place(andKind).anchorAt(16, 6).place();
+    space.connect(a.outputs().isEmpty() ? a.port(0) : a.outputs().get(0), gate.inputs().get(0));
+    space.commit("source");
+    final var outsideKind = Kind.of(space, "gates/or_gate");
+    space.place(outsideKind).anchorAt(40, 30).place();
+    space.commit("outside the region");
+
+    final var copied = space.copyRegion(0, 0, 20, 10, 0, 0, "Other");
+
+    assertEquals(2, copied.components());
+    assertTrue(copied.wires() > 0);
+    final var other = Space.of(project, "Other");
+    assertEquals(1, other.componentsOf(andKind).size());
+    assertEquals(0, other.componentsOf(outsideKind).size());
+    History.of(space).undo();
+    assertEquals(0, Space.of(project, "Other").components().size());
+  }
+
+  @Test
+  void copyRegionIntoTheSameCircuitRefusesConflictsAndKeepsTheSessionUsable() {
+    final var project = blankProject();
+    final var space = Space.of(project);
+    final var andKind = Kind.of(space, "gates/and_gate");
+    space.place(andKind).anchorAt(10, 10).place();
+    space.commit("gate");
+
+    assertEquals(
+        "conflict",
+        assertThrows(CopyRegionException.class, () -> space.copyRegion(0, 0, 30, 30, 0, 0, null))
+            .details()
+            .get("reason"));
+    assertEquals(
+        "off-canvas",
+        assertThrows(CopyRegionException.class, () -> space.copyRegion(0, 0, 30, 30, -20, 0, null))
+            .details()
+            .get("reason"));
+    assertEquals(
+        "empty",
+        assertThrows(CopyRegionException.class, () -> space.copyRegion(50, 50, 5, 5, 1, 1, null))
+            .details()
+            .get("reason"));
+    assertThrows(
+        UnknownCircuitException.class, () -> space.copyRegion(0, 0, 30, 30, 0, 40, "Nope"));
+
+    space.copyRegion(0, 0, 30, 30, 0, 40, null);
+    assertEquals(2, space.componentsOf(andKind).size());
+  }
 }

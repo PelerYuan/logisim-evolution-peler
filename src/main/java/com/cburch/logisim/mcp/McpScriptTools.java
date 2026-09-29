@@ -342,6 +342,17 @@ final class McpScriptTools implements AutoCloseable {
           to follow it, exactly like dragging it on the canvas; unconnectedPorts counts ports left
           with no wire to where they connected. Needs nothing staged, and a committed component
           (ComponentNotCommittedException otherwise). Comp objects and ids survive; Nets do not.
+        space:copyRegion(col, row, cols, rows, dCol, dRow[, targetCircuit]) -> {components, wires}:
+          select-copy-paste as one immediate, undo-logged action. Copies everything lying fully
+          inside the cols x rows cell rectangle at (col,row) -- every component, splitters/tunnels
+          included, and every wire -- shifted by (dCol,dRow) cells into targetCircuit (default: this
+          circuit). Attributes are copied, not shared; labels are kept, so copying pins into the
+          same circuit duplicates their labels. The offset is yours, not found for you: a copy that
+          would land on a used pin or exactly on another component, go off the canvas, or place a
+          circuit inside itself throws CopyRegionException (details.reason = conflict, off-canvas,
+          circular; empty when the region holds nothing) and changes nothing. Needs nothing staged.
+          Into another circuit, open that circuit with the tool's "circuit" argument on the next
+          call to see the result.
         space:wires() -> WireOps (dotAt(col,row), add(dot,dot), isOccupied(dot)) for manual wiring.
         space:check() -> {ok, unconnected, undriven, multiplyDriven}.
         space:commit(actionName) -> {placed, nets}: stages since the last commit/rollback become one
