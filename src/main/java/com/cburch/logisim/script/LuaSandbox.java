@@ -9,13 +9,18 @@
 
 package com.cburch.logisim.script;
 
+import com.cburch.logisim.dsl.Analysis;
+import com.cburch.logisim.dsl.Appearance;
 import com.cburch.logisim.dsl.Circuits;
 import com.cburch.logisim.dsl.CircuitStatistics;
 import com.cburch.logisim.dsl.History;
 import com.cburch.logisim.dsl.Libraries;
+import com.cburch.logisim.dsl.Memory;
 import com.cburch.logisim.dsl.Pcomp;
+import com.cburch.logisim.dsl.PlaTables;
 import com.cburch.logisim.dsl.Simulation;
 import com.cburch.logisim.dsl.Space;
+import com.cburch.logisim.dsl.TestVectors;
 import com.cburch.logisim.dsl.VhdlEntities;
 import org.luaj.vm2.Globals;
 import org.luaj.vm2.LuaError;
@@ -117,6 +122,11 @@ public final class LuaSandbox {
     globals.set("history", LuaBindings.wrap(History.of(space)));
     globals.set("simulation", LuaBindings.wrap(Simulation.of(space)));
     globals.set("pcomp", LuaBindings.wrap(Pcomp.of(space)));
+    globals.set("appearance", LuaBindings.wrap(Appearance.of(space)));
+    globals.set("tests", LuaBindings.wrap(TestVectors.of(space)));
+    globals.set("analysis", LuaBindings.wrap(Analysis.of(space)));
+    globals.set("memory", LuaBindings.wrap(Memory.of(space)));
+    globals.set("pla", LuaBindings.wrap(PlaTables.of(space)));
   }
 
   /** Runs {@code script} to completion and returns whatever it returns, coerced to a

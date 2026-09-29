@@ -130,6 +130,63 @@ public final class VhdlEntities {
     proj.doAction(LogisimFileActions.removeVhdl(content));
   }
 
+  /** An entity's full VHDL source text, exactly as the GUI's VHDL editor shows it. */
+  public String getSource(String name) {
+    return require(name).getContent();
+  }
+
+  /** One port of an entity: its name, direction ({@code "input"}, {@code "output"}, {@code
+   * "inout"}) and bit width. */
+  public record EntityPort(String name, String direction, int width) {}
+
+  /** The entity's ports as its current source declares them, inputs first. */
+  public List<EntityPort> ports(String name) {
+    final var out = new ArrayList<EntityPort>();
+    for (final var p : require(name).getPorts()) {
+      out.add(new EntityPort(p.getName(), p.getType(), p.getWidth().getWidth()));
+    }
+    return List.copyOf(out);
+  }
+
+  /**
+   * Replaces an entity's VHDL source, the way typing in the GUI's VHDL editor and pressing "Validate
+   * and Save" does -- as one undo-logged action. The new text must parse and must still declare an
+   * entity of the same name (use {@link #rename} to change a name); anything else is refused with a
+   * structured {@link InvalidVhdlSourceException} before the entity is touched, for the same
+   * no-dialog reason as the rest of this class. Placed instances pick up port changes exactly as
+   * they do after a GUI edit.
+   */
+  public void setSource(String name, String source) {
+    final var content = require(name);
+    final var parser = new VhdlParser(source);
+    try {
+      parser.parse();
+    } catch (VhdlParser.IllegalVhdlContentException e) {
+      final var reason = e.getMessage() == null || e.getMessage().isBlank()
+          ? "the source does not contain valid VHDL" : e.getMessage();
+      throw new InvalidVhdlSourceException(name, reason);
+    }
+    if (!parser.getName().equals(name)) {
+      throw new InvalidVhdlSourceException(
+          name, "the source declares entity \"" + parser.getName() + "\" instead");
+    }
+    if (content.getContent().equals(source)) return;
+    final var oldSource = content.getContent();
+    proj.doAction(new SetVhdlSource(content, name, oldSource, source));
+  }
+
+  /** Writes an entity's source to a {@code .vhd} file -- the GUI editor's "Save" button. */
+  public void exportFile(String name, String path) {
+    final var content = require(name);
+    try {
+      HdlFile.save(new File(path), content.getContent());
+    } catch (IOException e) {
+      final var reason = e.getMessage() == null || e.getMessage().isBlank()
+          ? "could not write file" : e.getMessage();
+      throw new ExportFailedException(path, reason);
+    }
+  }
+
   public void rename(String oldName, String newName) {
     final var content = require(oldName);
     validateNewName(newName, oldName);
@@ -187,6 +244,41 @@ public final class VhdlEntities {
       }
     }
     return dp[a.length()][b.length()];
+  }
+
+  private static final class SetVhdlSource extends Action {
+    private final VhdlContent content;
+    private final String entity;
+    private final String oldSource;
+    private final String newSource;
+
+    SetVhdlSource(VhdlContent content, String entity, String oldSource, String newSource) {
+      this.content = content;
+      this.entity = entity;
+      this.oldSource = oldSource;
+      this.newSource = newSource;
+    }
+
+    @Override
+    public void doIt(Project proj) {
+      apply(newSource);
+    }
+
+    @Override
+    public void undo(Project proj) {
+      apply(oldSource);
+    }
+
+    private void apply(String text) {
+      if (!content.setContent(text)) {
+        throw new InvalidVhdlSourceException(entity, "the entity's validation rejected the source");
+      }
+    }
+
+    @Override
+    public String getName() {
+      return "edit VHDL entity source";
+    }
   }
 
   /** See the class javadoc: makes {@link VhdlContent#setName(String)} reachable as a plain

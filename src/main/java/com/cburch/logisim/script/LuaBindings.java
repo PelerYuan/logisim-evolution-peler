@@ -9,6 +9,8 @@
 
 package com.cburch.logisim.script;
 
+import com.cburch.logisim.dsl.Analysis;
+import com.cburch.logisim.dsl.Appearance;
 import com.cburch.logisim.dsl.Attrs;
 import com.cburch.logisim.dsl.CheckReport;
 import com.cburch.logisim.dsl.Circuits;
@@ -19,13 +21,16 @@ import com.cburch.logisim.dsl.DslException;
 import com.cburch.logisim.dsl.History;
 import com.cburch.logisim.dsl.Kind;
 import com.cburch.logisim.dsl.Libraries;
+import com.cburch.logisim.dsl.Memory;
 import com.cburch.logisim.dsl.Net;
 import com.cburch.logisim.dsl.Pcomp;
+import com.cburch.logisim.dsl.PlaTables;
 import com.cburch.logisim.dsl.Placement;
 import com.cburch.logisim.dsl.Port;
 import com.cburch.logisim.dsl.Simulation;
 import com.cburch.logisim.dsl.Space;
 import com.cburch.logisim.dsl.Synthesis;
+import com.cburch.logisim.dsl.TestVectors;
 import com.cburch.logisim.dsl.VhdlEntities;
 import com.cburch.logisim.dsl.WireOps;
 import java.util.ArrayList;
@@ -393,7 +398,30 @@ final class LuaBindings {
     }));
     methods.set("remove", bind(a -> {
       space.remove(unwrapComp(a.subargs(2), 1));
+      onCommit.run();
       return LuaValue.NONE;
+    }));
+    methods.set("move", bind(a -> {
+      final var rest = a.subargs(2);
+      final var keep = rest.arg(4).isnil() ? true : rest.checkboolean(4);
+      final var moved = space.move(unwrapComp(rest, 1), rest.checkint(2), rest.checkint(3), keep);
+      onCommit.run();
+      final var t = new LuaTable();
+      t.set("unconnectedPorts", moved.unconnectedPorts());
+      return t;
+    }));
+    methods.set("copyRegion", bind(a -> {
+      final var r = a.subargs(2);
+      final var target = r.arg(7);
+      final var copied =
+          space.copyRegion(
+              r.checkint(1), r.checkint(2), r.checkint(3), r.checkint(4), r.checkint(5), r.checkint(6),
+              target.isnil() ? null : target.checkjstring());
+      onCommit.run();
+      final var t = new LuaTable();
+      t.set("components", copied.components());
+      t.set("wires", copied.wires());
+      return t;
     }));
     methods.set("disconnect", bind(a -> {
       space.disconnect(unwrapNet(a.subargs(2), 1));
@@ -470,9 +498,288 @@ final class LuaBindings {
       circuits.setMain(a.subargs(2).checkjstring(1));
       return LuaValue.NONE;
     }));
+    methods.set("setEverywhere", bind(a -> {
+      final var rest = a.subargs(2);
+      final var kind = rest.arg(3);
+      return LuaValue.valueOf(circuits.setEverywhere(
+          rest.checkjstring(1), rest.arg(2).tojstring(), kind.isnil() ? null : kind.checkjstring()));
+    }));
     final var meta = new LuaTable();
     meta.set("__index", methods);
     return new LuaUserdata(circuits, meta);
+  }
+
+  static LuaValue wrap(Appearance appearance) {
+    final var methods = new LuaTable();
+    methods.set("style", bind(a -> LuaValue.valueOf(appearance.style())));
+    methods.set("setStyle", bind(a -> {
+      appearance.setStyle(a.subargs(2).checkjstring(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("list", bind(a -> {
+      final var t = new LuaTable();
+      var i = 1;
+      for (final var s : appearance.list()) {
+        final var row = new LuaTable();
+        row.set("index", s.index());
+        row.set("kind", s.kind());
+        row.set("x", s.x());
+        row.set("y", s.y());
+        row.set("width", s.width());
+        row.set("height", s.height());
+        if (s.text() != null) row.set("text", s.text());
+        if (s.pin() != null) row.set("pin", s.pin());
+        if (s.stroke() != null) {
+          row.set("stroke", s.stroke());
+          row.set("strokeWidth", s.strokeWidth());
+        }
+        if (s.fill() != null) row.set("fill", s.fill());
+        t.set(i++, row);
+      }
+      return t;
+    }));
+    methods.set("addRect", bind(a -> {
+      final var r = a.subargs(2);
+      return LuaValue.valueOf(appearance.addRect(
+          r.checkint(1), r.checkint(2), r.checkint(3), r.checkint(4), optionsFromTable(r.arg(5))));
+    }));
+    methods.set("addRoundRect", bind(a -> {
+      final var r = a.subargs(2);
+      return LuaValue.valueOf(appearance.addRoundRect(
+          r.checkint(1), r.checkint(2), r.checkint(3), r.checkint(4), r.checkint(5),
+          optionsFromTable(r.arg(6))));
+    }));
+    methods.set("addOval", bind(a -> {
+      final var r = a.subargs(2);
+      return LuaValue.valueOf(appearance.addOval(
+          r.checkint(1), r.checkint(2), r.checkint(3), r.checkint(4), optionsFromTable(r.arg(5))));
+    }));
+    methods.set("addLine", bind(a -> {
+      final var r = a.subargs(2);
+      return LuaValue.valueOf(appearance.addLine(
+          r.checkint(1), r.checkint(2), r.checkint(3), r.checkint(4), optionsFromTable(r.arg(5))));
+    }));
+    methods.set("addPoly", bind(a -> {
+      final var r = a.subargs(2);
+      final var points = new java.util.ArrayList<int[]>();
+      final var table = r.checktable(1);
+      for (var i = 1; i <= table.length(); i++) {
+        final var pt = table.get(i).checktable();
+        points.add(new int[] {pt.get(1).checkint(), pt.get(2).checkint()});
+      }
+      final var closed = r.arg(2).isnil() || r.arg(2).toboolean();
+      return LuaValue.valueOf(appearance.addPoly(points, closed, optionsFromTable(r.arg(3))));
+    }));
+    methods.set("addText", bind(a -> {
+      final var r = a.subargs(2);
+      return LuaValue.valueOf(appearance.addText(
+          r.checkint(1), r.checkint(2), r.checkjstring(3), optionsFromTable(r.arg(4))));
+    }));
+    methods.set("remove", bind(a -> {
+      appearance.remove(a.subargs(2).checkint(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("clear", bind(a -> LuaValue.valueOf(appearance.clear())));
+    methods.set("move", bind(a -> {
+      final var r = a.subargs(2);
+      appearance.move(r.checkint(1), r.checkint(2), r.checkint(3));
+      return LuaValue.NONE;
+    }));
+    methods.set("setAnchorFacing", bind(a -> {
+      appearance.setAnchorFacing(a.subargs(2).checkjstring(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("reorder", bind(a -> {
+      final var r = a.subargs(2);
+      appearance.reorder(r.checkint(1), r.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    methods.set("resetDefault", bind(a -> {
+      appearance.resetDefault();
+      return LuaValue.NONE;
+    }));
+    methods.set("loadLogisimDefault", bind(a -> {
+      appearance.loadLogisimDefault();
+      return LuaValue.NONE;
+    }));
+    final var meta = new LuaTable();
+    meta.set("__index", methods);
+    return new LuaUserdata(appearance, meta);
+  }
+
+  private static java.util.Map<String, Object> optionsFromTable(LuaValue value) {
+    final var out = new java.util.LinkedHashMap<String, Object>();
+    if (value == null || value.isnil()) return out;
+    final var table = value.checktable();
+    var key = LuaValue.NIL;
+    while (true) {
+      final var next = table.next(key);
+      key = next.arg1();
+      if (key.isnil()) break;
+      final var v = next.arg(2);
+      out.put(key.tojstring(), v.isnumber() ? (Object) v.toint() : v.tojstring());
+    }
+    return out;
+  }
+
+  static LuaValue wrap(Memory memory) {
+    final var methods = new LuaTable();
+    methods.set("info", bind(a -> {
+      final var i = memory.info(unwrapComp(a.subargs(2), 1));
+      final var row = new LuaTable();
+      row.set("kind", i.kind());
+      row.set("addressBits", i.addressBits());
+      row.set("dataBits", i.dataBits());
+      row.set("words", LuaValue.valueOf((double) i.words()));
+      row.set("live", LuaValue.valueOf(i.live()));
+      return row;
+    }));
+    methods.set("read", bind(a -> {
+      final var r = a.subargs(2);
+      return LuaValue.valueOf((double) memory.read(unwrapComp(r, 1), r.checklong(2)));
+    }));
+    methods.set("readRange", bind(a -> {
+      final var r = a.subargs(2);
+      final var values = memory.readRange(unwrapComp(r, 1), r.checklong(2), r.checkint(3));
+      final var t = new LuaTable();
+      for (var i = 0; i < values.length; i++) t.set(i + 1, LuaValue.valueOf((double) values[i]));
+      return t;
+    }));
+    methods.set("write", bind(a -> {
+      final var r = a.subargs(2);
+      memory.write(unwrapComp(r, 1), r.checklong(2), r.checklong(3));
+      return LuaValue.NONE;
+    }));
+    methods.set("writeRange", bind(a -> {
+      final var r = a.subargs(2);
+      final var table = r.checktable(3);
+      final var values = new long[table.length()];
+      for (var i = 0; i < values.length; i++) values[i] = table.get(i + 1).checklong();
+      memory.writeRange(unwrapComp(r, 1), r.checklong(2), values);
+      return LuaValue.NONE;
+    }));
+    methods.set("fill", bind(a -> {
+      final var r = a.subargs(2);
+      memory.fill(unwrapComp(r, 1), r.checklong(2), r.checkint(3), r.checklong(4));
+      return LuaValue.NONE;
+    }));
+    methods.set("clear", bind(a -> {
+      memory.clear(unwrapComp(a.subargs(2), 1));
+      return LuaValue.NONE;
+    }));
+    methods.set("dump", bind(a -> LuaValue.valueOf(memory.dump(unwrapComp(a.subargs(2), 1)))));
+    methods.set("load", bind(a -> {
+      final var r = a.subargs(2);
+      memory.load(unwrapComp(r, 1), r.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    methods.set("loadFile", bind(a -> {
+      final var r = a.subargs(2);
+      memory.loadFile(unwrapComp(r, 1), r.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    methods.set("saveFile", bind(a -> {
+      final var r = a.subargs(2);
+      memory.saveFile(unwrapComp(r, 1), r.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    final var meta = new LuaTable();
+    meta.set("__index", methods);
+    return new LuaUserdata(memory, meta);
+  }
+
+  static LuaValue wrap(PlaTables pla) {
+    final var methods = new LuaTable();
+    methods.set("getTable", bind(a -> LuaValue.valueOf(pla.getTable(unwrapComp(a.subargs(2), 1)))));
+    methods.set("setTable", bind(a -> {
+      final var r = a.subargs(2);
+      pla.setTable(unwrapComp(r, 1), r.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    final var meta = new LuaTable();
+    meta.set("__index", methods);
+    return new LuaUserdata(pla, meta);
+  }
+
+  static LuaValue wrap(Analysis analysis) {
+    final var methods = new LuaTable();
+    methods.set("truthTable", bind(a -> {
+      final var table = analysis.truthTable();
+      final var t = new LuaTable();
+      t.set("inputs", toLua(table.inputs()));
+      t.set("outputs", toLua(table.outputs()));
+      final var rows = new LuaTable();
+      var i = 1;
+      for (final var r : table.rows()) {
+        final var row = new LuaTable();
+        row.set("inputs", r.inputs());
+        row.set("outputs", r.outputs());
+        rows.set(i++, row);
+      }
+      t.set("rows", rows);
+      return t;
+    }));
+    methods.set("expressions", bind(a -> {
+      final var r = a.subargs(2);
+      return mapToLua(analysis.expressions(r.arg(1).isnil() ? null : r.checkjstring(1)));
+    }));
+    methods.set("minimized", bind(a -> {
+      final var r = a.subargs(2);
+      return mapToLua(analysis.minimized(
+          r.arg(1).isnil() ? "sop" : r.checkjstring(1), r.arg(2).isnil() ? null : r.checkjstring(2)));
+    }));
+    methods.set("exportTable", bind(a -> {
+      analysis.exportTable(a.subargs(2).checkjstring(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("exportLatex", bind(a -> {
+      analysis.exportLatex(a.subargs(2).checkjstring(1));
+      return LuaValue.NONE;
+    }));
+    final var meta = new LuaTable();
+    meta.set("__index", methods);
+    return new LuaUserdata(analysis, meta);
+  }
+
+  private static LuaValue mapToLua(java.util.Map<String, String> map) {
+    final var t = new LuaTable();
+    for (final var e : map.entrySet()) t.set(e.getKey(), e.getValue());
+    return t;
+  }
+
+  static LuaValue wrap(TestVectors tests) {
+    final var methods = new LuaTable();
+    methods.set("run", bind(a -> resultToLua(tests.run(a.subargs(2).checkjstring(1)))));
+    methods.set("runFile", bind(a -> resultToLua(tests.runFile(a.subargs(2).checkjstring(1)))));
+    final var meta = new LuaTable();
+    meta.set("__index", methods);
+    return new LuaUserdata(tests, meta);
+  }
+
+  private static LuaValue resultToLua(TestVectors.Result result) {
+    final var t = new LuaTable();
+    t.set("passed", result.passed());
+    t.set("failed", result.failed());
+    final var failures = new LuaTable();
+    var i = 1;
+    for (final var f : result.failures()) {
+      final var row = new LuaTable();
+      row.set("row", f.row());
+      final var mismatches = new LuaTable();
+      var j = 1;
+      for (final var m : f.mismatches()) {
+        final var mm = new LuaTable();
+        mm.set("column", m.column());
+        mm.set("expected", m.expected());
+        mm.set("computed", m.computed());
+        mm.set("oscillating", LuaValue.valueOf(m.oscillating()));
+        mismatches.set(j++, mm);
+      }
+      row.set("mismatches", mismatches);
+      failures.set(i++, row);
+    }
+    t.set("failures", failures);
+    return t;
   }
 
   static LuaValue wrap(Libraries libraries) {
@@ -495,6 +802,10 @@ final class LuaBindings {
     }));
     methods.set("unload", bind(a -> {
       libraries.unload(a.subargs(2).checkjstring(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("reload", bind(a -> {
+      libraries.reload(a.subargs(2).checkjstring(1));
       return LuaValue.NONE;
     }));
     final var meta = new LuaTable();
@@ -577,6 +888,29 @@ final class LuaBindings {
     methods.set("rename", bind(a -> {
       final var rest = a.subargs(2);
       vhdlEntities.rename(rest.checkjstring(1), rest.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    methods.set("getSource", bind(a -> LuaValue.valueOf(vhdlEntities.getSource(a.subargs(2).checkjstring(1)))));
+    methods.set("setSource", bind(a -> {
+      final var rest = a.subargs(2);
+      vhdlEntities.setSource(rest.checkjstring(1), rest.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    methods.set("ports", bind(a -> {
+      final var t = new LuaTable();
+      var i = 1;
+      for (final var p : vhdlEntities.ports(a.subargs(2).checkjstring(1))) {
+        final var row = new LuaTable();
+        row.set("name", p.name());
+        row.set("direction", p.direction());
+        row.set("width", p.width());
+        t.set(i++, row);
+      }
+      return t;
+    }));
+    methods.set("exportFile", bind(a -> {
+      final var rest = a.subargs(2);
+      vhdlEntities.exportFile(rest.checkjstring(1), rest.checkjstring(2));
       return LuaValue.NONE;
     }));
     final var meta = new LuaTable();
@@ -665,7 +999,37 @@ final class LuaBindings {
     methods.set("isOscillating", bind(a -> LuaValue.valueOf(simulation.isOscillating())));
     methods.set("isExceptionEncountered",
         bind(a -> LuaValue.valueOf(simulation.isExceptionEncountered())));
+    methods.set("isVhdlSimulationAvailable",
+        bind(a -> LuaValue.valueOf(simulation.isVhdlSimulationAvailable())));
+    methods.set("isVhdlSimulationEnabled",
+        bind(a -> LuaValue.valueOf(simulation.isVhdlSimulationEnabled())));
+    methods.set("setVhdlSimulationEnabled", bind(a -> {
+      simulation.setVhdlSimulationEnabled(a.subargs(2).checkboolean(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("generateVhdlSimulationFiles", bind(a -> {
+      simulation.generateVhdlSimulationFiles();
+      return LuaValue.NONE;
+    }));
     methods.set("readPin", bind(a -> wrap(simulation.readPin(a.subargs(2).checkjstring(1)))));
+    methods.set("trace", bind(a -> {
+      final var r = a.subargs(2);
+      final var labels = new java.util.ArrayList<String>();
+      final var table = r.checktable(1);
+      for (var k = 1; k <= table.length(); k++) labels.add(table.get(k).checkjstring());
+      final var trace = simulation.trace(
+          labels,
+          r.arg(2).isnil() ? 1 : r.checkint(2),
+          r.arg(3).isnil() ? 2 : r.checkint(3),
+          r.arg(4).isnil() ? null : r.checkjstring(4));
+      final var out = new LuaTable();
+      out.set("signals", toLua(trace.signals()));
+      final var rows = new LuaTable();
+      var n = 1;
+      for (final var row : trace.rows()) rows.set(n++, toLua(row));
+      out.set("rows", rows);
+      return out;
+    }));
     methods.set("writePin", bind(a -> {
       final var rest = a.subargs(2);
       simulation.writePin(rest.checkjstring(1), rest.checklong(2));
