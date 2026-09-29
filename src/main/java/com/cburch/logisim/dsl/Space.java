@@ -35,6 +35,7 @@ import com.cburch.logisim.proj.JoinedAction;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.std.gates.CircuitBuilder;
 import com.cburch.logisim.tools.Library;
+import com.cburch.logisim.tools.move.MoveGesture;
 import com.cburch.logisim.util.StringUtil;
 import java.io.File;
 import java.io.IOException;
@@ -184,11 +185,80 @@ public final class Space {
     return new Net(handle);
   }
 
+  /**
+   * Removes a component. A staged one is simply dropped from this session's pending set. One this
+   * circuit already holds (committed earlier, or drawn by hand) is deleted from the circuit as one
+   * immediate, undo-logged action -- exactly what selecting it and pressing Delete does, so wires
+   * that were attached to it stay behind, now ending at nothing. That immediate path needs
+   * nothing pending for the same reason {@link #tidyWires()} does: it re-derives this session's
+   * connectivity from the circuit, which would silently drop staged connections.
+   */
   public void remove(Comp c) {
+    if (existingComponents.contains(c)) {
+      removeCommitted(c);
+      return;
+    }
     pending.remove(c);
     for (final var p : c.ports()) {
       p.net().ifPresent(n -> netlist.disconnect(n.handle()));
     }
+  }
+
+  private void removeCommitted(Comp c) {
+    if (isDirty()) throw new UncommittedChangesException(pending.size());
+    final var mutation = new CircuitMutation(circuit);
+    mutation.remove(c.rawComponent());
+    proj.doAction(mutation.toAction(StringUtil.constantGetter("delete " + c.id())));
+    existingComponents.remove(c);
+    netlist.clear();
+    existingNetCounter = 0;
+    seedConnectivity(existingComponents);
+  }
+
+  /** What {@link #move} did: how many of the moved component's ports were left with no wire to
+   * where they used to connect (0 when every connection could be re-drawn). */
+  public record Moved(int unconnectedPorts) {}
+
+  /**
+   * Moves a component this circuit already holds so its anchor lands on grid position ({@code col},
+   * {@code row}) -- the same anchor {@link Comp#origin()} reports and {@code Placement#anchorAt}
+   * targets -- as one immediate, undo-logged action. When {@code keepConnections} is true the wires
+   * that were attached are re-routed to follow it, using the very same connection-preserving move
+   * the canvas performs when a user drags a selection; when false only the component moves and its
+   * old wires are left where they were.
+   *
+   * <p>Needs nothing pending, and only ever moves a committed component: a staged one has no
+   * circuit position to move from yet, so re-place it instead. Like {@link #tidyWires()} it keeps
+   * every {@link Comp} object and id, but any {@link Net} obtained before the call is stale.
+   */
+  public Moved move(Comp c, int col, int row, boolean keepConnections) {
+    if (isDirty()) throw new UncommittedChangesException(pending.size());
+    if (!existingComponents.contains(c)) throw new ComponentNotCommittedException(c);
+    final var old = c.rawComponent();
+    final var oldLoc = old.getLocation();
+    final var newLoc = Location.create(col * 10, row * 10, false);
+    final var dx = newLoc.getX() - oldLoc.getX();
+    final var dy = newLoc.getY() - oldLoc.getY();
+    if (dx == 0 && dy == 0) return new Moved(0);
+
+    final var mutation = new CircuitMutation(circuit);
+    final var copy = old.getFactory().createComponent(newLoc, old.getAttributeSet());
+    mutation.replace(old, copy);
+    var unconnected = 0;
+    if (keepConnections) {
+      final var gesture = new MoveGesture(null, circuit, List.of(old));
+      final var result = gesture.forceRequest(dx, dy);
+      if (result != null) {
+        mutation.replace(result.getReplacementMap());
+        unconnected = result.getUnconnectedLocations().size();
+      }
+    }
+    proj.doAction(mutation.toAction(StringUtil.constantGetter("move " + c.id())));
+    c.rebind(copy);
+    netlist.clear();
+    existingNetCounter = 0;
+    seedConnectivity(existingComponents);
+    return new Moved(unconnected);
   }
 
   public void disconnect(Net n) {

@@ -393,7 +393,17 @@ final class LuaBindings {
     }));
     methods.set("remove", bind(a -> {
       space.remove(unwrapComp(a.subargs(2), 1));
+      onCommit.run();
       return LuaValue.NONE;
+    }));
+    methods.set("move", bind(a -> {
+      final var rest = a.subargs(2);
+      final var keep = rest.arg(4).isnil() ? true : rest.checkboolean(4);
+      final var moved = space.move(unwrapComp(rest, 1), rest.checkint(2), rest.checkint(3), keep);
+      onCommit.run();
+      final var t = new LuaTable();
+      t.set("unconnectedPorts", moved.unconnectedPorts());
+      return t;
     }));
     methods.set("disconnect", bind(a -> {
       space.disconnect(unwrapNet(a.subargs(2), 1));

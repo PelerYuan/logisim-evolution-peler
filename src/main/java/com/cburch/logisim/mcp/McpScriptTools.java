@@ -331,7 +331,17 @@ final class McpScriptTools implements AutoCloseable {
           single call they were declared in.
         space:componentsOf(kind) -> {Comp,...}; space:components() -> {Comp,...}; space:nets() ->
           {Net,...}; space:near(comp, cells) -> {Comp,...}; space:summary() -> table.
-        space:connect(portOrNet, portOrNet) -> Net; space:disconnect(net); space:remove(comp).
+        space:connect(portOrNet, portOrNet) -> Net; space:disconnect(net).
+        space:remove(comp): drops a still-staged component, or -- for one the circuit already holds
+          (committed earlier, or hand-drawn) -- deletes it as one immediate, undo-logged action like
+          selecting it and pressing Delete: wires that ran to it stay behind, ending at nothing.
+          The immediate form needs nothing staged (errors with UncommittedChangesException).
+        space:move(comp, col, row[, keepConnections]) -> {unconnectedPorts}: moves a component the
+          circuit already holds so its anchor (comp:origin()) lands on grid (col,row), as one
+          immediate, undo-logged action. keepConnections (default true) re-routes the attached wires
+          to follow it, exactly like dragging it on the canvas; unconnectedPorts counts ports left
+          with no wire to where they connected. Needs nothing staged, and a committed component
+          (ComponentNotCommittedException otherwise). Comp objects and ids survive; Nets do not.
         space:wires() -> WireOps (dotAt(col,row), add(dot,dot), isOccupied(dot)) for manual wiring.
         space:check() -> {ok, unconnected, undriven, multiplyDriven}.
         space:commit(actionName) -> {placed, nets}: stages since the last commit/rollback become one
