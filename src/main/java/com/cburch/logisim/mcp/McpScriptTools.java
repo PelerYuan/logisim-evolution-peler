@@ -356,7 +356,10 @@ final class McpScriptTools implements AutoCloseable {
         space:wires() -> WireOps (dotAt(col,row), add(dot,dot), isOccupied(dot)) for manual wiring.
         space:check() -> {ok, unconnected, undriven, multiplyDriven}.
         space:commit(actionName) -> {placed, nets}: stages since the last commit/rollback become one
-          undo-log entry. space:rollback() discards them instead.
+          undo-log entry. space:rollback() discards them instead. Routes never touch another net's
+          wires (feedback loops such as latches are safe); if none exists it throws RoutingException
+          (give a net viaColumn/viaRow, or move a component), and a commit whose wires would join
+          two nets throws ShortCircuitException. Nothing is committed in either case.
         space:synthesize(spec) -> {placed}: generates an entire gate-level circuit from a
           truth-table-style spec in one call, as an alternative to place()/connect() -- only works on
           a still-empty circuit. spec = {inputs = {"A","B",...}, outputs = {Name = "boolean expr",
@@ -627,7 +630,8 @@ final class McpScriptTools implements AutoCloseable {
           component labeled `label`, input or output. `known` is false (value meaningless, always -1)
           for a pin with any floating bit; `error` is true for a width/conflict error state.
         simulation:writePin(label, value): drives an input pin to `value` and propagates the change;
-          mirrors clicking the GUI's poke tool. Throws PinNotWritableException if `label` names an
+          mirrors clicking the GUI's poke tool, and the outputs read afterwards are already settled
+          even behind many gates. Throws PinNotWritableException if `label` names an
           output pin instead.
         Both pin methods throw UnknownPinException (with a "did you mean" suggestion when no label
           matches at all) if `label` does not name a wiring/pin component in this circuit.

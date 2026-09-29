@@ -2117,6 +2117,25 @@ workaround; a project-wide attribute sweep loses the single undo entry.
 Matrix placement (two nested loops), fuzzy component search and circuit/library ordering (interface
 conveniences for a human), and jump-to-history undo (`History` already steps one entry at a time).
 
+## Feature 20 — Wiring and simulation safety (2026-09-30)
+
+Found by replaying an agent session that built a D-gated latch and kept "untangling" its wires:
+the agent could trust neither the routing nor the simulator, so it re-checked in circles.
+
+- **`writePin` settles.** It ended in `Simulator.step()`, which advances one gate delay and switches
+  auto-propagation off, so reads behind several gates were stale. It now nudges to stability
+  (`step` only when the caller already turned auto-propagation off).
+- **The router avoids other nets' wires.** Feedback nets (a latch's cross-coupled outputs) used to be
+  routed straight through each other's wires, silently merging them. Every route now rejects a
+  segment that would join any wire of another net, existing or manual or routed earlier in the same
+  commit, and searches wider via-columns/rows before giving up with a `RoutingException`.
+- **`commit` verifies.** `ShortCircuitException` if the wires about to be drawn would still join ports
+  of different nets; nothing is committed.
+- **The tidier verifies.** `WireTidier` keeps the existing wires when its rerouted result would join
+  nets that were separate.
+- Fixture change: `McpScriptToolsTest` used to place a gate pin on an existing wire (a real short the
+  old router allowed); the gate now sits one row lower.
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the

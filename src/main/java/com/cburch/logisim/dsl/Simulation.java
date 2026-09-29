@@ -248,7 +248,12 @@ public final class Simulation {
     final var width = Pin.FACTORY.getWidth(instance);
     Pin.FACTORY.driveInputPin(instanceState, Value.createKnown(width, value));
     instanceState.fireInvalidated();
-    runAndAwaitPropagation(Simulator::step);
+    // A nudge runs the propagator until the signals are stable, which is what the GUI does after a
+    // poke. A single step advances one gate delay, so behind more than one gate readPin would
+    // still show the old value. When the user has switched auto-propagation off, nudging is a
+    // no-op, and one step is the most the GUI would do as well.
+    final var sim = proj.getSimulator();
+    runAndAwaitPropagation(sim.isAutoPropagating() ? Simulator::nudge : Simulator::step);
   }
 
   /** Points the project's shared {@link Simulator} at this {@link Space}'s circuit -- {@link
