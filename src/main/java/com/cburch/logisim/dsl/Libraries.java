@@ -10,11 +10,18 @@
 package com.cburch.logisim.dsl;
 
 import com.cburch.logisim.file.LibraryManager;
+import com.cburch.logisim.file.LoadedLibrary;
 import com.cburch.logisim.file.LogisimFileActions;
 import com.cburch.logisim.file.Loader;
+import com.cburch.logisim.pcomp.PcompCatalog;
+import com.cburch.logisim.pcomp.PcompCatalogLibrary;
+import com.cburch.logisim.pcomp.PcompComponentLibrary;
+import com.cburch.logisim.pcomp.PcompLibraryExport;
+import com.cburch.logisim.pcomp.PcompLibraryFile;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.tools.Library;
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,6 +31,11 @@ import java.util.List;
  * docs/peler-edition/design/pcomp-libraries.md}) as a top-level library of this project, list what
  * is currently loaded, and unload one -- the counterpart to {@link Circuits} for libraries rather
  * than circuits, and like it, independent of whichever circuit {@link Space} is currently open on.
+ * {@link #createPcomp(String, String)} and {@link #exportPcomp(String, String)} additionally create
+ * a brand-new component-library directory and export one's contents as a shareable zip; everything
+ * about a library's own installed components -- publishing a circuit into one, importing, deleting,
+ * replacing a version -- lives on {@link Pcomp} instead, the same way {@link Circuits} handles
+ * circuits themselves while this class only handles which libraries are loaded.
  *
  * <p>Deliberately does not go through {@link Loader#loadLogisimLibrary(File)}, {@link
  * Loader#loadJarLibrary(File, String)}, or {@link Loader#loadPcompLibrary(File)} -- the same
@@ -111,6 +123,76 @@ public final class Libraries {
       throw new LibraryLoadFailedException(path, quietMessage(e));
     }
     return register(path, lib);
+  }
+
+  /** Creates a brand-new, empty Peler Edition component-library directory at {@code path} (writing
+   * its manifest with the given display {@code name}) and immediately loads it into this project in
+   * one undo-logged action, mirroring {@code ProjectLibraryActions.doNewPcompLibrary}. Returns the
+   * name it was loaded under (see {@link com.cburch.logisim.pcomp.PcompComponentLibrary#getName()}
+   * -- a stable internal id, not {@code name}). */
+  public String createPcomp(String path, String name) {
+    final var dir = new File(path);
+    try {
+      PcompLibraryFile.create(dir, name);
+    } catch (IOException e) {
+      throw new PcompLibraryCreateFailedException(path, causeOf(e));
+    }
+    final var quiet = new QuietLoader();
+    final Library lib;
+    try {
+      lib = LibraryManager.instance.loadPcompLibrary(quiet, dir);
+    } catch (QuietLoadException e) {
+      throw new PcompLibraryCreateFailedException(path, quietMessage(e));
+    }
+    return register(path, lib);
+  }
+
+  /** Exports a loaded component library's whole directory as a {@code .zip} someone else can hand
+   * back to {@link #loadPcomp(String)}, mirroring the Component Libraries window's "Export..."
+   * button. {@code name} is the default catalog's name ({@link
+   * com.cburch.logisim.pcomp.PcompCatalogLibrary#_ID}, "My Components") or another library's own
+   * {@code getName()} (from {@link #list()}), not its display name. */
+  public void exportPcomp(String name, String destinationZip) {
+    final var directory = pcompDirectoryOf(name);
+    try {
+      PcompLibraryExport.export(directory, new File(destinationZip));
+    } catch (IOException e) {
+      throw new PcompLibraryExportFailedException(name, causeOf(e));
+    }
+  }
+
+  private File pcompDirectoryOf(String name) {
+    for (final var lib : proj.getLogisimFile().getLibraries()) {
+      if (!lib.getName().equals(name)) continue;
+      final var base = lib instanceof LoadedLibrary loaded ? loaded.getBase() : lib;
+      if (base instanceof PcompCatalogLibrary) return PcompCatalog.directoryFile();
+      if (base instanceof PcompComponentLibrary library) return library.getDirectory();
+      throw new NotAPcompLibraryException(name);
+    }
+    throw new UnknownLibraryException(name, nearest(name));
+  }
+
+  private static String causeOf(IOException e) {
+    return e.getMessage() == null ? e.toString() : e.getMessage();
+  }
+
+  /** Reads a loaded library's source again and swaps the new content in, mirroring the project
+   * explorer's "Reload Library" item -- for a {@code .circ} file, a JAR or a component-library
+   * directory that changed on disk since it was loaded. Not undoable, as in the GUI. Refused for
+   * the built-in libraries and the default "My Components" catalog, which have no file to read. */
+  public void reload(String name) {
+    final var lib = find(proj.getLogisimFile(), name);
+    if (!(lib instanceof LoadedLibrary loaded)) {
+      throw new LibraryNotReloadableException(name, "it is a built-in library");
+    }
+    if (loaded.getBase() instanceof PcompCatalogLibrary) {
+      throw new LibraryNotReloadableException(name, "it is the default component catalog");
+    }
+    try {
+      LibraryManager.instance.reload(new QuietLoader(), loaded);
+    } catch (QuietLoadException e) {
+      throw new LibraryLoadFailedException(name, quietMessage(e));
+    }
   }
 
   /** Removes a top-level library by name, refusing (with a structured reason) if anything in the

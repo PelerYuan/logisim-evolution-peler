@@ -1900,17 +1900,222 @@ loosening of a limit Feature 15 imposed.
   `file.getLibraries()` directly, one level deep, never recursing into a library's own nested
   libraries -- so a `PcompComponentLibrary` can never be wrapped inside another `Library` without its
   components silently becoming unsavable.
-- **`KindRegistry` (the DSL/MCP-facing component resolver) does not go through a project's own
-  `getLibraries()` at all** -- it resolves built-in kinds via the loader's shared `Builtin` tree,
-  documented in its own javadoc as deliberate. This does not affect pcomp libraries directly (DSL
-  scripts do not place custom components), but it is the same "resolves via the loader, not via what
-  this project actually has loaded" shape as the old `PcompCatalog.componentOf`, and was the source of
-  a related but separate bug fixed by `Space.commit`'s `withMissingLibrariesLoaded` -- see
-  `SpaceLoadsMissingLibrariesAcceptanceTest`.
+- **`KindRegistry`'s curated `TABLE` (the DSL/MCP-facing component resolver's hand-written aliases)
+  does not go through a project's own `getLibraries()` at all** -- it resolves built-in kinds via the
+  loader's shared `Builtin` tree, documented in its own javadoc as deliberate. `mechanicalKinds`, the
+  fallback for everything `TABLE` does not name, does walk a project's own loaded libraries and does
+  reach pcomp components this way (see Feature 17) -- but only as a bare subcircuit key
+  (`"circuit/<mainCircuit>"`, since a pcomp component's tool wraps an ordinary `SubcircuitFactory`),
+  never a `"<library>/<name>"` key the way a truly external library's own components resolve. This
+  resolution path was the source of a related but separate bug fixed by `Space.commit`'s
+  `withMissingLibrariesLoaded` -- see `SpaceLoadsMissingLibrariesAcceptanceTest`.
 - **The manager window's toolbox category refresh relies on `LibraryEvent.ADD_LIBRARY`/
   `REMOVE_LIBRARY` firing.** It has no separate "refresh" button by design -- if a future change loads
   or unloads a library through some path that does not fire those events, the window's left list will
   quietly go stale.
+
+## Feature 17 — Custom components via MCP/DSL (2026-09-28)
+
+The maintainer's standing instruction for the embedded MCP server has always been that whatever a
+person can do through the GUI, an AI client should be able to do too. An audit against that bar found
+one real gap: `dsl`/`script`/`mcp` already covered circuits, libraries (load/unload), VHDL entities,
+statistics, undo/redo, and simulation, but nothing let a script publish a circuit as a reusable custom
+component, install/remove one, or replace every placed instance of one version with another --
+everything Feature 15/16's three GUI dialogs (`PcompSaveDialog`, `PcompComponentTable`,
+`PcompLibraryManagerFrame`) do. *Placing* an already-installed component from a script already worked
+by accident (see below); *authoring/managing* one did not, at all.
+
+### The new surface
+
+- **`dsl/Pcomp.java`** (new class, the counterpart to `Circuits`/`VhdlEntities` for custom
+  components): `list(libraryName)`, `saveAsComponent(circuitName, componentName, libraryName)`,
+  `importFile(libraryName, path)`, `delete(libraryName, id, version)`,
+  `replace(libraryName, id, fromVersion, toVersion)`. Each of the four mutating calls is its own
+  immediate, undo-logged action, matching every other `dsl` class's convention.
+- **`Libraries.createPcomp(path, name)`/`exportPcomp(name, destinationZip)`** (new methods on the
+  existing class): creating a brand-new component-library directory and exporting one as a zip were
+  the two library-level (not component-level) gaps, so they sit on `Libraries` rather than `Pcomp`,
+  mirroring the split the GUI itself draws between "the library list" and "this library's contents".
+- Hand-written Lua bindings (`script/LuaBindings.java`) and a new `pcomp` global
+  (`script/LuaSandbox.java`), plus a full new documentation block in
+  `mcp/McpScriptTools.java`'s `EVAL_DESCRIPTION` -- the only place an AI client ever learns the Lua
+  API surface, so a feature invisible there is a feature that does not exist as far as MCP is
+  concerned, regardless of what compiles underneath it.
+
+### `saveAsComponent` always auto-arranges
+
+`PcompSaveDialog` offers an interactive drag-to-position step for laying out a saved component's
+ports. A script has no reason to want that: `PortLayoutDraft.of(circuit)` already derives the same
+layout the dialog's own "Arrange for Me" button produces, reading each port's name from whatever
+label its pin already carries. So `Pcomp.saveAsComponent` always takes that automatic layout and
+never exposes a manual one -- one fewer thing to design a script-facing API for, not a missing
+feature.
+
+### The placement gap was documentation, not code
+
+`KindRegistry.mechanicalKinds` (the fallback resolver behind `Kind.of`/`space:place`) already walked
+a project's own loaded libraries recursively before this feature existed, so an installed custom
+component's `SubcircuitFactory` was already reachable -- but through the same `"circuit/<name>"` key
+an ordinary subcircuit gets (see the `mechanicalKinds`/`collect` javadoc and Feature 16's "Things that
+will bite" note above), *not* a `"<library>/<name>"` key the way a genuinely external library's own
+components resolve, because a pcomp component's tool is, underneath, just a wrapped
+`SubcircuitFactory` and `KindRegistry.collect` checks for that type before it ever looks at which
+library owns the tool. `<name>` there is the component's `mainCircuit` field (the version-suffixed,
+underscore-folded internal name, e.g. `Half_Adder_v1`), not its display name -- exactly the field
+`Pcomp.list()`/`saveAsComponent()` hand back for this purpose. `EVAL_DESCRIPTION` now says so
+explicitly; nothing in `KindRegistry` itself needed to change.
+
+### A pre-existing `replace()` bug this feature exposed
+
+Writing `PcompAcceptanceTest`'s replace test (place v1, call `Pcomp.replace` to swap it for v2, then
+check what is left placed) surfaced a real, previously-latent defect in `file/PcompReplacement.java`
+-- shared code the GUI's own `PcompComponentTable` "Replace..." button has always called too, not
+anything new to this feature. `PcompReplacement.replace` built each new instance's attribute set via
+the generic `LoadedLibrary.createAttributes(newFactory, oldInstance.getAttributeSet())`, which copies
+every attribute the two sides share by name -- `CircuitAttributes.NAME_ATTR` included. For an
+ordinary library reload (`LoadedLibrary`'s other caller of the same helper) that attribute already
+holds the same value on both sides, so the copy is a no-op. A pcomp version bump is different on
+purpose: `PcompMetadata.circuitNameFor` gives each version's circuit a distinct name
+(`Foo_v1`/`Foo_v2`), and `CircuitAttributes.setValue(NAME_ATTR, ...)` is not a per-instance label --
+it is `Circuit.setName` on the live circuit the attribute set is bound to (confirmed by reading
+`Circuit.setName`/`getStaticAttributes`/`CircuitAttributes.setValue`'s else-branch directly). So the
+old, generic copy silently renamed the *new* version's circuit to the *old* version's name as a side
+effect of every replace -- both versions collapsed onto one name, and `PcompComponentLibrary.getTools()`
+(which dedupes by name) then dropped whichever version lost the collision, even though
+`getComponents()` kept listing both correctly, since that list is keyed by the immutable `id`+version
+pair in each component's stored metadata rather than by live circuit name. `PcompReplacement.replace`
+now reads `newFactory.getName()` before the generic copy runs and restores it afterward, undoing just
+that one side effect; everything else the copy does (facing, label, ...) is unchanged. No prior test
+caught this because no existing `PcompReplacementTest` case queried `getTools()`/placed a second
+instance after a replace to notice the collapse.
+
+### Things that will bite whoever touches this next
+
+- **Editing a custom component's own internal circuit as a project of its own is still impossible
+  through MCP.** `McpProjectLifecycleTools`'s `open_project`/`new_project`/`save_project_as` path
+  validation requires `.pcirc`/`.circ`; a `.pcomp` file, though technically just a `LogisimFile`, is
+  rejected outright. Out of scope for this feature (it is a project-lifecycle gap, not a
+  component-authoring one) but a real, confirmed limitation for whoever eventually wants it.
+- **`Pcomp`/`Libraries.createPcomp`/`exportPcomp` each carry their own small private `Target`-style
+  resolver and `nearest`/`distance` Levenshtein helper** rather than sharing code between the two
+  classes or with `gui.pcomp.PcompLibraryTarget`. `DslPackageBoundaryTest` does not actually forbid
+  `dsl` from importing `gui.*` (only `javax.swing`, `com.sun.net`, and `com.cburch.logisim.mcp` are
+  checked) -- the separation here is a deliberate design choice, keeping small, private,
+  single-purpose helpers un-shared across unrelated key spaces, the same convention `Circuits`' and
+  `Libraries`' own javadoc already documents for their respective Levenshtein copies.
+- **`Pcomp.replace` leaves the calling script's own `Space` object stale.** It mutates the project
+  directly through `proj.doAction`, the same way `Libraries.loadLibrary`/`unloadLibrary` already do,
+  rather than through `Space`'s own `place`/`commit` bookkeeping -- so a `Space` created before the
+  call still reports the pre-replace component list afterward (`Kind.of` is unaffected, since it
+  resolves fresh from the project every call; only `Space.componentsOf`/`components`/`byId`-style
+  queries read the stale cache). `Space` deliberately does not re-run `discoverExisting()` to paper
+  over this (see its own comment on `tidyWires()`): that would resort every component by visual
+  position and hand out fresh ids, silently reassigning a caller's already-held ids to different
+  components. A script that calls `pcomp:replace(...)` and then wants to query the result in the same
+  session needs a fresh `space` (`Space.of(project)` again, or the MCP `space` global on the next
+  `eval` call) -- exactly the same "possibly-fresh script session" situation `Space.byId`'s own
+  javadoc already describes for ids.
+
+## Feature 18 — GUI/MCP parity, tier A (2026-09-29)
+
+The maintainer's standing aim is that anything a GUI user can do, a script can do through the
+embedded MCP server ("用户能做的通过mcp应该都可以做"). An audit of GUI versus `eval` found seven
+gaps a script could not close at all; this feature closes them. Each is a new DSL class in
+`com.cburch.logisim.dsl` (Swing-free in signature, no dialogs), a hand-written Lua binding in
+`script/LuaBindings.java`, a global in `script/LuaSandbox.java`, documentation in
+`McpScriptTools.EVAL_DESCRIPTION` (the only API reference an AI client sees), and an acceptance
+test at both the Java and Lua level.
+
+| Gap | DSL | Lua global / method |
+| --- | --- | --- |
+| Move / delete an already-placed component | `Space#move`, `Space#remove` (committed branch) | `space:move`, `space:remove` |
+| VHDL entity source and co-simulation | `VhdlEntities#getSource/setSource/ports/exportFile`, `Simulation#*VhdlSimulation*` | `vhdlEntities:*`, `simulation:*` |
+| Appearance editor | `Appearance` | `appearance:*` |
+| ROM/RAM contents, PLA table | `Memory`, `PlaTables` | `memory:*`, `pla:*` |
+| Combinational Analysis, run from a circuit | `Analysis` | `analysis:*` |
+| Test window, Log window | `TestVectors`, `Simulation#trace` | `tests:*`, `simulation:trace` |
+
+### Design decisions
+
+- **Every edit is an undo entry, made through the same action the GUI dispatches.** Appearance edits
+  go through `CanvasActionAdapter` and the `draw.actions.Model*Action` classes; a shape edit also
+  switches the circuit to the `custom` style in the same entry, because an edit that cannot be seen
+  is a trap. `resetDefault`/`loadLogisimDefault` are undoable here although the GUI's toolbar
+  buttons are not.
+- **Refuse rather than pop a dialog.** Anything the GUI answers with a modal dialog is either
+  validated first or refused with a structured `DslException`: VHDL source that does not parse,
+  enabling the co-simulator without QuestaSim, a PLA row that does not parse (the GUI's own
+  `PlaTable.parse` shows a dialog), a hex image that does not parse. An unattended dialog in the
+  GUI JVM blocks the whole MCP call.
+- **A custom component's circuit refuses appearance edits** (`AppearanceLockedException`), mirroring
+  `PcompLock.blocksAppearanceEditOf`, which the appearance editor itself consults.
+- **Memory edits are in place.** ROM contents are an attribute, but replacing the `MemContents` object
+  leaves the component's `MemListener` and its cached `MemState` looking at the old one. The undo
+  action copies a snapshot back into the same object. RAM contents are simulation state, reached
+  through the project's `CircuitState`, so they are not saved and not undoable; a RAM must be
+  committed first.
+- **Analysis uses a private model and never opens the window.** The circuit must be committed, and a
+  script may analyze at most 16 input bits (the GUI allows 20) because it means 2^n circuit
+  evaluations on the calling thread. Expression output defaults to `progbits` notation (ASCII,
+  `& | ^ ~`), which `space:synthesize` accepts back.
+- **Test vectors run on a private `CircuitState`**, as the Test window and the command-line runner
+  do, so the project's own simulation is untouched.
+- **`simulation:trace` is the headless Log window**, restricted to pins. The Log window's model is a
+  listener/thread system built around real-time and clock modes; sampling after N clock half-periods
+  and writing the same tab-separated file covers what a script needs.
+
+### Things that will bite whoever touches this next
+
+- **The hex decoder is lenient.** `HexFile.parseFromCircFile` reports a bad token as a warning and
+  carries on, so a script would see a silently wrong ROM. `Memory#validateImage` checks every token,
+  its width and the total length before the decoder runs. Only the native `v2.0 raw` format is
+  supported; the others are chosen through a dialog.
+- **`AppearanceLockedException` and `ComponentNotCommittedException` are checked at the DSL entry
+  points, not in the action.** A new appearance method must call `guard()` first.
+- **A `Comp` handed to `memory:`/`pla:` must still be current.** `Comp#rawComponent` is the live
+  component; after `space:move` the same `Comp` is rebound to the replacement, but a `Comp` from
+  before a `pcomp:replace` is stale (see Feature 17).
+- **Not covered**, deliberately: SoC components' own windows (VGA, PIO, bus, RISC-V, Nios II),
+  which are per-component simulators rather than content editors, and the Log window's non-pin
+  signals and real-time modes. A PLA-ROM's and a programmable generator's contents are already plain
+  string attributes reachable with `comp:set("Contents", ...)`.
+
+## Feature 19 — GUI/MCP parity, tier B (2026-09-29)
+
+Tier A closed the gaps a script could not work around at all. Tier B is the set a script could
+already reach, clumsily; only three were worth an interface, chosen by asking whether the workaround
+is merely long or actually loses something. Cut/copy/paste between circuits is the only one where the
+workaround (re-placing every component and every wire by hand) is error-prone; reload has no
+workaround; a project-wide attribute sweep loses the single undo entry.
+
+| Gap | DSL | Lua |
+| --- | --- | --- |
+| Reload Library | `Libraries#reload` | `libraries:reload(name)` |
+| Project-wide attribute sweep (the TTL chip drawing commands, generalised) | `Circuits#setEverywhere` | `circuits:setEverywhere(attr, value [, kind])` |
+| Select, copy, paste (within or between circuits) | `Space#copyRegion` | `space:copyRegion(col,row,cols,rows,dCol,dRow [, target])` |
+
+### Design decisions
+
+- **`setEverywhere` matches by attribute name, not by attribute object.** `ProjectWideAttribute`
+  (the menu's implementation) needs the `Attribute` instance; a script only has the name that
+  `comp:attrs()` prints. Each component's own attribute parses the text, so two unrelated attributes
+  that happen to share a name are each read in their own type. An unreadable value throws before
+  anything is applied; a sweep that changes nothing leaves no undo entry.
+- **`copyRegion` works on the raw circuit, not on the DSL's view of it.** The DSL cannot name
+  splitters, tunnels or probes, but a copy that dropped them would silently rewire the result, so the
+  copy takes every component and wire whose bounding box lies inside the rectangle (the rubber-band
+  rule).
+- **The offset is the caller's.** The canvas slides a paste outward until it finds free space; a
+  script asked for a specific place, so a copy that would land on a used pin, exactly on another
+  component, off the canvas, or a subcircuit inside itself is refused with a `CopyRegionException`
+  and nothing changes. The clipboard the GUI shares process-wide is not touched.
+- **Reload is not undoable**, as in the GUI, and is refused for the built-in libraries and the
+  default catalog. It goes through the same dialog-free loader as the other `libraries:` calls.
+
+### Left out, on purpose
+
+Matrix placement (two nested loops), fuzzy component search and circuit/library ordering (interface
+conveniences for a human), and jump-to-history undo (`History` already steps one entry at a time).
 
 ## Known open items
 

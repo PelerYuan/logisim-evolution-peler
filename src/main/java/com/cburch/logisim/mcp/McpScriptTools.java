@@ -320,13 +320,39 @@ final class McpScriptTools implements AutoCloseable {
           "<library>/<component>" pair Logisim itself uses internally (e.g. "Plexers/Multiplexer",
           "Memory/RAM"), or "circuit/<name>" for a subcircuit. Kind.of on a wrong or misspelled key
           throws with the nearest real keys attached, so a typo is self-correcting without a
-          separate lookup call.
+          separate lookup call. A custom component installed in any loaded component library (see
+          global `pcomp` below) is internally just a subcircuit too, so it places the same
+          "circuit/<name>" way -- but <name> there is the component's mainCircuit field from
+          pcomp:list(...), not its display name (e.g. "circuit/Half_Adder_v1" to place what
+          pcomp:list(...) shows as name "Half Adder" version 1) -- no separate placement API of its
+          own.
         space:byId(id) / space:byLabel(label) -> Comp or nil. Use these, not a saved Lua local, to
           address a component from a later eval() call: a script's locals never survive past the
           single call they were declared in.
         space:componentsOf(kind) -> {Comp,...}; space:components() -> {Comp,...}; space:nets() ->
           {Net,...}; space:near(comp, cells) -> {Comp,...}; space:summary() -> table.
-        space:connect(portOrNet, portOrNet) -> Net; space:disconnect(net); space:remove(comp).
+        space:connect(portOrNet, portOrNet) -> Net; space:disconnect(net).
+        space:remove(comp): drops a still-staged component, or -- for one the circuit already holds
+          (committed earlier, or hand-drawn) -- deletes it as one immediate, undo-logged action like
+          selecting it and pressing Delete: wires that ran to it stay behind, ending at nothing.
+          The immediate form needs nothing staged (errors with UncommittedChangesException).
+        space:move(comp, col, row[, keepConnections]) -> {unconnectedPorts}: moves a component the
+          circuit already holds so its anchor (comp:origin()) lands on grid (col,row), as one
+          immediate, undo-logged action. keepConnections (default true) re-routes the attached wires
+          to follow it, exactly like dragging it on the canvas; unconnectedPorts counts ports left
+          with no wire to where they connected. Needs nothing staged, and a committed component
+          (ComponentNotCommittedException otherwise). Comp objects and ids survive; Nets do not.
+        space:copyRegion(col, row, cols, rows, dCol, dRow[, targetCircuit]) -> {components, wires}:
+          select-copy-paste as one immediate, undo-logged action. Copies everything lying fully
+          inside the cols x rows cell rectangle at (col,row) -- every component, splitters/tunnels
+          included, and every wire -- shifted by (dCol,dRow) cells into targetCircuit (default: this
+          circuit). Attributes are copied, not shared; labels are kept, so copying pins into the
+          same circuit duplicates their labels. The offset is yours, not found for you: a copy that
+          would land on a used pin or exactly on another component, go off the canvas, or place a
+          circuit inside itself throws CopyRegionException (details.reason = conflict, off-canvas,
+          circular; empty when the region holds nothing) and changes nothing. Needs nothing staged.
+          Into another circuit, open that circuit with the tool's "circuit" argument on the next
+          call to see the result.
         space:wires() -> WireOps (dotAt(col,row), add(dot,dot), isOccupied(dot)) for manual wiring.
         space:check() -> {ok, unconnected, undriven, multiplyDriven}.
         space:commit(actionName) -> {placed, nets}: stages since the last commit/rollback become one
@@ -371,7 +397,15 @@ final class McpScriptTools implements AutoCloseable {
         circuits:list() -> {name,...} (file order); circuits:mainName() -> string or nil.
         circuits:create(name); circuits:remove(name); circuits:rename(oldName, newName);
         circuits:setMain(name) -- each is its own immediate, undo-logged action, not staged like
-        space:place()/commit(). To then work inside a circuit this call just created or renamed,
+        space:place()/commit().
+        circuits:setEverywhere(attrName, value [, kind]) -> count: sets one attribute, by the name
+          comp:attrs() shows, on every component in every circuit of the project that carries it,
+          as ONE undo entry (the Project menu's bulk commands, e.g. TTL chip drawing =
+          "ShowInternalStructure" with "true"/"false"). value is read like comp:set reads it; kind,
+          when given, is a kinds key that restricts the sweep to that one kind. Returns how many
+          components changed; already-equal ones are skipped and no undo entry is made when none
+          change. An unreadable value throws InvalidAttributeValueException before anything changes.
+        To then work inside a circuit this call just created or renamed,
         pass its name as this tool's own top-level "circuit" argument on the next call (eval,
         describe and reset all accept it) -- `space` is always bound to one specific circuit for
         the lifetime of a single eval() call and cannot be redirected mid-script.
@@ -383,15 +417,139 @@ final class McpScriptTools implements AutoCloseable {
         libraries:loadJar(path, className) -> name: loads a Library/ComponentFactory class out of
           an external JAR; className is the fully-qualified class the JAR exposes.
         libraries:loadPcomp(path) -> name: loads a Peler Edition component-library directory (one
-          created via the GUI's "New Library..."), the multi-library successor to the single
-          built-in "My Components" catalog.
+          created via the GUI's "New Library..." or libraries:createPcomp below), the multi-library
+          successor to the single built-in "My Components" catalog.
+        libraries:createPcomp(path, name) -> name: creates a brand-new, empty component-library
+          directory at path (display name `name`) and loads it in one step. Throws
+          PcompLibraryCreateFailedException on failure. Once loaded, publish components into it with
+          global `pcomp` below.
+        libraries:exportPcomp(name, destinationZip): exports a loaded component library's whole
+          directory as a .zip that someone else can hand back to loadPcomp -- name is the library's
+          own name (from list(), or "My Components" for the default one), not its display name.
+          Throws PcompLibraryExportFailedException on failure.
         libraries:unload(name): removes a top-level library, refusing with a structured reason if
           anything in the project still places a component from it.
-        All four loads/unload are their own immediate, undo-logged action, like `circuits`'
-        methods, not staged like space:place()/commit(). A name collision, an unreadable/malformed
-        file, or an unload while still in use each throw a structured exception (Duplicate
-        LibraryNameException, LibraryLoadFailedException, LibraryInUseException,
-        UnknownLibraryException) rather than ever popping a GUI dialog.
+        libraries:reload(name): reads a loaded library's file/JAR/directory again after it changed
+          on disk (not undo-logged, as in the GUI). Throws LibraryNotReloadableException for a
+          built-in library or the default "My Components" catalog, LibraryLoadFailedException if
+          the source can no longer be read.
+        loadCircuit/loadJar/loadPcomp/createPcomp/unload are each their own immediate, undo-logged
+        action, like `circuits`' methods, not staged like space:place()/commit()
+        (exportPcomp changes nothing in the project, so it is not undo-logged at all). A name
+        collision, an unreadable/malformed file, or an unload while still in use each throw a
+        structured exception (DuplicateLibraryNameException, LibraryLoadFailedException,
+        LibraryInUseException, UnknownLibraryException, NotAPcompLibraryException) rather than ever
+        popping a GUI dialog.
+
+      Global `tests` (a com.cburch.logisim.dsl.TestVectors): the Test window. The circuit must be
+      committed. tests:run(text) / tests:runFile(path) evaluate a test vector -- the window's
+      format: a header line naming pins (a clock as <clk>), then one row of values per line, '#'
+      comments, optional <DC> / <FLOAT> entries -- on a private circuit state, leaving `simulation`
+      untouched, and return {passed, failed, failures={{row (1-based data row),
+      mismatches={{column,expected,computed,oscillating},...}},...}}. Values are binary strings.
+      InvalidTestVectorException for an unreadable vector or one that does not match the pins.
+      Global `analysis` (a com.cburch.logisim.dsl.Analysis): the Combinational Analysis window run
+      backwards from the circuit `space` is bound to. Inputs/outputs are its pins by label
+      (unlabeled pins get default names; a multi-bit pin gives name[i] per bit). The circuit must be
+      committed, and have at least one input and one output pin; at most 16 input bits.
+        analysis:truthTable() -> {inputs={names}, outputs={names}, rows={{inputs="010",
+          outputs="1"},...}}: rows in binary order of the inputs (first input most significant);
+          output characters are "0","1","x" (undefined) or "E" (error/oscillation).
+        analysis:expressions([notation]) -> {outputName = expression}: read structurally off the
+          gates (AnalysisFailedException with feedback loops or components it cannot express; use
+          truthTable()/minimized() then). analysis:minimized([format][, notation]) -> the same map
+          from the truth table, minimized; format "sop" (default) or "pos". notation is one of
+          "progbits" (default: ~ & | ^, ASCII, and accepted by space:synthesize), "progbools",
+          "mathematical", "logic", "altlogic", "latex".
+        analysis:exportTable(path) writes the truth table (.txt or .csv by extension);
+        analysis:exportLatex(path) writes the LaTeX document the window's Export button writes.
+      Global `memory` (a com.cburch.logisim.dsl.Memory): the hex editor and the RAM/ROM popup's
+      Clear / Load / Save, for a memory/rom or memory/ram component `c` (kinds "Memory/ROM",
+      "Memory/RAM"; the dual-port RAM also works).
+        memory:info(c) -> {kind,addressBits,dataBits,words,live}; memory:read(c,addr);
+        memory:readRange(c,start,count) -> {values}; memory:write(c,addr,value);
+        memory:writeRange(c,start,{values}); memory:fill(c,start,count,value); memory:clear(c).
+        memory:dump(c) -> the whole memory as a "v2.0 raw" image (hex words, N*word repeats);
+        memory:load(c,image) replaces the whole memory from such text; memory:loadFile(c,path) /
+        memory:saveFile(c,path) do the same with a file (the GUI's other file formats are chosen
+        in a dialog and are not supported). A ROM's contents belong to the component, are saved
+        with the circuit, and each edit is one undo entry. A RAM's contents are simulation state:
+        not saved, not undoable, and a RAM must be committed before its contents can be edited.
+        Errors: InvalidMemoryAccessException (bad address, value too wide, bad image),
+        NotAMemoryException.
+      Global `pla` (a com.cburch.logisim.dsl.PlaTables): the PLA program editor for a "Gates/PLA".
+        pla:getTable(c) -> text, one row per line: input bits over 0/1/x, a space, output bits over
+        0/1 (MSB first), optional "# comment"; pla:setTable(c,text) replaces it, resizing the
+        component's input/output widths to match, one undo entry. InvalidPlaTableException on a bad
+        row, unequal widths or no rows (the GUI would pop a dialog instead).
+      Other content editors: a PLA-ROM's and a programmable generator's contents are plain string
+        attributes, set with c:set("Contents", text). SoC components' own windows are not scripted.
+      Global `appearance` (a com.cburch.logisim.dsl.Appearance): the GUI's appearance editor, for
+      the circuit `space` is bound to -- how the circuit is drawn when placed inside another.
+        appearance:style() -> "classic"|"evolution"|"fpga"|"custom"; appearance:setStyle(name).
+        appearance:list() -> {{index,kind,x,y,width,height,text,pin,stroke,fill,strokeWidth},...}:
+          the custom shape list, bottom layer first. kind is rect/roundrect/oval/line/polygon/
+          polyline/text, or "port" (one per pin of the circuit; `pin` is the pin's label) or
+          "anchor" (the point that lands on the placed component's location). stroke/fill are
+          "#rrggbb"; fields that do not apply are absent.
+        appearance:addRect(x,y,w,h[,opts]) / addOval(x,y,w,h[,opts]) / addRoundRect(x,y,w,h,radius
+          [,opts]) / addLine(x1,y1,x2,y2[,opts]) / addPoly({{x,y},...}[,closed=true][,opts]) /
+          addText(x,y,text[,opts]) -> index of the new shape. opts is a table: stroke, fill
+          ("#rrggbb"), strokeWidth (int), size (text only). Fill applies to rect/roundrect/oval/
+          closed polygon; setting fill without stroke gives a filled shape with no outline.
+        appearance:remove(index); appearance:clear() -> count removed (keeps ports and anchor);
+          appearance:move(index,dx,dy) (also how a port or the anchor is positioned; ports and the
+          anchor cannot be removed); appearance:reorder(index,"up"|"down"|"top"|"bottom");
+          appearance:setAnchorFacing("east"|"north"|"west"|"south").
+        appearance:resetDefault(): the editor's "restore default custom appearance" (the plain box
+          with every port); appearance:loadLogisimDefault(): "clear appearance and load logisim
+          default" (the built-in symbol as editable shapes).
+        A shape edit switches the circuit to the "custom" style in the same undo entry, since an
+        edit under another style would be invisible. Each call is its own undoable action, like
+        `circuits`' methods. A custom component's circuit refuses edits (AppearanceLockedException),
+        as the editor does. Errors: UnknownAppearanceShapeException, InvalidAppearanceEditException.
+      Global `pcomp` (a com.cburch.logisim.dsl.Pcomp): manages what is installed inside a component
+        library -- publishing a circuit as a new reusable component, importing/deleting one, or
+        replacing every placed instance of one version with another -- the counterpart to
+        `libraries` for a library's own contents rather than for the library as a whole. In every
+        method, libraryName is one of `libraries:list()`'s entries (the always-present default
+        library is named "My Components"); the library must actually be a component library, not an
+        external .circ/JAR one, or this throws NotAPcompLibraryException.
+        pcomp:list(libraryName) -> {{id, version, name, mainCircuit, locked}, ...}: every installed
+          version of every component in that library.
+        pcomp:saveAsComponent(circuitName, componentName, libraryName) -> {id, version, name,
+          mainCircuit, path, libraryName}: publishes an existing circuit as a new, first-version
+          component. The port layout is always derived automatically from the circuit's own pins --
+          each port's name comes from whatever label its pin already carries (set the ordinary way,
+          e.g. pin:setLabel("A")), and side/position are assigned the same way the GUI's own
+          "Arrange for Me" button does; there is no interactive layout step to drive from a script.
+          Throws UnknownCircuitException for an unknown circuitName; InvalidComponentNameException
+          if componentName is empty or cannot become a valid circuit name;
+          InvalidComponentLayoutException if the circuit has no pins or two pins share a label;
+          DuplicatePcompNameException if the library already has a different component answering to
+          the same underlying name; PcompSaveFailedException if writing/installing the file fails.
+        pcomp:importFile(libraryName, path) -> {id, version, name, mainCircuit, path, libraryName}:
+          copies an existing .pcomp file into the library and installs it. Throws
+          PcompImportFailedException (not a valid component file, a same-named file already present,
+          or the copy/install itself failing) or DuplicatePcompNameException (same underlying-name
+          collision as saveAsComponent).
+        pcomp:delete(libraryName, id, version): removes one installed version and deletes its file.
+          Throws UnknownPcompComponentException if no such id/version is installed, or
+          PcompComponentInUseException if this project still places an instance of it -- replace it
+          with another version first, or remove every placed instance.
+        pcomp:replace(libraryName, id, fromVersion, toVersion) -> {uses, replaced}: replaces every
+          instance of one installed version, throughout this project, with another installed version
+          of the same id -- wires are untouched. uses is how many instances were found; replaced is
+          false (nothing changed, no undo entry created) when uses is 0. Throws
+          UnknownPcompComponentException if either version is not installed. This mutates the
+          project directly, not through `space`'s own place/commit bookkeeping, so `space`'s
+          component queries (components/componentsOf/byId/...) still reflect the pre-replace state
+          for the rest of this eval call -- call pcomp:replace() near the end of a script, or query
+          the result on the next eval, where `space` is rebuilt fresh.
+        saveAsComponent/importFile/delete/replace are each their own immediate, undo-logged action,
+        like `circuits`'/`libraries`'/`vhdlEntities`' methods, not staged like space:place()/commit().
+        To create a brand-new component library to publish into, or to export one as a shareable
+        zip, use `libraries:createPcomp(path, name)` / `libraries:exportPcomp(name, destinationZip)`.
 
       Global `vhdlEntities` (a com.cburch.logisim.dsl.VhdlEntities): project-level VHDL entity
         management -- a VHDL entity is a named "black box" component backed by hand-written VHDL
@@ -407,8 +565,17 @@ final class McpScriptTools implements AutoCloseable {
         vhdlEntities:rename(oldName, newName): renames an entity, independent of whether it has any
           placed instance (the GUI only exposes renaming through a placed instance's attribute
           table).
-        create/importFile/remove/rename are each their own immediate, undo-logged action, like
-        `circuits`'/`libraries`' methods, not staged like space:place()/commit(). An invalid or
+        vhdlEntities:getSource(name) -> string: the entity's full VHDL text, as the GUI's VHDL
+          editor shows it.
+        vhdlEntities:setSource(name, text): replaces that text, like editing in the GUI editor and
+          pressing "Validate and Save". The text must parse and still declare the same entity name
+          (InvalidVhdlSourceException otherwise -- use rename() to change a name). Placed instances
+          pick up port changes as they do after a GUI edit.
+        vhdlEntities:ports(name) -> {{name, direction ("input"/"output"/"inout"), width},...}: the
+          ports the entity's current source declares.
+        vhdlEntities:exportFile(name, path): writes the source to a .vhd file (the editor's Save).
+        create/importFile/remove/rename/setSource are each their own immediate, undo-logged action,
+        like `circuits`'/`libraries`' methods, not staged like space:place()/commit(). An invalid or
         already-used name, a file that is not valid VHDL, an unknown entity name, or a remove while
         still in use each throw a structured exception (InvalidVhdlNameException, Duplicate
         VhdlNameException, VhdlImportFailedException, UnknownVhdlEntityException,
@@ -464,6 +631,20 @@ final class McpScriptTools implements AutoCloseable {
           output pin instead.
         Both pin methods throw UnknownPinException (with a "did you mean" suggestion when no label
           matches at all) if `label` does not name a wiring/pin component in this circuit.
+        simulation:trace({labels}[, samples=1][, halfCyclesPerSample=2][, path]) -> {signals,
+          rows={{"0","5",...},...}}: the Log window's recording, headless. Samples the named pins now,
+          then after each further advance of halfCyclesPerSample clock half-periods (needs a clock
+          when samples > 1). Cells are decimal numbers, "x" (any bit unknown) or "E" (error). With
+          `path`, also writes the Log window's tab-separated file. Only pins can be traced: wire an
+          internal signal to a labeled output pin to record it. InvalidTraceException on bad counts.
+        simulation:isVhdlSimulationAvailable(): true only if QuestaSim's path is configured in the
+          application's Preferences -> Software (this cannot be set from a script).
+        simulation:isVhdlSimulationEnabled() / setVhdlSimulationEnabled(bool): mirrors Simulate ->
+          VHDL Simulation Enabled. Enabling throws VhdlSimulatorUnavailableException unless
+          QuestaSim is available -- never the file-chooser dialog the GUI falls back to.
+        simulation:generateVhdlSimulationFiles(): mirrors Simulate -> Generate VHDL Simulation
+          Files (regenerates the co-simulation sources and restarts the co-simulator); throws
+          VhdlSimulatorUnavailableException while co-simulation is not enabled.
 
       Placement (returned by space:place): anchorAt(col,row) / at(col,row), rightOf(comp,gap) /
         below(comp,gap), with(attrTable) (e.g. {type="input"} or {inputs="3"}), facing(dir)

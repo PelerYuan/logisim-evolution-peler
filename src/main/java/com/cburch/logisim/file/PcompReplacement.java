@@ -8,8 +8,11 @@
 
 package com.cburch.logisim.file;
 
+import com.cburch.logisim.circuit.CircuitAttributes;
 import com.cburch.logisim.circuit.CircuitMutation;
 import com.cburch.logisim.comp.Component;
+import com.cburch.logisim.comp.ComponentFactory;
+import com.cburch.logisim.data.AttributeSet;
 import com.cburch.logisim.pcomp.PcompComponent;
 import com.cburch.logisim.proj.Action;
 import com.cburch.logisim.util.StringGetter;
@@ -64,13 +67,30 @@ public final class PcompReplacement {
         mutation.replace(
             instance,
             newFactory.createComponent(
-                instance.getLocation(),
-                LoadedLibrary.createAttributes(newFactory, instance.getAttributeSet())));
+                instance.getLocation(), attributesForReplacement(newFactory, instance)));
       }
       final var action = mutation.toAction(name);
       joined = joined == null ? action : joined.append(action);
     }
     return joined;
+  }
+
+  /**
+   * {@link LoadedLibrary#createAttributes} copies every same-named attribute from the old
+   * instance onto the new one, {@code CircuitAttributes.NAME_ATTR} included. For a plain library
+   * reload that attribute already holds the same value on both sides, so the copy is a no-op --
+   * but a pcomp version bump gives each version's circuit a distinct name on purpose, and
+   * {@code CircuitAttributes.setValue(NAME_ATTR, ...)} is not a per-instance label: it calls
+   * {@code Circuit.setName} on the shared circuit the attribute set is bound to. Copying it here
+   * would rename {@code to}'s circuit to {@code from}'s name as a side effect of the swap, which
+   * silently collapses both versions onto one name. So this reads {@code newFactory}'s own name
+   * before the copy runs and restores it afterward, undoing just that one side effect.
+   */
+  private static AttributeSet attributesForReplacement(ComponentFactory newFactory, Component instance) {
+    final var ownName = newFactory.getName();
+    final var dest = LoadedLibrary.createAttributes(newFactory, instance.getAttributeSet());
+    dest.setValue(CircuitAttributes.NAME_ATTR, ownName);
+    return dest;
   }
 
   private static List<Component> usesIn(

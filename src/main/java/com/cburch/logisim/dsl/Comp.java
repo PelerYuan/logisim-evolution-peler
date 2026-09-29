@@ -139,6 +139,11 @@ public final class Comp {
     return space;
   }
 
+  void invalidatePorts() {
+    generation++;
+    portCache = null;
+  }
+
   int generation() {
     return generation;
   }
