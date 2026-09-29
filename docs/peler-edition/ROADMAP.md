@@ -2016,6 +2016,70 @@ instance after a replace to notice the collapse.
   `eval` call) -- exactly the same "possibly-fresh script session" situation `Space.byId`'s own
   javadoc already describes for ids.
 
+## Feature 18 — GUI/MCP parity, tier A (2026-09-29)
+
+The maintainer's standing aim is that anything a GUI user can do, a script can do through the
+embedded MCP server ("用户能做的通过mcp应该都可以做"). An audit of GUI versus `eval` found seven
+gaps a script could not close at all; this feature closes them. Each is a new DSL class in
+`com.cburch.logisim.dsl` (Swing-free in signature, no dialogs), a hand-written Lua binding in
+`script/LuaBindings.java`, a global in `script/LuaSandbox.java`, documentation in
+`McpScriptTools.EVAL_DESCRIPTION` (the only API reference an AI client sees), and an acceptance
+test at both the Java and Lua level.
+
+| Gap | DSL | Lua global / method |
+| --- | --- | --- |
+| Move / delete an already-placed component | `Space#move`, `Space#remove` (committed branch) | `space:move`, `space:remove` |
+| VHDL entity source and co-simulation | `VhdlEntities#getSource/setSource/ports/exportFile`, `Simulation#*VhdlSimulation*` | `vhdlEntities:*`, `simulation:*` |
+| Appearance editor | `Appearance` | `appearance:*` |
+| ROM/RAM contents, PLA table | `Memory`, `PlaTables` | `memory:*`, `pla:*` |
+| Combinational Analysis, run from a circuit | `Analysis` | `analysis:*` |
+| Test window, Log window | `TestVectors`, `Simulation#trace` | `tests:*`, `simulation:trace` |
+
+### Design decisions
+
+- **Every edit is an undo entry, made through the same action the GUI dispatches.** Appearance edits
+  go through `CanvasActionAdapter` and the `draw.actions.Model*Action` classes; a shape edit also
+  switches the circuit to the `custom` style in the same entry, because an edit that cannot be seen
+  is a trap. `resetDefault`/`loadLogisimDefault` are undoable here although the GUI's toolbar
+  buttons are not.
+- **Refuse rather than pop a dialog.** Anything the GUI answers with a modal dialog is either
+  validated first or refused with a structured `DslException`: VHDL source that does not parse,
+  enabling the co-simulator without QuestaSim, a PLA row that does not parse (the GUI's own
+  `PlaTable.parse` shows a dialog), a hex image that does not parse. An unattended dialog in the
+  GUI JVM blocks the whole MCP call.
+- **A custom component's circuit refuses appearance edits** (`AppearanceLockedException`), mirroring
+  `PcompLock.blocksAppearanceEditOf`, which the appearance editor itself consults.
+- **Memory edits are in place.** ROM contents are an attribute, but replacing the `MemContents` object
+  leaves the component's `MemListener` and its cached `MemState` looking at the old one. The undo
+  action copies a snapshot back into the same object. RAM contents are simulation state, reached
+  through the project's `CircuitState`, so they are not saved and not undoable; a RAM must be
+  committed first.
+- **Analysis uses a private model and never opens the window.** The circuit must be committed, and a
+  script may analyze at most 16 input bits (the GUI allows 20) because it means 2^n circuit
+  evaluations on the calling thread. Expression output defaults to `progbits` notation (ASCII,
+  `& | ^ ~`), which `space:synthesize` accepts back.
+- **Test vectors run on a private `CircuitState`**, as the Test window and the command-line runner
+  do, so the project's own simulation is untouched.
+- **`simulation:trace` is the headless Log window**, restricted to pins. The Log window's model is a
+  listener/thread system built around real-time and clock modes; sampling after N clock half-periods
+  and writing the same tab-separated file covers what a script needs.
+
+### Things that will bite whoever touches this next
+
+- **The hex decoder is lenient.** `HexFile.parseFromCircFile` reports a bad token as a warning and
+  carries on, so a script would see a silently wrong ROM. `Memory#validateImage` checks every token,
+  its width and the total length before the decoder runs. Only the native `v2.0 raw` format is
+  supported; the others are chosen through a dialog.
+- **`AppearanceLockedException` and `ComponentNotCommittedException` are checked at the DSL entry
+  points, not in the action.** A new appearance method must call `guard()` first.
+- **A `Comp` handed to `memory:`/`pla:` must still be current.** `Comp#rawComponent` is the live
+  component; after `space:move` the same `Comp` is rebound to the replacement, but a `Comp` from
+  before a `pcomp:replace` is stale (see Feature 17).
+- **Not covered**, deliberately: SoC components' own windows (VGA, PIO, bus, RISC-V, Nios II),
+  which are per-component simulators rather than content editors, and the Log window's non-pin
+  signals and real-time modes. A PLA-ROM's and a programmable generator's contents are already plain
+  string attributes reachable with `comp:set("Contents", ...)`.
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the

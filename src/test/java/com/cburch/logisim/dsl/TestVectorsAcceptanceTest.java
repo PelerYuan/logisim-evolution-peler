@@ -40,7 +40,7 @@ class TestVectorsAcceptanceTest {
   }
 
   @Test
-  void aPassingVectorReportsNoFailures() {
+  void passingVectorReportsNoFailures() {
     final var result = TestVectors.of(andGate()).run("A B Y\n0 0 0\n0 1 0\n1 0 0\n1 1 1\n");
     assertEquals(4, result.passed());
     assertEquals(0, result.failed());
@@ -48,7 +48,7 @@ class TestVectorsAcceptanceTest {
   }
 
   @Test
-  void aFailingRowIsReportedWithExpectedAndComputed() {
+  void failingRowIsReportedWithExpectedAndComputed() {
     final var result = TestVectors.of(andGate()).run("A B Y\n0 0 0\n1 1 0\n");
     assertEquals(1, result.passed());
     assertEquals(1, result.failed());

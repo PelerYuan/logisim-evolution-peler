@@ -199,19 +199,19 @@ public final class Appearance {
     guard();
     final var shape = shape(index);
     final var one = List.of(shape);
-    final ModelReorderAction action =
-        switch (where) {
-          case "up" -> ModelReorderAction.createRaise(model(), one);
-          case "down" -> ModelReorderAction.createLower(model(), one);
-          case "top" -> ModelReorderAction.createRaiseTop(model(), one);
-          case "bottom" -> ModelReorderAction.createLowerBottom(model(), one);
-          default ->
-              throw new InvalidAppearanceEditException(
-                  "unknown reorder target \"" + where + "\"",
-                  Map.of("where", where),
-                  "use \"up\", \"down\", \"top\" or \"bottom\"");
-        };
+    final var action = reorderAction(where, one);
     if (action != null) run(action);
+  }
+
+  private ModelReorderAction reorderAction(String where, List<CanvasObject> one) {
+    if (where.equals("up")) return ModelReorderAction.createRaise(model(), one);
+    if (where.equals("down")) return ModelReorderAction.createLower(model(), one);
+    if (where.equals("top")) return ModelReorderAction.createRaiseTop(model(), one);
+    if (where.equals("bottom")) return ModelReorderAction.createLowerBottom(model(), one);
+    throw new InvalidAppearanceEditException(
+        "unknown reorder target \"" + where + "\"",
+        Map.of("where", where),
+        "use \"up\", \"down\", \"top\" or \"bottom\"");
   }
 
   /** The editor's "restore default custom appearance": the plain box with every pin's port. */

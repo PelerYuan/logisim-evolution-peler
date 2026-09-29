@@ -76,7 +76,7 @@ class SpaceMoveRemoveAcceptanceTest {
   }
 
   @Test
-  void aMoveIsOneUndoableAction() {
+  void moveIsOneUndoableAction() {
     final var w = pinGatePin();
     final var history = History.of(w.space());
     final var before = w.gate().origin().rawY();

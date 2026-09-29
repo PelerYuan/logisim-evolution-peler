@@ -43,7 +43,7 @@ class AppearanceAcceptanceTest {
   }
 
   @Test
-  void aCircuitWithPinsListsAPortPerPinAndAnAnchor() {
+  void circuitWithPinsListsAPortPerPinAndAnAnchor() {
     final var f = circuitWithTwoPins();
     final var shapes = f.appearance().list();
     assertEquals(2, count(shapes, "port"));
