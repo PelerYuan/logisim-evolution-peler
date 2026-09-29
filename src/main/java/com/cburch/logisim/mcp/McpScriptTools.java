@@ -475,8 +475,17 @@ final class McpScriptTools implements AutoCloseable {
         vhdlEntities:rename(oldName, newName): renames an entity, independent of whether it has any
           placed instance (the GUI only exposes renaming through a placed instance's attribute
           table).
-        create/importFile/remove/rename are each their own immediate, undo-logged action, like
-        `circuits`'/`libraries`' methods, not staged like space:place()/commit(). An invalid or
+        vhdlEntities:getSource(name) -> string: the entity's full VHDL text, as the GUI's VHDL
+          editor shows it.
+        vhdlEntities:setSource(name, text): replaces that text, like editing in the GUI editor and
+          pressing "Validate and Save". The text must parse and still declare the same entity name
+          (InvalidVhdlSourceException otherwise -- use rename() to change a name). Placed instances
+          pick up port changes as they do after a GUI edit.
+        vhdlEntities:ports(name) -> {{name, direction ("input"/"output"/"inout"), width},...}: the
+          ports the entity's current source declares.
+        vhdlEntities:exportFile(name, path): writes the source to a .vhd file (the editor's Save).
+        create/importFile/remove/rename/setSource are each their own immediate, undo-logged action,
+        like `circuits`'/`libraries`' methods, not staged like space:place()/commit(). An invalid or
         already-used name, a file that is not valid VHDL, an unknown entity name, or a remove while
         still in use each throw a structured exception (InvalidVhdlNameException, Duplicate
         VhdlNameException, VhdlImportFailedException, UnknownVhdlEntityException,
@@ -532,6 +541,14 @@ final class McpScriptTools implements AutoCloseable {
           output pin instead.
         Both pin methods throw UnknownPinException (with a "did you mean" suggestion when no label
           matches at all) if `label` does not name a wiring/pin component in this circuit.
+        simulation:isVhdlSimulationAvailable(): true only if QuestaSim's path is configured in the
+          application's Preferences -> Software (this cannot be set from a script).
+        simulation:isVhdlSimulationEnabled() / setVhdlSimulationEnabled(bool): mirrors Simulate ->
+          VHDL Simulation Enabled. Enabling throws VhdlSimulatorUnavailableException unless
+          QuestaSim is available -- never the file-chooser dialog the GUI falls back to.
+        simulation:generateVhdlSimulationFiles(): mirrors Simulate -> Generate VHDL Simulation
+          Files (regenerates the co-simulation sources and restarts the co-simulator); throws
+          VhdlSimulatorUnavailableException while co-simulation is not enabled.
 
       Placement (returned by space:place): anchorAt(col,row) / at(col,row), rightOf(comp,gap) /
         below(comp,gap), with(attrTable) (e.g. {type="input"} or {inputs="3"}), facing(dir)

@@ -589,6 +589,29 @@ final class LuaBindings {
       vhdlEntities.rename(rest.checkjstring(1), rest.checkjstring(2));
       return LuaValue.NONE;
     }));
+    methods.set("getSource", bind(a -> LuaValue.valueOf(vhdlEntities.getSource(a.subargs(2).checkjstring(1)))));
+    methods.set("setSource", bind(a -> {
+      final var rest = a.subargs(2);
+      vhdlEntities.setSource(rest.checkjstring(1), rest.checkjstring(2));
+      return LuaValue.NONE;
+    }));
+    methods.set("ports", bind(a -> {
+      final var t = new LuaTable();
+      var i = 1;
+      for (final var p : vhdlEntities.ports(a.subargs(2).checkjstring(1))) {
+        final var row = new LuaTable();
+        row.set("name", p.name());
+        row.set("direction", p.direction());
+        row.set("width", p.width());
+        t.set(i++, row);
+      }
+      return t;
+    }));
+    methods.set("exportFile", bind(a -> {
+      final var rest = a.subargs(2);
+      vhdlEntities.exportFile(rest.checkjstring(1), rest.checkjstring(2));
+      return LuaValue.NONE;
+    }));
     final var meta = new LuaTable();
     meta.set("__index", methods);
     return new LuaUserdata(vhdlEntities, meta);
@@ -675,6 +698,18 @@ final class LuaBindings {
     methods.set("isOscillating", bind(a -> LuaValue.valueOf(simulation.isOscillating())));
     methods.set("isExceptionEncountered",
         bind(a -> LuaValue.valueOf(simulation.isExceptionEncountered())));
+    methods.set("isVhdlSimulationAvailable",
+        bind(a -> LuaValue.valueOf(simulation.isVhdlSimulationAvailable())));
+    methods.set("isVhdlSimulationEnabled",
+        bind(a -> LuaValue.valueOf(simulation.isVhdlSimulationEnabled())));
+    methods.set("setVhdlSimulationEnabled", bind(a -> {
+      simulation.setVhdlSimulationEnabled(a.subargs(2).checkboolean(1));
+      return LuaValue.NONE;
+    }));
+    methods.set("generateVhdlSimulationFiles", bind(a -> {
+      simulation.generateVhdlSimulationFiles();
+      return LuaValue.NONE;
+    }));
     methods.set("readPin", bind(a -> wrap(simulation.readPin(a.subargs(2).checkjstring(1)))));
     methods.set("writePin", bind(a -> {
       final var rest = a.subargs(2);

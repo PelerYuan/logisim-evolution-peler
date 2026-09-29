@@ -14,9 +14,13 @@ import com.cburch.logisim.circuit.CircuitState;
 import com.cburch.logisim.circuit.Simulator;
 import com.cburch.logisim.circuit.SubcircuitFactory;
 import com.cburch.logisim.data.Value;
+import com.cburch.logisim.prefs.AppPreferences;
 import com.cburch.logisim.proj.Project;
 import com.cburch.logisim.std.wiring.Clock;
 import com.cburch.logisim.std.wiring.Pin;
+import com.cburch.logisim.util.FileUtil;
+import com.cburch.logisim.util.Softwares;
+import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -139,6 +143,46 @@ public final class Simulation {
 
   public boolean isExceptionEncountered() {
     return proj.getSimulator().isExceptionEncountered();
+  }
+
+  /** Whether QuestaSim is configured (Preferences -> Software) well enough for the VHDL
+   * co-simulator to start: the four tools it launches must all exist under the configured
+   * directory. Checked here rather than left to the co-simulator, whose own answer to a missing
+   * path is a file-chooser dialog no script could answer. */
+  public boolean isVhdlSimulationAvailable() {
+    final var path = AppPreferences.QUESTA_PATH.get();
+    if (path == null || path.isEmpty()) return false;
+    for (final var program : Softwares.QUESTA_BIN) {
+      if (!new File(FileUtil.correctPath(path) + program).exists()) return false;
+    }
+    return true;
+  }
+
+  public boolean isVhdlSimulationEnabled() {
+    return proj.getVhdlSimulator().isEnabled();
+  }
+
+  /** Mirrors the GUI's Simulate -> VHDL Simulation Enabled toggle. Enabling throws {@link
+   * VhdlSimulatorUnavailableException} unless {@link #isVhdlSimulationAvailable()}. */
+  public void setVhdlSimulationEnabled(boolean value) {
+    if (value && !isVhdlSimulationAvailable()) {
+      throw new VhdlSimulatorUnavailableException(
+          "QuestaSim is not configured",
+          "set the QuestaSim path under Preferences -> Software in the application first");
+    }
+    proj.getVhdlSimulator().setEnabled(value);
+  }
+
+  /** Mirrors the GUI's Simulate -> Generate VHDL Simulation Files: regenerates the co-simulation
+   * sources and restarts the co-simulator. Only meaningful while co-simulation is enabled; throws
+   * {@link VhdlSimulatorUnavailableException} otherwise, as the GUI item does nothing then. */
+  public void generateVhdlSimulationFiles() {
+    if (!isVhdlSimulationEnabled()) {
+      throw new VhdlSimulatorUnavailableException(
+          "VHDL co-simulation is not enabled",
+          "call simulation:setVhdlSimulationEnabled(true) first");
+    }
+    proj.getVhdlSimulator().restart();
   }
 
   /** Reads the current value of the {@code wiring/pin} component labeled {@code label} -- works
