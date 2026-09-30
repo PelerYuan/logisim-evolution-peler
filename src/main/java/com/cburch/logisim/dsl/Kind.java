@@ -70,7 +70,7 @@ public final class Kind {
    * queryable before anything is placed (design doc, 五: "不写名字表的底气"). */
   public List<PortSpec> portsFor(Attrs overrides) {
     final var attrs = factory.createAttributeSet();
-    Placement.applyOverrides(attrs, overrides);
+    Placement.applyOverrides(attrs, overrides, key);
     final Component throwaway = factory.createComponent(Location.create(0, 0, false), attrs);
     final var specs = new ArrayList<PortSpec>();
     final var ends = throwaway.getEnds();
@@ -95,6 +95,55 @@ public final class Kind {
   @Override
   public String toString() {
     return key;
+  }
+
+  public record AttrInfo(String name, String type, List<String> options, String defaultValue) {}
+
+  public record PortInfo(int index, Port.Dir dir, int width, String desc) {}
+
+  /** Every settable attribute with its type, legal values where they form a fixed set, and the
+   * value a fresh component starts with -- what a script needs to know before {@code with()}. */
+  public List<AttrInfo> attributeInfo() {
+    final var attrs = factory.createAttributeSet();
+    final var declared = attrs.getAttributes();
+    final var out = new ArrayList<AttrInfo>();
+    if (declared == null) return out;
+    for (final var attr : declared) {
+      if (attr.isHidden()) continue;
+      final var value = attrs.getValue(attr);
+      if (value instanceof java.awt.Font || value instanceof java.awt.Color) continue;
+      final var spec = AttrTable.specFor(attr, attrs);
+      final var choices = attr.getChoices();
+      @SuppressWarnings("unchecked")
+      final var typed = (Attribute<Object>) attr;
+      out.add(new AttrInfo(
+          spec.name(),
+          spec.kind(),
+          choices.isEmpty() ? spec.options() : choices,
+          value == null ? "" : typed.toStandardString(value)));
+    }
+    return out;
+  }
+
+  /** The ports a component of this kind would have with these overrides, each with Logisim's own
+   * tooltip -- the only thing that says which of a component's ports is which. */
+  public List<PortInfo> portInfo(Attrs overrides) {
+    final var attrs = factory.createAttributeSet();
+    Placement.applyOverrides(attrs, overrides, key);
+    final Component throwaway = factory.createComponent(Location.create(0, 0, false), attrs);
+    final var instance = com.cburch.logisim.instance.Instance.getInstanceFor(throwaway);
+    final var ends = throwaway.getEnds();
+    final var out = new ArrayList<PortInfo>();
+    for (var i = 0; i < ends.size(); i++) {
+      final var end = ends.get(i);
+      final Port.Dir dir;
+      if (end.isInput() && end.isOutput()) dir = Port.Dir.INOUT;
+      else dir = end.isOutput() ? Port.Dir.OUT : Port.Dir.IN;
+      String desc = null;
+      if (instance != null && i < instance.getPorts().size()) desc = instance.getPorts().get(i).getToolTip();
+      out.add(new PortInfo(i, dir, end.getWidth().getWidth(), desc));
+    }
+    return out;
   }
 
   public record AttrSpec(String name, String kind, List<String> options) {}
@@ -161,7 +210,7 @@ public final class Kind {
      * appearance, ...media/std-lib factories declare dozens of these), correctly identified as an
      * "option" attribute but without its candidate list, which is exactly the honest gap this
      * class accepts rather than papering over. */
-    private static AttrSpec specFor(Attribute<?> attr, com.cburch.logisim.data.AttributeSet attrs) {
+    static AttrSpec specFor(Attribute<?> attr, com.cburch.logisim.data.AttributeSet attrs) {
       final var name = attr.getName();
       final var value = attrs.getValue(attr);
       if (value instanceof Direction) return new AttrSpec(name, "direction", DIRECTIONS);

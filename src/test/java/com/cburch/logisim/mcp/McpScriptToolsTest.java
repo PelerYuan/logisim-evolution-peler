@@ -206,7 +206,7 @@ class McpScriptToolsTest {
                 + "space:connect(obstacle:outputs()[1], bout:inputs()[1])\n"
                 + "space:commit(\"build obstacle fixture\")\n"
                 + "return \"ok\"",
-            aCol + 20, aRow + 1,
+            aCol + 20, aRow + 2,
             aCol + 10, aRow - 16,
             aCol + 10, aRow - 8,
             aCol + 30, aRow - 12));

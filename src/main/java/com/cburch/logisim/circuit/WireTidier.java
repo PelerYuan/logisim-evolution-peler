@@ -133,6 +133,11 @@ public final class WireTidier {
       }
     }
 
+    if (!preservesConnectivity(circuit, nets, newWires)) {
+      LOGGER.warn("WireTidier: leaving the wires as they are; the tidied routes would have joined nets");
+      return null;
+    }
+
     // A circuit that is already tidy (e.g. re-tidied by an automatic post-eval hook that doesn't
     // know whether anything changed) would otherwise still get a real remove-all/add-all mutation
     // here, identical in the end but a spurious entry in the undo log every time it runs. Wire's
@@ -157,6 +162,117 @@ public final class WireTidier {
       xn.addAll(newWires);
     }
     return xn.isEmpty() ? null : xn;
+  }
+
+  /**
+   * Whether two axis-aligned wires are one electrical node in Logisim: they share a point that is an
+   * end of at least one of them (an end lying on the other's run is a junction) or they lie on one
+   * line and overlap. Two runs that merely cross, each through the other's interior, stay separate.
+   */
+  public static boolean segmentsJoin(
+      int ax0, int ay0, int ax1, int ay1, int bx0, int by0, int bx1, int by1) {
+    final var aMinX = Math.min(ax0, ax1);
+    final var aMaxX = Math.max(ax0, ax1);
+    final var aMinY = Math.min(ay0, ay1);
+    final var aMaxY = Math.max(ay0, ay1);
+    final var bMinX = Math.min(bx0, bx1);
+    final var bMaxX = Math.max(bx0, bx1);
+    final var bMinY = Math.min(by0, by1);
+    final var bMaxY = Math.max(by0, by1);
+    final var overlapX0 = Math.max(aMinX, bMinX);
+    final var overlapX1 = Math.min(aMaxX, bMaxX);
+    final var overlapY0 = Math.max(aMinY, bMinY);
+    final var overlapY1 = Math.min(aMaxY, bMaxY);
+    if (overlapX0 > overlapX1 || overlapY0 > overlapY1) return false;
+    final var aVertical = aMinX == aMaxX;
+    final var bVertical = bMinX == bMaxX;
+    if (aVertical == bVertical) return true;
+    final var x = overlapX0;
+    final var y = overlapY0;
+    final var interiorToA = aVertical ? y > aMinY && y < aMaxY : x > aMinX && x < aMaxX;
+    final var interiorToB = bVertical ? y > bMinY && y < bMaxY : x > bMinX && x < bMaxX;
+    return !(interiorToA && interiorToB);
+  }
+
+  /**
+   * Whether {@code wires}, laid over the circuit's components, connect exactly what the circuit's
+   * nets connected: every net's terminals in one group, and no group holding terminals of two nets
+   * or a pin that belongs to none. The routing above only keeps bends off each other's vertices, so
+   * a run that passes through another net's pin or lies along another net's run would otherwise be
+   * accepted and short the two.
+   */
+  private static boolean preservesConnectivity(Circuit circuit, List<Net> nets, Set<Wire> wires) {
+    final var owner = new HashMap<Location, Integer>();
+    for (var i = 0; i < nets.size(); i++) {
+      for (final var terminal : nets.get(i).terminals()) owner.put(terminal, i);
+    }
+    var loose = nets.size();
+    for (final var comp : circuit.getNonWires()) {
+      for (final var end : comp.getEnds()) {
+        if (!owner.containsKey(end.getLocation())) owner.put(end.getLocation(), loose++);
+      }
+    }
+    final var list = new ArrayList<>(wires);
+    final var parent = new int[list.size()];
+    for (var i = 0; i < parent.length; i++) parent[i] = i;
+    for (var i = 0; i < list.size(); i++) {
+      for (var j = i + 1; j < list.size(); j++) {
+        final var a = list.get(i);
+        final var b = list.get(j);
+        if (segmentsJoin(
+            a.getEnd0().getX(), a.getEnd0().getY(), a.getEnd1().getX(), a.getEnd1().getY(),
+            b.getEnd0().getX(), b.getEnd0().getY(), b.getEnd1().getX(), b.getEnd1().getY())) {
+          parent[root(parent, i)] = root(parent, j);
+        }
+      }
+    }
+    final var groupOwner = new HashMap<Integer, Integer>();
+    final var netGroup = new HashMap<Integer, Integer>();
+    for (final var entry : owner.entrySet()) {
+      final var at = entry.getKey();
+      for (var i = 0; i < list.size(); i++) {
+        final var w = list.get(i);
+        if (at.getX() < Math.min(w.getEnd0().getX(), w.getEnd1().getX())
+            || at.getX() > Math.max(w.getEnd0().getX(), w.getEnd1().getX())
+            || at.getY() < Math.min(w.getEnd0().getY(), w.getEnd1().getY())
+            || at.getY() > Math.max(w.getEnd0().getY(), w.getEnd1().getY())) {
+          continue;
+        }
+        final var group = root(parent, i);
+        final var previous = groupOwner.putIfAbsent(group, entry.getValue());
+        if (previous != null && !previous.equals(entry.getValue())) return false;
+        final var otherGroup = netGroup.putIfAbsent(entry.getValue(), group);
+        if (otherGroup != null && !otherGroup.equals(group)) return false;
+        break;
+      }
+    }
+    for (var i = 0; i < nets.size(); i++) {
+      for (final var terminal : nets.get(i).terminals()) {
+        var reached = false;
+        for (final var w : list) {
+          if (terminal.getX() >= Math.min(w.getEnd0().getX(), w.getEnd1().getX())
+              && terminal.getX() <= Math.max(w.getEnd0().getX(), w.getEnd1().getX())
+              && terminal.getY() >= Math.min(w.getEnd0().getY(), w.getEnd1().getY())
+              && terminal.getY() <= Math.max(w.getEnd0().getY(), w.getEnd1().getY())) {
+            reached = true;
+            break;
+          }
+        }
+        if (!reached) return false;
+      }
+    }
+    return true;
+  }
+
+  private static int root(int[] parent, int i) {
+    var r = i;
+    while (parent[r] != r) r = parent[r];
+    while (parent[i] != r) {
+      final var next = parent[i];
+      parent[i] = r;
+      i = next;
+    }
+    return r;
   }
 
   /**

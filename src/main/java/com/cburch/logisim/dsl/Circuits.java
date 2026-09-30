@@ -147,6 +147,14 @@ public final class Circuits {
     if (CorrectLabel.isKeyword(name, false)) {
       throw new InvalidCircuitNameException(name, "\"" + name + "\" is a reserved VHDL/Verilog keyword");
     }
+    final var clash = builtinClash(name);
+    if (clash != null) {
+      throw new InvalidCircuitNameException(
+          name,
+          "\"" + name + "\" is the name of the built-in component " + clash
+              + " (names are compared ignoring case), and a circuit cannot share a name with a"
+              + " component -- try \"" + name + "_circuit\" or a more specific name");
+    }
     final var inUse = exemptFrom == null || !name.equalsIgnoreCase(exemptFrom);
     if (inUse && nameIsInUse(name)) {
       throw new DuplicateCircuitNameException(name);
@@ -155,6 +163,20 @@ public final class Circuits {
     if (message != null) {
       throw new InvalidCircuitNameException(name, message);
     }
+  }
+
+  /** A built-in library loads on demand the first time a script places one of its components, so
+   * a circuit named like one of its tools (a "Counter" or "Register" circuit) would be accepted
+   * here and then make that later load fail. */
+  private String builtinClash(String name) {
+    final var builtin = proj.getLogisimFile().getLoader().getBuiltin();
+    if (builtin == null) return null;
+    for (final var lib : builtin.getLibraries()) {
+      for (final var tool : lib.getTools()) {
+        if (name.equalsIgnoreCase(tool.getName())) return lib.getName() + "/" + tool.getName();
+      }
+    }
+    return null;
   }
 
   private boolean nameIsInUse(String name) {

@@ -156,8 +156,15 @@ final class McpScriptTools implements AutoCloseable {
   private Session session(JsonObject args) throws McpRpcException {
     final var project = requireProject(args);
     final var circuitName = optional(args, "circuit");
-    return sessions.computeIfAbsent(
-        sessionKey(project, circuitName), key -> new Session(resolveSpace(project, circuitName), project));
+    try {
+      return sessions.computeIfAbsent(
+          sessionKey(project, circuitName), key -> new Session(resolveSpace(project, circuitName), project));
+    } catch (com.cburch.logisim.dsl.DslException e) {
+      final var data = new JsonObject();
+      data.addProperty("type", e.getClass().getSimpleName());
+      e.suggestion().ifPresent(sug -> data.addProperty("suggestion", sug));
+      throw new McpRpcException(-32010, e.getMessage(), data);
+    }
   }
 
   private static Space resolveSpace(Project project, String circuitName) {
@@ -310,7 +317,11 @@ final class McpScriptTools implements AutoCloseable {
 
   private static final String EVAL_DESCRIPTION =
       """
-      Run a Lua script against the current circuit and return its result.
+      Run a Lua script against the current circuit and return its result. A returned string comes
+      back as is; a number, table, component, port or net comes back as JSON. The language is Lua
+      5.2 (LuaJ): no & | >> operators, use bit32.band/bor/rshift. Sizes are in grid cells (10 px):
+      anchorAt(col,row). To look at the circuit, either read space:describe() (text netlist) or
+      write space:exportImage("/tmp/x.png","png") and open the PNG with your file-reading tool.
 
       Global `space` (a com.cburch.logisim.dsl.Space):
         space:place(kind) -> Placement: kind is one of "wiring/pin", "gates/and_gate",
@@ -326,12 +337,24 @@ final class McpScriptTools implements AutoCloseable {
           pcomp:list(...), not its display name (e.g. "circuit/Half_Adder_v1" to place what
           pcomp:list(...) shows as name "Half Adder" version 1) -- no separate placement API of its
           own.
+        space:kinds([filter]) -> {key,...}: every key space:place() accepts, optionally only those
+          whose key or display name contains `filter` (case-insensitive), e.g. space:kinds("flip").
+        space:describeKind(key[, attrs]) -> {key, name, attributes={{name,type,default,options}},
+          ports={{index,dir,width,desc,use}}}: what a kind's `with({...})` accepts and which port
+          is which -- `use` is the expression that reaches the port (e.g. "inputs()[3]"). Read
+          this instead of guessing an attribute name or a port order; pass `attrs` to see the ports
+          for e.g. a wider adder. Attribute order in with({...}) does not matter.
+        space:describe() -> string: components and nets as text, one per line, ports written
+          id.name or id.in[k] / id.out[k]; also lists inputs that nothing drives.
         space:byId(id) / space:byLabel(label) -> Comp or nil. Use these, not a saved Lua local, to
           address a component from a later eval() call: a script's locals never survive past the
           single call they were declared in.
         space:componentsOf(kind) -> {Comp,...}; space:components() -> {Comp,...}; space:nets() ->
           {Net,...}; space:near(comp, cells) -> {Comp,...}; space:summary() -> table.
-        space:connect(portOrNet, portOrNet) -> Net; space:disconnect(net).
+        space:connect(portOrNet, portOrNet) -> Net; space:disconnect(net). A splitter's ends are
+          bidirectional: connect a bus to its port(0) and the single bits to port(1), port(2)...
+          Placement also has rightOf(comp[, gap]) / below(comp[, gap]), gap defaulting to 2 cells.
+          A name that is a component's (a circuit called "Counter") is refused by circuits:create.
         space:remove(comp): drops a still-staged component, or -- for one the circuit already holds
           (committed earlier, or hand-drawn) -- deletes it as one immediate, undo-logged action like
           selecting it and pressing Delete: wires that ran to it stay behind, ending at nothing.
@@ -356,7 +379,10 @@ final class McpScriptTools implements AutoCloseable {
         space:wires() -> WireOps (dotAt(col,row), add(dot,dot), isOccupied(dot)) for manual wiring.
         space:check() -> {ok, unconnected, undriven, multiplyDriven}.
         space:commit(actionName) -> {placed, nets}: stages since the last commit/rollback become one
-          undo-log entry. space:rollback() discards them instead.
+          undo-log entry. space:rollback() discards them instead. Routes never touch another net's
+          wires (feedback loops such as latches are safe); if none exists it throws RoutingException
+          (give a net viaColumn/viaRow, or move a component), and a commit whose wires would join
+          two nets throws ShortCircuitException. Nothing is committed in either case.
         space:synthesize(spec) -> {placed}: generates an entire gate-level circuit from a
           truth-table-style spec in one call, as an alternative to place()/connect() -- only works on
           a still-empty circuit. spec = {inputs = {"A","B",...}, outputs = {Name = "boolean expr",
@@ -627,7 +653,8 @@ final class McpScriptTools implements AutoCloseable {
           component labeled `label`, input or output. `known` is false (value meaningless, always -1)
           for a pin with any floating bit; `error` is true for a width/conflict error state.
         simulation:writePin(label, value): drives an input pin to `value` and propagates the change;
-          mirrors clicking the GUI's poke tool. Throws PinNotWritableException if `label` names an
+          mirrors clicking the GUI's poke tool, and the outputs read afterwards are already settled
+          even behind many gates. Throws PinNotWritableException if `label` names an
           output pin instead.
         Both pin methods throw UnknownPinException (with a "did you mean" suggestion when no label
           matches at all) if `label` does not name a wiring/pin component in this circuit.

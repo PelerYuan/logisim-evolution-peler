@@ -2117,6 +2117,51 @@ workaround; a project-wide attribute sweep loses the single undo entry.
 Matrix placement (two nested loops), fuzzy component search and circuit/library ordering (interface
 conveniences for a human), and jump-to-history undo (`History` already steps one entry at a time).
 
+## Feature 20 — Wiring and simulation safety (2026-09-30)
+
+Found by replaying an agent session that built a D-gated latch and kept "untangling" its wires:
+the agent could trust neither the routing nor the simulator, so it re-checked in circles.
+
+- **`writePin` settles.** It ended in `Simulator.step()`, which advances one gate delay and switches
+  auto-propagation off, so reads behind several gates were stale. It now nudges to stability
+  (`step` only when the caller already turned auto-propagation off).
+- **The router avoids other nets' wires.** Feedback nets (a latch's cross-coupled outputs) used to be
+  routed straight through each other's wires, silently merging them. Every route now rejects a
+  segment that would join any wire of another net, existing or manual or routed earlier in the same
+  commit, and searches wider via-columns/rows before giving up with a `RoutingException`.
+- **`commit` verifies.** `ShortCircuitException` if the wires about to be drawn would still join ports
+  of different nets; nothing is committed.
+- **The tidier verifies.** `WireTidier` keeps the existing wires when its rerouted result would join
+  nets that were separate.
+- Fixture change: `McpScriptToolsTest` used to place a gate pin on an existing wire (a real short the
+  old router allowed); the gate now sits one row lower.
+
+## Feature 21 — Agent-facing friction (2026-09-30)
+
+Found by driving the eval tool the way an agent does (adder, flip-flop, counter, bus splitter,
+hierarchy) and writing down every place it hesitated or misled.
+
+- **Simulation stalled for 5 s after a build in the same eval.** The script runs on the event
+  thread; the simulator thread asked that same thread for the freshly edited wires' connectivity, so
+  each waited on the other until the timeout. Connectivity is now computed on the calling thread
+  before the simulator is woken.
+- **A register latched garbage on its first edge**, because the constant and adder behind it had not
+  settled. `tick` and `readPin` now settle the circuit first.
+- **Results were unreadable** (`table: 0x1f3a`). Non-string results are JSON now.
+- **No way to discover kinds or attributes.** New `space:kinds([filter])`, `space:describeKind`,
+  and `space:describe()` (text netlist). Attribute and port names come with legal values and the
+  expression that reaches each port.
+- **Attribute errors were Java exceptions**; now `UnknownAttributeException` (lists the valid
+  names) and `InvalidAttributeValueException` (lists the valid values). Attribute order no longer
+  matters (a constant's value was reset by a later width change).
+- **A circuit named "Counter"** was accepted, then broke the first flip-flop placed; refused up
+  front when the name matches any built-in component.
+- **`comp:port(0)` never worked** (a number counted as a label). **A bus pin could not feed a
+  splitter** (its bidirectional ends counted as a second driver). **`rightOf` without a gap**
+  errored, and placed subcircuits a pixel off the grid. **`check()`** flagged unused outputs.
+  Placement collisions now say which cells collide and how to move; a missing circuit lists the
+  existing ones; `bit32` exists.
+
 ## Known open items
 
 - **CJK text renders as tofu boxes in the project explorer.** Diagnosed, and left unfixed at the

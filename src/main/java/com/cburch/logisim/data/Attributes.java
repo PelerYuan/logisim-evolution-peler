@@ -374,6 +374,13 @@ public class Attributes {
     }
 
     @Override
+    public java.util.List<String> getChoices() {
+      final var out = new java.util.ArrayList<String>();
+      for (V val : vals) out.add(val.toString());
+      return out;
+    }
+
+    @Override
     public V parse(String value) {
       for (V val : vals) {
         if (value.equals(val.toString())) {

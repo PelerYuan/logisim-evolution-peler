@@ -51,6 +51,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -101,7 +102,9 @@ public final class Space {
   public static Space of(Project proj, String circuitName) {
     final var circuit = proj.getLogisimFile().getCircuit(circuitName);
     if (circuit == null) {
-      throw new IllegalArgumentException("no circuit named \"" + circuitName + "\" in this project");
+      final var names = new ArrayList<String>();
+      for (final var c : proj.getLogisimFile().getCircuits()) names.add(c.getName());
+      throw new UnknownCircuitException(circuitName, names);
     }
     return new Space(proj, circuit);
   }
@@ -156,19 +159,60 @@ public final class Space {
     return netlist.allNets().stream().map(Net::new).collect(Collectors.toList());
   }
 
+  /** The circuit as text a reader can check at a glance: one line per component, then one per
+   * net with every port on it. Ports are written {@code id.name} when Logisim names them and
+   * {@code id.in[k]} / {@code id.out[k]} (the position in {@code inputs()} / {@code outputs()})
+   * otherwise. */
+  public String describe() {
+    final var out = new StringBuilder();
+    final var comps = allComponents().sorted(Comparator.comparing(Comp::id)).collect(Collectors.toList());
+    out.append("components (").append(comps.size()).append("):\n");
+    for (final var c : comps) {
+      out.append("  ").append(c.id()).append(' ').append(c.kind().key());
+      c.label().ifPresent(l -> out.append(" \"").append(l).append('"'));
+      out.append(" at ").append(c.origin()).append('\n');
+    }
+    final var handles = netlist.allNets();
+    out.append("nets (").append(handles.size()).append("):\n");
+    for (final var handle : handles) {
+      out.append("  ").append(handle.id()).append(" [").append(handle.width()).append("b]:");
+      for (final var p : handle.members()) out.append(' ').append(portName(p));
+      out.append('\n');
+    }
+    final var loose = new ArrayList<String>();
+    for (final var c : comps) {
+      for (final var p : c.ports()) {
+        if (p.dir() != Port.Dir.OUT && p.net().isEmpty()) loose.add(portName(p));
+      }
+    }
+    if (!loose.isEmpty()) out.append("unconnected inputs: ").append(String.join(" ", loose)).append('\n');
+    return out.toString();
+  }
+
+  private static String portName(Port p) {
+    final var owner = p.owner();
+    final var name = p.name();
+    if (name.isPresent() && !name.get().isEmpty()) return owner.id() + "." + name.get();
+    final var ins = owner.inputs().indexOf(p);
+    if (p.dir() != Port.Dir.OUT && ins >= 0) return owner.id() + ".in[" + (ins + 1) + "]";
+    return owner.id() + ".out[" + (owner.outputs().indexOf(p) + 1) + "]";
+  }
+
   public CheckReport check() {
     final var unconnected = new ArrayList<Port>();
     for (final var c : allComponents().collect(Collectors.toList())) {
       for (final var p : c.ports()) {
-        if (p.net().isEmpty()) unconnected.add(p);
+        if (p.dir() != Port.Dir.OUT && p.net().isEmpty()) unconnected.add(p);
       }
     }
     final var undriven = new ArrayList<Net>();
     final var multiplyDriven = new ArrayList<Net>();
     for (final var handle : netlist.allNets()) {
-      final var drivers = handle.drivers().size();
-      if (drivers == 0) undriven.add(new Net(handle));
-      if (drivers > 1) multiplyDriven.add(new Net(handle));
+      final var drivers = handle.drivers();
+      if (drivers.isEmpty()) undriven.add(new Net(handle));
+      if (drivers.stream().filter(p -> p.dir() == Port.Dir.OUT).count() > 1) {
+        multiplyDriven.add(new Net(handle));
+      }
     }
     return new CheckReport(unconnected, undriven, multiplyDriven, List.of());
   }
@@ -425,9 +469,22 @@ public final class Space {
     mutation.addAll(components);
 
     final var wires = new ArrayList<Wire>();
-    final var routed = new HashMap<NetHandle, List<int[]>>();
+    final var routed = new LinkedHashMap<NetHandle, List<int[]>>();
+    final var existingSegments = new ArrayList<int[]>();
+    for (final var wire : circuit.getWires()) {
+      existingSegments.add(
+          new int[] {
+            wire.getEnd0().getX(), wire.getEnd0().getY(), wire.getEnd1().getX(), wire.getEnd1().getY()
+          });
+    }
     for (final var net : nets) {
-      final var segments = router.route(net, allPorts);
+      final var foreign = new ArrayList<int[]>();
+      for (final var segment : existingSegments) {
+        if (!isSegmentOf(net.path(), segment)) foreign.add(segment);
+      }
+      foreign.addAll(pendingWires);
+      for (final var other : routed.values()) foreign.addAll(other);
+      final var segments = router.route(net, allPorts, foreign);
       final var dots = new ArrayList<int[]>();
       for (final var seg : segments) {
         wires.add(Wire.create(
@@ -441,6 +498,7 @@ public final class Space {
           Location.create(seg[0], seg[1], false), Location.create(seg[2], seg[3], false)));
     }
     mutation.addAll(wires);
+    verifyNoShorts(nets, existingSegments, routed);
 
     final var action = withMissingLibrariesLoaded(mutation.toAction(StringUtil.constantGetter(actionName)));
     proj.doAction(action);
@@ -455,6 +513,75 @@ public final class Space {
     pending.clear();
     pendingWires.clear();
     return new CommitResult(action, placed, resultNets);
+  }
+
+  /** Refuses a commit whose new wires would physically join ports that belong to different nets. */
+  private void verifyNoShorts(
+      List<NetHandle> nets, List<int[]> existingSegments, Map<NetHandle, List<int[]>> routed) {
+    final var segments = new ArrayList<int[]>(existingSegments);
+    final var firstNew = segments.size();
+    for (final var dots : routed.values()) segments.addAll(dots);
+    segments.addAll(pendingWires);
+
+    final var parent = new int[segments.size()];
+    for (var i = 0; i < parent.length; i++) parent[i] = i;
+    for (var i = 0; i < segments.size(); i++) {
+      for (var j = i + 1; j < segments.size(); j++) {
+        final var a = segments.get(i);
+        final var b = segments.get(j);
+        if (Router.connects(a[0], a[1], a[2], a[3], b[0], b[1], b[2], b[3])) {
+          parent[find(parent, i)] = find(parent, j);
+        }
+      }
+    }
+
+    final var groups = new HashMap<Integer, Set<NetHandle>>();
+    final var groupPorts = new HashMap<Integer, List<String>>();
+    for (final var net : nets) {
+      for (final var port : net.members()) {
+        final var x = port.at().rawX();
+        final var y = port.at().rawY();
+        for (var i = 0; i < segments.size(); i++) {
+          final var seg = segments.get(i);
+          if (!Router.connects(x, y, x, y, seg[0], seg[1], seg[2], seg[3])) continue;
+          final var root = find(parent, i);
+          groups.computeIfAbsent(root, k -> new HashSet<>()).add(net);
+          groupPorts.computeIfAbsent(root, k -> new ArrayList<>()).add(port.toString());
+        }
+      }
+    }
+    for (final var entry : groups.entrySet()) {
+      if (entry.getValue().size() < 2) continue;
+      var hasNew = false;
+      for (var i = firstNew; i < segments.size(); i++) {
+        if (find(parent, i) == entry.getKey()) {
+          hasNew = true;
+          break;
+        }
+      }
+      if (hasNew) throw new ShortCircuitException(groupPorts.get(entry.getKey()));
+    }
+  }
+
+  private static int find(int[] parent, int i) {
+    var root = i;
+    while (parent[root] != root) root = parent[root];
+    while (parent[i] != root) {
+      final var next = parent[i];
+      parent[i] = root;
+      i = next;
+    }
+    return root;
+  }
+
+  private static boolean isSegmentOf(List<int[]> path, int[] segment) {
+    for (final var own : path) {
+      if ((own[0] == segment[0] && own[1] == segment[1] && own[2] == segment[2] && own[3] == segment[3])
+          || (own[0] == segment[2] && own[1] == segment[3] && own[2] == segment[0] && own[3] == segment[1])) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**

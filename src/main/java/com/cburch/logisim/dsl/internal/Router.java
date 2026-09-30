@@ -29,9 +29,9 @@ import java.util.List;
 public final class Router {
   public record Segment(int x0, int y0, int x1, int y1) {}
 
-  private static final int[] SEARCH_OFFSETS = {10, -10, 20, -20, 30, -30, 40, -40, 50, -50};
+  private static final int[] SEARCH_OFFSETS = {10, -10, 20, -20, 30, -30, 40, -40, 50, -50, 60, -60, 80, -80, 100, -100};
 
-  public List<Segment> route(NetHandle net, List<Port> allPendingPorts) {
+  public List<Segment> route(NetHandle net, List<Port> allPendingPorts, List<int[]> foreignWires) {
     final var members = net.members();
     if (members.size() < 2) return List.of();
 
@@ -48,32 +48,33 @@ public final class Router {
     for (final var member : members) {
       if (member == hub) continue;
       final var dot = member.at();
-      segments.addAll(routeTwoPoints(net, hubDot.rawX(), hubDot.rawY(), dot.rawX(), dot.rawY(), obstacles));
+      segments.addAll(routeTwoPoints(net, hubDot.rawX(), hubDot.rawY(), dot.rawX(), dot.rawY(), obstacles, foreignWires));
     }
     return segments;
   }
 
-  private List<Segment> routeTwoPoints(NetHandle net, int x0, int y0, int x1, int y1, List<int[]> obstacles) {
+  private List<Segment> routeTwoPoints(
+      NetHandle net, int x0, int y0, int x1, int y1, List<int[]> obstacles, List<int[]> foreign) {
     if (x0 == x1 && y0 == y1) return List.of();
 
-    if ((x0 == x1 || y0 == y1) && clear(x0, y0, x1, y1, obstacles)) {
+    if ((x0 == x1 || y0 == y1) && clear(x0, y0, x1, y1, obstacles, foreign)) {
       return List.of(new Segment(x0, y0, x1, y1));
     }
 
     if (net.viaColumn().isPresent()) {
       final var vx = net.viaColumn().get() * 10;
-      if (clear(x0, y0, vx, y0, obstacles) && clear(vx, y0, vx, y1, obstacles) && clear(vx, y1, x1, y1, obstacles)) {
+      if (clear(x0, y0, vx, y0, obstacles, foreign) && clear(vx, y0, vx, y1, obstacles, foreign) && clear(vx, y1, x1, y1, obstacles, foreign)) {
         return path(x0, y0, vx, y0, vx, y1, x1, y1);
       }
-      throw new RoutingException(net.id(), vx, y0, "viaColumn " + net.viaColumn().get() + " is blocked by a foreign pin",
+      throw new RoutingException(net.id(), vx, y0, "viaColumn " + net.viaColumn().get() + " is blocked by a foreign pin or by a wire of another net",
           "try a different viaColumn, or drop the hint and let the router choose");
     }
     if (net.viaRow().isPresent()) {
       final var vy = net.viaRow().get() * 10;
-      if (clear(x0, y0, x0, vy, obstacles) && clear(x0, vy, x1, vy, obstacles) && clear(x1, vy, x1, y1, obstacles)) {
+      if (clear(x0, y0, x0, vy, obstacles, foreign) && clear(x0, vy, x1, vy, obstacles, foreign) && clear(x1, vy, x1, y1, obstacles, foreign)) {
         return path(x0, y0, x0, vy, x1, vy, x1, y1);
       }
-      throw new RoutingException(net.id(), x0, vy, "viaRow " + net.viaRow().get() + " is blocked by a foreign pin",
+      throw new RoutingException(net.id(), x0, vy, "viaRow " + net.viaRow().get() + " is blocked by a foreign pin or by a wire of another net",
           "try a different viaRow, or drop the hint and let the router choose");
     }
 
@@ -81,36 +82,55 @@ public final class Router {
       final var side = net.preferredSide().get();
       final var vertical = side == NetHandle.Side.ABOVE || side == NetHandle.Side.BELOW;
       if (vertical) {
-        if (clear(x0, y0, x0, y1, obstacles) && clear(x0, y1, x1, y1, obstacles)) {
+        if (clear(x0, y0, x0, y1, obstacles, foreign) && clear(x0, y1, x1, y1, obstacles, foreign)) {
           return path(x0, y0, x0, y1, x1, y1);
         }
-        throw new RoutingException(net.id(), x0, y1, "preferred side " + side + " is blocked by a foreign pin",
+        throw new RoutingException(net.id(), x0, y1, "preferred side " + side + " is blocked by a foreign pin or by a wire of another net",
             "drop the side hint and let the router choose, or use viaColumn/viaRow instead");
       } else {
-        if (clear(x0, y0, x1, y0, obstacles) && clear(x1, y0, x1, y1, obstacles)) {
+        if (clear(x0, y0, x1, y0, obstacles, foreign) && clear(x1, y0, x1, y1, obstacles, foreign)) {
           return path(x0, y0, x1, y0, x1, y1);
         }
-        throw new RoutingException(net.id(), x1, y0, "preferred side " + side + " is blocked by a foreign pin",
+        throw new RoutingException(net.id(), x1, y0, "preferred side " + side + " is blocked by a foreign pin or by a wire of another net",
             "drop the side hint and let the router choose, or use viaColumn/viaRow instead");
       }
     }
 
-    if (clear(x0, y0, x1, y0, obstacles) && clear(x1, y0, x1, y1, obstacles)) {
+    if (clear(x0, y0, x1, y0, obstacles, foreign) && clear(x1, y0, x1, y1, obstacles, foreign)) {
       return path(x0, y0, x1, y0, x1, y1);
     }
-    if (clear(x0, y0, x0, y1, obstacles) && clear(x0, y1, x1, y1, obstacles)) {
+    if (clear(x0, y0, x0, y1, obstacles, foreign) && clear(x0, y1, x1, y1, obstacles, foreign)) {
       return path(x0, y0, x0, y1, x1, y1);
     }
 
     for (final var offset : SEARCH_OFFSETS) {
       final var vx = x1 + offset;
-      if (clear(x0, y0, vx, y0, obstacles) && clear(vx, y0, vx, y1, obstacles) && clear(vx, y1, x1, y1, obstacles)) {
+      if (clear(x0, y0, vx, y0, obstacles, foreign) && clear(vx, y0, vx, y1, obstacles, foreign) && clear(vx, y1, x1, y1, obstacles, foreign)) {
         return path(x0, y0, vx, y0, vx, y1, x1, y1);
+      }
+    }
+    for (final var offset : SEARCH_OFFSETS) {
+      final var vx = x0 + offset;
+      if (clear(x0, y0, vx, y0, obstacles, foreign) && clear(vx, y0, vx, y1, obstacles, foreign) && clear(vx, y1, x1, y1, obstacles, foreign)) {
+        return path(x0, y0, vx, y0, vx, y1, x1, y1);
+      }
+    }
+    for (final var offset : SEARCH_OFFSETS) {
+      final var vy = y1 + offset;
+      if (clear(x0, y0, x0, vy, obstacles, foreign) && clear(x0, vy, x1, vy, obstacles, foreign) && clear(x1, vy, x1, y1, obstacles, foreign)) {
+        return path(x0, y0, x0, vy, x1, vy, x1, y1);
+      }
+    }
+    for (final var offset : SEARCH_OFFSETS) {
+      final var vy = y0 + offset;
+      if (clear(x0, y0, x0, vy, obstacles, foreign) && clear(x0, vy, x1, vy, obstacles, foreign) && clear(x1, vy, x1, y1, obstacles, foreign)) {
+        return path(x0, y0, x0, vy, x1, vy, x1, y1);
       }
     }
 
     throw new RoutingException(net.id(), x1, y1,
-        "no Manhattan path with at most two bends avoids every foreign pin", null);
+        "no Manhattan path with at most two bends avoids every foreign pin and every wire of another net",
+        "move a component, or give the net a viaColumn/viaRow hint");
   }
 
   private List<Segment> path(int... coords) {
@@ -121,7 +141,7 @@ public final class Router {
     return segments;
   }
 
-  private boolean clear(int x0, int y0, int x1, int y1, List<int[]> obstacles) {
+  private boolean clear(int x0, int y0, int x1, int y1, List<int[]> obstacles, List<int[]> foreign) {
     final var minX = Math.min(x0, x1);
     final var maxX = Math.max(x0, x1);
     final var minY = Math.min(y0, y1);
@@ -129,6 +149,15 @@ public final class Router {
     for (final var o : obstacles) {
       if (o[0] >= minX && o[0] <= maxX && o[1] >= minY && o[1] <= maxY) return false;
     }
+    for (final var wire : foreign) {
+      if (connects(x0, y0, x1, y1, wire[0], wire[1], wire[2], wire[3])) return false;
+    }
     return true;
+  }
+
+  /** See {@link com.cburch.logisim.circuit.WireTidier#segmentsJoin}. */
+  public static boolean connects(
+      int ax0, int ay0, int ax1, int ay1, int bx0, int by0, int bx1, int by1) {
+    return com.cburch.logisim.circuit.WireTidier.segmentsJoin(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1);
   }
 }

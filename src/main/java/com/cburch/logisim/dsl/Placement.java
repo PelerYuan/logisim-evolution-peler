@@ -75,7 +75,7 @@ public final class Placement {
 
   public Comp place() {
     final var attrs = kind.factory().createAttributeSet();
-    applyOverrides(attrs, overrides);
+    applyOverrides(attrs, overrides, kind.key());
     if (facing != null) {
       final var facingAttr = attrs.getAttribute(StdAttr.FACING.getName());
       if (facingAttr != null) {
@@ -92,12 +92,14 @@ public final class Placement {
 
     for (final var existing : space.pendingComponents()) {
       if (!absoluteBounds.intersect(existing.bounds()).equals(Bounds.EMPTY_BOUNDS)) {
-        throw new PlacementException("bounding box overlaps an existing placement", existing);
+        throw new PlacementException(
+            "bounding box overlaps an existing placement", existing, absoluteBounds);
       }
       for (final var end : component.getEnds()) {
         for (final var otherEnd : existing.rawComponent().getEnds()) {
           if (end.getLocation().equals(otherEnd.getLocation())) {
-            throw new PlacementException("a pin would land on an existing pin", existing);
+            throw new PlacementException(
+                "a pin would land on an existing pin", existing, absoluteBounds);
           }
         }
       }
@@ -107,6 +109,17 @@ public final class Placement {
   }
 
   private Location resolveAnchor(Bounds offsetBounds) {
+    final var raw = resolveRawAnchor(offsetBounds);
+    return Location.create(snap(raw.getX()), snap(raw.getY()), false);
+  }
+
+  /** A component whose bounds are not a whole number of cells (a subcircuit box is a pixel off)
+   * would otherwise land with its pins between grid points, where no wire can reach them. */
+  private static int snap(int value) {
+    return Math.round(value / 10f) * 10;
+  }
+
+  private Location resolveRawAnchor(Bounds offsetBounds) {
     if (col != null && anchorGiven) {
       return Location.create(col * 10, row * 10, false);
     }
@@ -129,18 +142,59 @@ public final class Placement {
     return Location.create(auto[0] * 10 - offsetBounds.getX(), auto[1] * 10 - offsetBounds.getY(), false);
   }
 
-  /** Shared with {@link Kind#portsFor(Attrs)}, which needs the same override application to build a
-   * throwaway component without going through a full {@code place()}. */
-  static void applyOverrides(AttributeSet attrs, Attrs overrides) {
-    for (final var name : overrides.names()) {
+  /** Applies the overrides so the outcome does not depend on the order the script wrote them in:
+   * sizes first (a constant's value is reset by a later width change), then the rest, then any
+   * attribute a later one knocked off its requested value is set again. */
+  static void applyOverrides(AttributeSet attrs, Attrs overrides, String kindKey) {
+    final var names = new java.util.ArrayList<>(overrides.names());
+    names.sort((x, y) -> Boolean.compare(!isSizeLike(x), !isSizeLike(y)));
+    for (final var name : names) apply(attrs, overrides, name, kindKey);
+    for (final var name : names) {
       final var attr = attrs.getAttribute(name);
-      if (attr == null) {
-        throw new IllegalArgumentException(name + " is not a recognized attribute here");
-      }
       @SuppressWarnings("unchecked")
       final var typed = (Attribute<Object>) attr;
-      final var value = overrides.get(name);
-      attrs.setValue(typed, value instanceof String s ? typed.parse(s) : value);
+      final var wanted = overrides.get(name);
+      final var parsed = wanted instanceof String s ? typed.parse(s) : wanted;
+      if (!java.util.Objects.equals(attrs.getValue(typed), parsed)) apply(attrs, overrides, name, kindKey);
     }
+  }
+
+  private static boolean isSizeLike(String name) {
+    final var lower = name.toLowerCase(java.util.Locale.ROOT);
+    return lower.contains("width") || lower.contains("bits") || lower.equals("inputs")
+        || lower.equals("incoming") || lower.equals("fanout");
+  }
+
+  private static void apply(AttributeSet attrs, Attrs overrides, String name, String kindKey) {
+    final var attr = attrs.getAttribute(name);
+    if (attr == null) throw new UnknownAttributeException(name, kindKey, attributeNames(attrs));
+    @SuppressWarnings("unchecked")
+    final var typed = (Attribute<Object>) attr;
+    final var value = overrides.get(name);
+    final Object parsed;
+    try {
+      parsed = value instanceof String s ? typed.parse(s) : value;
+    } catch (RuntimeException e) {
+      throw invalidValue(name, String.valueOf(value), typed, e);
+    }
+    attrs.setValue(typed, parsed);
+  }
+
+  static java.util.List<String> attributeNames(AttributeSet attrs) {
+    final var names = new java.util.ArrayList<String>();
+    final var declared = attrs.getAttributes();
+    if (declared != null) {
+      for (final var a : declared) if (!a.isHidden()) names.add(a.getName());
+    }
+    return names;
+  }
+
+  static InvalidAttributeValueException invalidValue(
+      String name, String value, Attribute<?> attr, RuntimeException cause) {
+    final var choices = attr.getChoices();
+    final var reason = choices.isEmpty()
+        ? "could not be read (" + cause.getMessage() + ")"
+        : "must be one of " + String.join(", ", choices);
+    return new InvalidAttributeValueException(name, value, reason);
   }
 }
