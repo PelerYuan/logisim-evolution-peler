@@ -240,7 +240,13 @@ project being worked on rather than a file being rewritten behind your back.
 requires a token generated for you; file access stays inside the open project's directory unless you
 name other locations with `-Dlogisim.mcp.allowedPaths`.
 
-![An AI client building a circuit over MCP](docs/img/peler-edition/Mcp.png)
+![Claude Desktop, on the left, building and verifying a full adder in the running application on the right](docs/img/peler-edition/Mcp.png)
+
+The client gets three tools: `eval` runs a short Lua script against the open circuit, `describe`
+hands back a worked example and a summary of what is there, and `reset` starts a fresh script
+session. In the screenshot a single request built the full adder, tidied its wiring, ran all eight
+rows of its truth table and checked the circuit for unconnected pins. A script can also look up what
+it may place and which attributes and ports a component has, so it does not have to guess names.
 
 The **MCP** menu holds three ways to connect a client: **Copy MCP Configuration** for a client that
 reads the `mcpServers` JSON shape (Claude Code, Claude Desktop, VS Code), **Copy Codex Configuration**
