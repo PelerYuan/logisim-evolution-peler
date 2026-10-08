@@ -11,7 +11,7 @@ canonical, fuller description (see
 [Releases](https://github.com/PelerYuan/logisim-evolution-peler/releases)). All releases are based
 on upstream **Logisim-evolution v4.1.0**.
 
-## v1.6.0 — 2026-09-26
+## v1.6.0 — 2026-10-08
 
 - **Custom components can now live in multiple, named, shareable libraries.** The single fixed **My
   Components** directory from v1.5.0 still works exactly as before, but a project can now also load
@@ -36,6 +36,20 @@ on upstream **Logisim-evolution v4.1.0**.
   back in one call, instead of placing and wiring every gate by hand.
 - The sandbox is unchanged: no filesystem, network, or reflection access from a script, and a fixed
   instruction budget interrupts a runaway one.
+- **Almost everything a person can do in the application can now be done by a script**: libraries
+  (load, reload, unload), project-wide attribute changes, copying a region of a circuit, the test
+  window, the combinational analysis window, memory and PLA editors, the appearance editor, VHDL
+  entities, circuit statistics, undo and redo, and the simulator.
+- **A script can no longer wire two nets together by accident.** Routes keep clear of other nets'
+  wires (a latch's cross-coupled feedback used to be drawn straight through itself), tidying keeps
+  nets apart, and a commit that would short two nets is refused with nothing changed.
+- **Simulation from a script is reliable.** Writing a pin settles the whole circuit, a counter counts
+  from its very first clock edge, and building a circuit and simulating it in the same script no
+  longer stalls for five seconds.
+- **Easier for an AI client to use correctly.** Results come back as JSON, a script can list what it
+  may place and which attributes and ports a component has, read the circuit back as a text netlist,
+  and gets an error that names the valid choices when it gets one wrong. A circuit named like a
+  built-in component (for example `Counter`) is refused up front.
 
 ## v1.5.0 — 2026-08-26
 
